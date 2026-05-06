@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Trading Journal - Configuración</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --card: #1e293b;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --green: #22c55e;
+        --red: #ef4444;
+        --border: #334155;
+        --font-xs: 11px;
+        --font-sm: 12px;
+        --font-md: 14px;
+        --font-lg: 16px;
+        --font-xl: 20px;
+        --fw-regular: 400;
+        --fw-medium: 500;
+        --fw-semibold: 600;
+        --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+        --shadow-sm: 0 2px 6px rgba(0,0,0,0.06);
+        --shadow-md: 0 6px 16px rgba(0,0,0,0.08);
+        --shadow-lg: 0 12px 28px rgba(0,0,0,0.12);
+        --space-xs: 8px;
+        --space-sm: 12px;
+        --space-md: 16px;
+        --space-lg: 24px;
+        --space-xl: 32px;
+        --sidebar-width: 260px;
+        --sidebar-collapsed-width: 76px;
+        --page-padding-x: 28px;
+        --page-padding-y: 24px;
+        --page-gap: 24px;
+        --card-gap: 20px;
+      }
+      body.dark {
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --shadow-xs: 0 2px 6px rgba(0,0,0,0.3);
+        --shadow-sm: 0 6px 18px rgba(0,0,0,0.35);
+        --shadow-md: 0 10px 30px rgba(0,0,0,0.45);
+        --shadow-lg: 0 20px 50px rgba(0,0,0,0.6);
+      }
+      body.light {
+        --bg: #f6f8fb;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: rgba(0,0,0,0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+      body {
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+        overflow-x: hidden;
+      }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 30;
+        width: var(--sidebar-width);
+        min-width: var(--sidebar-collapsed-width);
+        height: 100vh;
+        background: #0b1220;
+        border-right: 1px solid var(--border);
+        padding: 20px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        box-sizing: border-box;
+        transition: width 0.25s ease, padding 0.25s ease;
+      }
+      .sidebar.closed,
+      .sidebar.collapsed {
+        width: var(--sidebar-collapsed-width);
+        min-width: var(--sidebar-collapsed-width);
+        overflow: hidden;
+      }
+      .sidebar.closed h2 {
+        font-size: 0;
+        margin: 0;
+      }
+      .sidebar.closed .sidebar-btn {
+        font-size: 0;
+        padding: 10px 8px;
+      }
+      .sidebar h2 {
+        margin: 0 0 8px 0;
+        font-size: 1.2rem;
+      }
+      .sidebar-btn {
+        border: 1px solid var(--border);
+        background: #162336;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 600;
+        text-align: left;
+        transition: background 0.2s ease, border-color 0.2s ease;
+      }
+      .sidebar-btn:hover {
+        background: #1c2b42;
+      }
+      .sidebar-btn.active {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+      }
+      .sidebar-btn svg {
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+        opacity: 0.7;
+      }
+      .sidebar-btn.active svg {
+        opacity: 1;
+        stroke: var(--green);
+      }
+      .main-content {
+        margin-left: var(--sidebar-width);
+        width: calc(100vw - var(--sidebar-width));
+        max-width: none;
+        min-height: 100vh;
+        padding: var(--page-padding-y) var(--page-padding-x);
+        overflow-y: auto;
+        overflow-x: hidden;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: var(--page-gap);
+        transition: margin-left 0.25s ease, width 0.25s ease;
+      }
+      .sidebar.collapsed + .main-content,
+      .sidebar.closed + .main-content,
+      .sidebar.collapsed ~ .main-content,
+      .sidebar.closed ~ .main-content {
+        margin-left: var(--sidebar-collapsed-width);
+        width: calc(100vw - var(--sidebar-collapsed-width));
+      }
+      .toggle-sidebar {
+        border: 1px solid var(--border);
+        background: #162336;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        cursor: pointer;
+        margin-bottom: 6px;
+        font-weight: 700;
+      }
+      .container,
+      .page-container,
+      .view,
+      #configView,
+      #tradeView,
+      .stats-page {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+      }
+      .container {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--page-gap);
+      }
+      #configView {
+        display: flex;
+        flex-direction: column;
+        gap: var(--page-gap);
+      }
+      .card,
+      .dashboard-card,
+      .settings-card,
+      .panel-card {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        box-sizing: border-box;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: var(--space-md);
+        box-shadow: var(--shadow-xs);
+      }
+      .dashboard-grid,
+      .stats-grid,
+      .chart-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        width: 100%;
+      }
+      .card:hover { box-shadow:var(--shadow-sm); }
+      body.light .card { background:#ffffff; border:1px solid rgba(0,0,0,0.06); }
+      .section-title { margin:0 0 10px 0; font-size:var(--font-md); font-weight:var(--fw-semibold); }
+      .settings-layout,
+      .settings-grid {
+        display: grid;
+        gap: var(--page-gap);
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+      }
+      .settings-grid {
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .settings-card {
+        background: #1e293b;
+        border: 1px solid #3a4a63;
+        border-radius: 14px;
+        padding: var(--space-md);
+        box-shadow: var(--shadow-sm);
+      }
+      body.light .settings-card { background:#ffffff; border:1px solid rgba(0,0,0,0.06); }
+      .settings-header { margin-bottom: var(--space-sm); }
+      .settings-header h3 { margin:0; font-size:var(--font-lg); font-weight:var(--fw-semibold); }
+      .settings-header p { margin: var(--space-xs) 0 0 0; color:var(--muted); font-size:13px; }
+      .settings-row { margin-bottom: var(--space-sm); }
+      .settings-row:last-child { margin-bottom: 0; }
+      .settings-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+      .mode-toggle { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+      .mode-btn { border:1px solid var(--border); background:#0b1220; color:var(--text); border-radius:10px; padding:10px 12px; cursor:pointer; font-weight:600; }
+      .mode-btn.active { border-color:#60a5fa; box-shadow:0 0 0 2px rgba(96,165,250,.2); }
+      .input { width:100%; border:1px solid var(--border); border-radius:10px; background:#0b1220; color:var(--text); padding:10px 12px; font-size:var(--font-md); outline:none; }
+      .button { border:none; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; color:#fff; }
+      .label { font-size:var(--font-sm); color:var(--muted); }
+      .value-small { font-size:13px; font-weight:var(--fw-medium); }
+      .title-with-icon { display:flex; align-items:center; gap:8px; }
+      .title-with-icon svg { width:18px; height:18px; stroke-width:2; opacity:0.8; }
+      body.light .title-with-icon svg { opacity:0.7; }
+      .card * { line-height:1.4; }
+      .button-add { background:var(--green); }
+      .button-delete { background:var(--red); }
+      @media (max-width: 900px) {
+        :root {
+          --page-padding-x: 16px;
+          --page-padding-y: 16px;
+          --page-gap: 16px;
+        }
+        .sidebar {
+          position: static;
+          width: 100%;
+          height: auto;
+          min-height: 0;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .main-content {
+          margin-left: 0;
+          width: 100%;
+          max-width: none;
+          padding: var(--page-padding-y) var(--page-padding-x);
+        }
+        .sidebar.collapsed + .main-content,
+        .sidebar.closed + .main-content,
+        .sidebar.collapsed ~ .main-content,
+        .sidebar.closed ~ .main-content {
+          margin-left: 0;
+          width: 100%;
+        }
+        .settings-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 760px) {
+        .settings-actions,
+        .mode-toggle {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar" class="sidebar open">
+      <button id="toggleSidebar" class="toggle-sidebar" type="button"><i data-lucide="menu"></i></button>
+      <h2>Trading Journal</h2>
+      <button class="sidebar-btn" type="button"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+      <button class="sidebar-btn" type="button"><i data-lucide="plus-circle"></i><span>Nuevo Trade</span></button>
+      <button class="sidebar-btn active" type="button"><i data-lucide="settings"></i><span>Configuración</span></button>
+    </div>
+
+    <div class="main-content" id="configView">
+      <div class="container">
+        <section class="card">
+          <h2 class="section-title title-with-icon"><i data-lucide="settings"></i>Configuración</h2>
+          <div class="settings-layout">
+            <article class="settings-card">
+              <div class="settings-header">
+                <h3 class="title-with-icon"><i data-lucide="settings"></i>Modo</h3>
+                <p>Selecciona flujo básico o avanzado</p>
+              </div>
+              <div class="mode-toggle">
+                <button id="basicModeBtn" class="mode-btn active" type="button">Básico</button>
+                <button id="proModeBtn" class="mode-btn" type="button">Pro</button>
+              </div>
+            </article>
+
+            <article class="settings-card">
+              <div class="settings-header">
+                <h3 class="title-with-icon"><i data-lucide="brain"></i>Estrategias</h3>
+                <p>Crea y gestiona tus setups de trading</p>
+              </div>
+              <div class="settings-row">
+                <select id="settingsStrategy" class="input">
+                  <option value="">Selecciona estrategia</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <input id="newStrategy" class="input" placeholder="Escribe una nueva estrategia" />
+              </div>
+              <div class="settings-actions">
+                <button id="addStrategyBtn" class="button button-add" type="button">Añadir estrategia</button>
+                <button id="deleteStrategyBtn" class="button button-delete" type="button">Eliminar estrategia</button>
+              </div>
+            </article>
+
+            <article class="settings-card">
+              <div class="settings-header">
+                <h3 class="title-with-icon"><i data-lucide="wallet"></i>Cuentas</h3>
+                <p>Organiza y administra tus cuentas de trading</p>
+              </div>
+              <div class="settings-row">
+                <select id="settingsAccount" class="input">
+                  <option value="">Selecciona cuenta</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <input id="newAccount" class="input" placeholder="Nombre de cuenta" />
+              </div>
+              <div class="settings-row">
+                <input id="newAccountCapital" class="input" type="number" step="0.01" placeholder="Capital (ej: 10000)" />
+              </div>
+              <div class="settings-row">
+                <input id="newAccountCommission" class="input" type="number" step="0.01" placeholder="Comisión por lote (ej: 7)" />
+              </div>
+              <div class="settings-row">
+                <label for="newAccountFreeSwap">
+                  <input id="newAccountFreeSwap" type="checkbox" />
+                  Free Swap
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button id="addAccountBtn" class="button button-add" type="button">Añadir cuenta</button>
+                <button id="deleteAccountBtn" class="button button-delete" type="button">Eliminar cuenta</button>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>window.addEventListener('DOMContentLoaded', () => { window.lucide?.createIcons(); });</script>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
