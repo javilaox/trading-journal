@@ -1,5 +1,6 @@
 const { supabase } = require('./supabaseClient');
 const { getCurrentUserId } = require('./supabaseAuth');
+const { normalizeTimeField } = require('./backtestingScheduleStats');
 
 function parseCustomMetrics(val) {
   if (val && typeof val === 'object' && !Array.isArray(val)) return val;
@@ -65,6 +66,8 @@ function normalizeBacktestingTradePayload(trade = {}, userId) {
 
     pnl: pnlValue,
     notes: trade.notes || '',
+    entry_time: normalizeTimeField(trade.entry_time ?? trade.entryTime),
+    exit_time: normalizeTimeField(trade.exit_time ?? trade.exitTime),
     custom_metrics
   };
 }
@@ -99,7 +102,9 @@ function normalizeRow(row) {
     rr_planned: Number(row.rr_planned ?? 0) || 0,
     rr_result: Number(row.rr_result ?? 0) || 0,
     pnl: pnlVal,
-    pnl_estimated: pnlVal
+    pnl_estimated: pnlVal,
+    entry_time: normalizeTimeField(row.entry_time),
+    exit_time: normalizeTimeField(row.exit_time)
   };
 }
 

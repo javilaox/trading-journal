@@ -1,0 +1,1 @@
+-- Empty migration kept to match Supabase Staging migration history.

@@ -1,8 +1,37 @@
 import { supabase } from './supabase.js';
 import { login, register, logout } from './auth.js';
+import {
+  saveOfflineUserSession,
+  getOfflineUsers,
+  getLastOfflineUser,
+  canUseOfflineLogin,
+  loginOffline,
+  isOnline,
+  setOfflineMode,
+  isOfflineModeActive,
+  getCurrentAppEnv as getOfflineAppEnv,
+  checkInternetConnection
+} from './services/offlineAuth.js';
 import { validateTrade } from './services/validators.js';
 /** Fechas visibles DD-MM-YYYY — implementación en `./dateDisplay.js`. */
 import { formatDateEs, formatDateRangeEs } from './dateDisplay.js';
+import { navigateTo } from './navigation.js';
+import './sidebar.css';
+import './stats-page.css';
+import {
+  initSidebar,
+  normalizeSidebarStructure,
+  setSidebarActiveView,
+  toggleSidebarCollapse,
+  updateSidebarUserEmail
+} from './sidebar.js';
+
+const { mountStatsView, unmountStatsView, applyFilters: applyStatsFilters } = require('./stats.js');
+const {
+  getCurrentUserSafe,
+  clearAuthUserCache,
+  setCachedUserId
+} = require('./services/supabaseAuth.js');
 
 function injectBacktestingProStyles() {
   if (document.getElementById('backtesting-pro-styles')) return;
@@ -23,10 +52,17 @@ function injectBacktestingProStyles() {
   margin-bottom:4px;
 }
 #backtestingView .pro-section{
-  margin-top:clamp(18px,2.2vw,26px);
+  margin-top:clamp(22px,2.6vw,32px);
 }
 #backtestingView .dashboard-container>.pro-backtesting-shell>.bt-section:first-child,
 #backtestingView .pro-section:first-of-type{margin-top:0}
+#backtestingView>.dashboard-container{
+  padding:clamp(12px,2vw,20px) clamp(16px,2.5vw,28px);
+}
+#backtestingView>.dashboard-container>.section.card.pro-backtesting-shell{
+  gap:clamp(22px,2.8vw,36px);
+  padding:clamp(18px,2.2vw,28px);
+}
 #backtestingView .pro-card,#backtestingConfigView .pro-card{
   background:var(--card-bg,rgba(15,23,42,.55));
   border:1px solid var(--border,rgba(148,163,184,.18));
@@ -590,9 +626,41 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-kpi-section:not(.open) .bt-toggle-icon{transform:rotate(-90deg)}
 #backtestingView .bt-kpi-section-body{padding:0 22px 20px;display:none}
 #backtestingView .bt-kpi-section.open .bt-kpi-section-body{display:block}
-#backtestingView .bt-kpi-toolbar{display:flex;justify-content:flex-start;margin-bottom:14px}
-#backtestingView .bt-kpi-hero-row{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:12px;margin-bottom:12px}
-#backtestingView .bt-kpi-mini-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px}
+#backtestingView .bt-kpi-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-start;
+  gap:14px 20px;
+  margin-bottom:18px;
+}
+#backtestingView .bt-kpi-hero-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:18px;
+  margin-bottom:18px;
+}
+#backtestingView .bt-kpi-mini-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:16px;
+  margin-bottom:16px;
+}
+#backtestingView #btScheduleStatsSection.schedule-discipline-card{
+  padding:clamp(20px,2.4vw,28px);
+  margin-top:clamp(20px,2.5vw,32px);
+}
+#backtestingView #btScheduleStatsSection .schedule-discipline-metrics{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:18px;
+  margin-top:16px;
+  width:100%;
+}
+#backtestingView #btScheduleStatsSection .schedule-discipline-metrics .advanced-item{
+  min-width:0;
+  padding:16px 18px;
+}
 #backtestingView .bt-kpi-card{
   border:1px solid rgba(148,163,184,.14);
   border-radius:16px;
@@ -641,7 +709,12 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-kpi-mini-row .bt-kpi-value{font-size:16px;font-weight:800}
 #backtestingView .bt-kpi-value.positive{color:var(--green,#22c55e)}
 #backtestingView .bt-kpi-value.negative{color:#ef4444}
-#backtestingView .bt-result-pill-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#backtestingView .bt-result-pill-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:14px;
+  margin-top:4px;
+}
 #backtestingView .bt-kpi-result-card{
   min-height:42px;
   border:1px solid rgba(148,163,184,.12);
@@ -682,13 +755,8 @@ body.light #backtestingView .bt-session-card.is-active-session{
   gap:8px;
 }
 #backtestingView .bt-be-toggle input{accent-color:var(--green,#22c55e)}
-@media(max-width:1250px){
-  #backtestingView .bt-kpi-hero-row{grid-template-columns:1fr}
-  #backtestingView .bt-kpi-mini-row{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
 @media(max-width:700px){
-  #backtestingView .bt-kpi-mini-row,
-  #backtestingView .bt-result-pill-row{grid-template-columns:1fr}
+  #backtestingView .bt-kpi-toolbar{flex-direction:column;align-items:flex-start}
 }
 #backtestingView .bt-session-filter-wrap{position:relative;width:min(420px,100%)}
 #backtestingView .bt-session-filter-wrap>label{display:block;margin-bottom:8px;color:var(--text-muted);font-size:13px;font-weight:700}
@@ -805,6 +873,11 @@ function subscribeToTradesRealtime() {
       (payload) => {
         console.log('🔄 Realtime update recibido:', payload);
 
+        if (deletingTradeInProgress) {
+          console.log('⏭️ Realtime ignorado (delete en curso)');
+          return;
+        }
+
         if (payload.eventType === 'INSERT' && payload.new && payload.new.id != null) {
           const nid = Number(payload.new.id);
           if (lastInsertedIds.has(nid)) {
@@ -836,11 +909,24 @@ function unsubscribeTradesRealtime() {
 }
 
 async function loadUserInfo() {
-  const { data } = await supabase.auth.getUser();
-  const email = data?.user?.email || 'No autenticado';
+  let email = '';
+  try {
+    if (isOnline() && !isOfflineModeActive()) {
+      const user = await getCurrentUserSafe();
+      email = user?.email || '';
+    }
+  } catch (err) {
+    console.warn('loadUserInfo supabase falló:', err);
+  }
 
-  const el = document.getElementById('user-email');
-  if (el) el.textContent = email;
+  if (!email) {
+    email =
+      window.currentUser?.email ||
+      getLastOfflineUser()?.email ||
+      'No autenticado';
+  }
+
+  await updateSidebarUserEmail(async () => email);
 }
 
 async function showProfileModal() {
@@ -920,8 +1006,14 @@ async function showProfileModal() {
 
   document.body.appendChild(modal);
 
-  const { data } = await supabase.auth.getUser();
-  const user = data?.user;
+  let user = null;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    user = sessionData?.session?.user || null;
+  } catch (err) {
+    console.warn('showProfileModal getSession:', err);
+  }
+  if (!user) user = await getCurrentUserSafe();
 
   document.getElementById('profileEmail').textContent = user?.email || 'Usuario';
 
@@ -965,8 +1057,8 @@ async function showProfileModal() {
     msg.textContent = '';
     msg.className = 'profile-msg';
 
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData?.user?.email;
+    const authUser = await getCurrentUserSafe();
+    const email = authUser?.email || window.currentUser?.email;
 
     if (!email) {
       msg.textContent = 'No se pudo obtener el email del usuario';
@@ -1033,6 +1125,67 @@ function injectLoginModalStyles() {
   background: #020617;
   z-index: 9999;
   transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.auth-offline-section {
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.auth-offline-divider {
+  position: relative;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.auth-offline-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.18);
+}
+.auth-offline-divider span {
+  position: relative;
+  background: var(--card-bg, #0f172a);
+  padding: 0 10px;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.85);
+  letter-spacing: 0.04em;
+}
+.auth-offline-hint {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.85);
+  margin: 0 0 10px;
+}
+.auth-offline-select {
+  margin-bottom: 10px;
+}
+.auth-offline-btn {
+  background: rgba(34, 197, 94, 0.10) !important;
+  border: 1px solid rgba(34, 197, 94, 0.35) !important;
+  color: #22c55e !important;
+}
+.auth-offline-btn:hover {
+  background: rgba(34, 197, 94, 0.16) !important;
+}
+.auth-offline-empty {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.75);
+  text-align: center;
+}
+.app-offline-banner {
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #facc15;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
 }
 
 .auth-page {
@@ -1996,6 +2149,14 @@ function showLoginModal() {
           <p class="login-footer">Accede a tus datos de forma segura</p>
 
           <p id="login-error" class="error"></p>
+
+          <div id="offline-login-section" class="auth-offline-section" hidden>
+            <div class="auth-offline-divider"><span>Modo offline disponible</span></div>
+            <p class="auth-offline-hint" id="offline-hint">Sin conexión. Puedes entrar con un usuario que ya inició sesión en este equipo.</p>
+            <select id="offline-user-select" class="login-input auth-offline-select" hidden></select>
+            <button id="offline-login-btn" type="button" class="btn-primary auth-offline-btn">Entrar sin conexión</button>
+            <p id="offline-no-users" class="auth-offline-empty" hidden>Necesitas iniciar sesión con internet al menos una vez en este equipo.</p>
+          </div>
         </div>
       </section>
     </div>
@@ -2050,6 +2211,150 @@ function showLoginModal() {
 
   updateAuthModeUI();
 
+  // ---- Sección offline -----------------------------------------------------
+  const offlineSection = document.getElementById('offline-login-section');
+  const offlineSelect = document.getElementById('offline-user-select');
+  const offlineBtn = document.getElementById('offline-login-btn');
+  const offlineEmpty = document.getElementById('offline-no-users');
+  const offlineHint = document.getElementById('offline-hint');
+
+  function refreshOfflineUI() {
+    if (!offlineSection) return;
+    const users = getOfflineUsers();
+    const online = isOnline();
+
+    // Siempre mostramos la sección cuando hay usuarios autorizados, para que
+    // sirva como fallback si el login online falla por red. Si no hay
+    // usuarios y estamos online, no hace falta enseñar nada.
+    if (users.length === 0 && online) {
+      offlineSection.hidden = true;
+      return;
+    }
+
+    offlineSection.hidden = false;
+
+    if (users.length === 0) {
+      if (offlineEmpty) offlineEmpty.hidden = false;
+      if (offlineSelect) offlineSelect.hidden = true;
+      if (offlineBtn) offlineBtn.disabled = true;
+      if (offlineHint)
+        offlineHint.textContent =
+          'Sin conexión. No hay usuarios autorizados aún en este equipo.';
+      return;
+    }
+
+    if (offlineEmpty) offlineEmpty.hidden = true;
+    if (offlineBtn) offlineBtn.disabled = false;
+
+    if (users.length === 1) {
+      if (offlineSelect) offlineSelect.hidden = true;
+      if (offlineHint) {
+        offlineHint.textContent = online
+          ? `También puedes entrar sin conexión como ${users[0].email}.`
+          : `Sin conexión. Puedes entrar como ${users[0].email}.`;
+      }
+    } else if (offlineSelect) {
+      offlineSelect.hidden = false;
+      offlineSelect.innerHTML = '';
+      users.forEach((u) => {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.email;
+        offlineSelect.appendChild(opt);
+      });
+      if (offlineHint) {
+        offlineHint.textContent = online
+          ? 'También puedes entrar sin conexión seleccionando un usuario autorizado.'
+          : 'Sin conexión. Selecciona un usuario autorizado para entrar.';
+      }
+    }
+  }
+
+  function refreshOnlineInputsUI() {
+    const online = isOnline();
+    // No deshabilitamos el botón Entrar: la propia función login() detecta
+    // online/offline con un fetch real y decide. Solo damos hint visual.
+    if (loginBtnEl) {
+      if (!online) {
+        loginBtnEl.title = 'Sin conexión detectada por el SO. Si tu email ya inició sesión aquí, podrás entrar igualmente.';
+      } else {
+        loginBtnEl.removeAttribute('title');
+      }
+    }
+    if (registerTabEl) {
+      registerTabEl.disabled = !online;
+    }
+  }
+
+  refreshOfflineUI();
+  refreshOnlineInputsUI();
+
+  const onConnChange = () => {
+    refreshOfflineUI();
+    refreshOnlineInputsUI();
+  };
+  window.addEventListener('online', onConnChange);
+  window.addEventListener('offline', onConnChange);
+
+  async function finishLoginUI(user, { offlineMode = false } = {}) {
+    window.currentUser = { id: user.id, email: user.email };
+    setCachedUserId(user.id);
+
+    await syncRealListsFromStorage();
+
+    if (!offlineMode) {
+      await syncSupabaseSessionWithMain();
+    } else if (window.electronAPI?.setUserId) {
+      await window.electronAPI.setUserId(user.id);
+    }
+
+    isAppAuthenticated = true;
+    setOfflineMode(offlineMode);
+    updateOfflineBanner();
+
+    modal.style.opacity = '0';
+    modal.style.transform = 'scale(0.95)';
+
+    setTimeout(() => {
+      modal.remove();
+      window.removeEventListener('online', onConnChange);
+      window.removeEventListener('offline', onConnChange);
+
+      loadUserInfo().catch((err) => console.error('loadUserInfo', err));
+
+      void (async () => {
+        await loadStrategies();
+        await loadAccounts();
+
+        if (typeof loadTrades === 'function') loadTrades();
+        if (typeof loadStats === 'function') loadStats();
+      })();
+
+      if (!offlineMode) {
+        subscribeToTradesRealtime();
+      }
+
+      console.log(offlineMode ? '🚀 App lista (modo offline)' : '🚀 App lista tras login');
+    }, 200);
+  }
+
+  if (offlineBtn) {
+    offlineBtn.onclick = async () => {
+      const users = getOfflineUsers();
+      if (users.length === 0) return;
+
+      const targetId = users.length === 1 ? users[0].id : (offlineSelect?.value || users[0].id);
+      const offlineUser = loginOffline(targetId);
+      if (!offlineUser) {
+        loginErrorEl().textContent = 'No se pudo entrar en modo offline.';
+        return;
+      }
+
+      await finishLoginUI(offlineUser, { offlineMode: true });
+    };
+  }
+  // -------------------------------------------------------------------------
+
   document.getElementById('login-btn').onclick = async () => {
     loginErrorEl().textContent = '';
     const loginBtn = document.getElementById('login-btn');
@@ -2069,91 +2374,226 @@ function showLoginModal() {
       localStorage.removeItem(rememberKey);
     }
 
+    const restoreLoginButtons = () => {
+      if (loginBtn) loginBtn.disabled = false;
+      authTabs.forEach((tab) => { tab.disabled = false; });
+      updateAuthModeUI();
+      refreshOnlineInputsUI();
+    };
+
     if (authMode === 'register') {
+      const onlineForRegister = await checkInternetConnection();
+      if (!onlineForRegister) {
+        loginErrorEl().textContent = 'Necesitas internet para crear una cuenta nueva.';
+        restoreLoginButtons();
+        return;
+      }
       const user = await register(email, password);
       if (!user) {
         loginErrorEl().textContent = 'Error al crear cuenta (mín 6 caracteres)';
-        if (loginBtn) {
-          loginBtn.disabled = false;
-          updateAuthModeUI();
-        }
-        authTabs.forEach((tab) => { tab.disabled = false; });
+        restoreLoginButtons();
         return;
       }
       loginErrorEl().textContent = 'Cuenta creada. Ahora puedes iniciar sesión.';
       authMode = 'login';
-      if (loginBtn) loginBtn.disabled = false;
-      authTabs.forEach((tab) => { tab.disabled = false; });
-      updateAuthModeUI();
+      restoreLoginButtons();
       return;
     }
 
-    const user = await login(email, password);
+    // login() ya hace checkInternetConnection internamente y decide.
+    const result = await login(email, password);
 
-    if (!user) {
-      loginErrorEl().textContent = 'Credenciales incorrectas';
-      if (loginBtn) {
-        loginBtn.disabled = false;
-        updateAuthModeUI();
-      }
-      authTabs.forEach((tab) => { tab.disabled = false; });
-      return;
+    switch (result?.status) {
+      case 'online':
+        await finishLoginUI(
+          { id: result.user.id, email: result.user.email },
+          { offlineMode: false }
+        );
+        return;
+
+      case 'offline':
+        loginErrorEl().textContent = '';
+        await finishLoginUI(
+          { id: result.user.id, email: result.user.email },
+          { offlineMode: true }
+        );
+        return;
+
+      case 'no_offline_user':
+        loginErrorEl().textContent =
+          'Necesitas iniciar sesión con internet al menos una vez.';
+        refreshOfflineUI();
+        restoreLoginButtons();
+        return;
+
+      case 'network':
+        loginErrorEl().textContent =
+          'Sin conexión con Supabase. Si ya iniciaste sesión aquí antes, prueba "Entrar sin conexión".';
+        refreshOfflineUI();
+        restoreLoginButtons();
+        return;
+
+      case 'invalid_credentials':
+        loginErrorEl().textContent = 'Credenciales incorrectas';
+        restoreLoginButtons();
+        return;
+
+      default:
+        loginErrorEl().textContent = 'No se pudo iniciar sesión. Inténtalo de nuevo.';
+        restoreLoginButtons();
+        return;
     }
-
-    window.currentUser = { id: user.id, email: user.email };
-
-    await migrateGlobalRealDataToUserScopedStorage();
-    await syncRealListsFromStorage();
-
-    await syncSupabaseSessionWithMain();
-
-    isAppAuthenticated = true;
-
-    modal.style.opacity = '0';
-    modal.style.transform = 'scale(0.95)';
-
-    setTimeout(() => {
-      modal.remove();
-
-      loadUserInfo().catch((err) => console.error('loadUserInfo', err));
-
-      void (async () => {
-        await loadStrategies();
-        await loadAccounts();
-
-        if (typeof loadTrades === 'function') loadTrades();
-        if (typeof loadStats === 'function') loadStats();
-      })();
-
-      subscribeToTradesRealtime();
-
-      console.log('🚀 App lista tras login');
-    }, 200);
   };
 }
 
+function updateOfflineBanner() {
+  let banner = document.getElementById('app-offline-banner');
+  const offlineActive = isOfflineModeActive() || !isOnline();
+  const userBar = document.querySelector('.user-bar') || document.getElementById('user-email')?.parentElement;
+
+  if (!offlineActive) {
+    if (banner) banner.remove();
+    return;
+  }
+
+  if (!banner) {
+    banner = document.createElement('span');
+    banner.id = 'app-offline-banner';
+    banner.className = 'app-offline-banner';
+    banner.title = 'Sin conexión. Datos cargados desde la cache local.';
+    banner.textContent = 'Offline';
+    if (userBar) {
+      userBar.appendChild(banner);
+    } else {
+      document.body.appendChild(banner);
+      banner.style.position = 'fixed';
+      banner.style.top = '12px';
+      banner.style.right = '12px';
+      banner.style.zIndex = '9998';
+    }
+  }
+
+  // Añade contador de pendientes si el backend lo expone (no bloquear UI).
+  (async () => {
+    try {
+      const backend = getBackendApi();
+      if (!backend?.getSyncPendingCount) return;
+      const count = Number(await backend.getSyncPendingCount()) || 0;
+      banner.textContent = `Offline · ${count} pendientes`;
+    } catch {
+      // silencioso
+    }
+  })();
+}
+
+function setSyncBannerText(text) {
+  const banner = document.getElementById('app-offline-banner');
+  if (!banner) return;
+  banner.textContent = String(text || '').trim() || banner.textContent;
+}
+
+function ensureSyncBannerHost() {
+  // Reutilizamos el banner existente como host de estado (offline/online/sync).
+  if (!document.getElementById('app-offline-banner')) {
+    const userBar = document.querySelector('.user-bar') || document.getElementById('user-email')?.parentElement;
+    const banner = document.createElement('span');
+    banner.id = 'app-offline-banner';
+    banner.className = 'app-offline-banner';
+    banner.title = 'Estado de conexión y sincronización';
+    banner.textContent = 'Online';
+    if (userBar) userBar.appendChild(banner);
+    else document.body.appendChild(banner);
+  }
+}
+
 async function checkAuth() {
-  const { data } = await supabase.auth.getUser();
-
-  if (!data?.user) {
-    console.log('🔒 Usuario no autenticado');
-    window.currentUser = null;
-    isAppAuthenticated = false;
-    showLoginModal();
-    return false;
+  let onlineSession = null;
+  let reallyOnline = false;
+  try {
+    reallyOnline = await checkInternetConnection();
+  } catch (err) {
+    reallyOnline = false;
   }
 
-  console.log('🔓 Usuario autenticado:', data.user.email);
-  window.currentUser = { id: data.user.id, email: data.user.email };
-  if (data.user.id) {
-    localStorage.setItem('user_id', data.user.id);
-    console.log('✅ user_id sincronizado con sesión:', data.user.id);
+  try {
+    if (reallyOnline) {
+      onlineSession = await getCurrentUserSafe();
+    }
+  } catch (err) {
+    console.warn('⚠️ getCurrentUserSafe falló (offline?):', err);
   }
-  await migrateGlobalRealDataToUserScopedStorage();
-  await syncRealListsFromStorage();
-  isAppAuthenticated = true;
-  await syncSupabaseSessionWithMain();
-  return true;
+
+  if (onlineSession) {
+    console.log('🔓 Usuario autenticado:', onlineSession.email);
+    window.currentUser = { id: onlineSession.id, email: onlineSession.email };
+    setCachedUserId(onlineSession.id);
+    if (onlineSession.id) {
+      localStorage.setItem('user_id', onlineSession.id);
+      console.log('✅ user_id sincronizado con sesión:', onlineSession.id);
+      try {
+        saveOfflineUserSession(
+          { id: onlineSession.id, email: onlineSession.email },
+          getOfflineAppEnv()
+        );
+      } catch (err) {
+        console.warn('⚠️ No se pudo refrescar offline user:', err);
+      }
+    }
+    await syncRealListsFromStorage();
+    isAppAuthenticated = true;
+    setOfflineMode(false);
+    updateOfflineBanner();
+    await syncSupabaseSessionWithMain();
+
+    // Pull remoto → SQLite (trades + cuentas + estrategias) en background y refresco UI.
+    setTimeout(() => {
+      const backend = getBackendApi();
+      if (backend?.pullRemoteData) {
+        backend.pullRemoteData()
+          .catch((e) => console.warn('pullRemoteData error:', e))
+          .finally(() => {
+            refreshRealAccountsAndStrategies().then(() => {
+              void loadAccounts();
+              void loadStrategies();
+            });
+          });
+      }
+      if (backend?.syncPendingChanges) {
+        backend.syncPendingChanges().catch(() => {});
+      }
+    }, 0);
+    return true;
+  }
+
+  // Sin sesión online válida: probar reanudación offline si hay UN solo usuario autorizado.
+  if (!reallyOnline) {
+    const offlineUsers = getOfflineUsers();
+    if (offlineUsers.length === 1) {
+      const only = offlineUsers[0];
+      console.log('📴 Modo offline auto (único usuario):', only.email);
+      const offlineUser = loginOffline(only.id);
+      if (offlineUser) {
+        window.currentUser = offlineUser;
+        setCachedUserId(offlineUser.id);
+        await syncRealListsFromStorage();
+        isAppAuthenticated = true;
+        setOfflineMode(true);
+        if (window.electronAPI?.setUserId) {
+          await window.electronAPI.setUserId(offlineUser.id);
+        }
+        updateOfflineBanner();
+        return true;
+      }
+    }
+    // Si hay varios o ninguno, mostramos el modal con la sección offline.
+    console.log('📴 Sin sesión online; modal con sección offline (', offlineUsers.length, 'usuarios)');
+  }
+
+  console.log('🔒 Usuario no autenticado');
+  window.currentUser = null;
+  isAppAuthenticated = false;
+  showLoginModal();
+  return false;
 }
 
 console.log('Renderer cargado');
@@ -2165,6 +2605,341 @@ const {
   initLanguageSwitcher,
   applyTranslations
 } = require('./i18n');
+const {
+  parseOperatingHours,
+  validateOperatingHoursList,
+  isEntryWithinOperatingHours,
+  computeDurationMinutes,
+  parseTimeToMinutes,
+  buildStrategyByNameMap,
+  formatOperatingHoursSummary,
+} = require('./services/scheduleUtils');
+const {
+  parsePositionLegs,
+  validatePositionLegs,
+  sumLegsPnl,
+  sumLegsLotSize,
+  isCompositePositionFlag,
+  createEmptyPositionLeg,
+  applyCompositeToTradeFields,
+  formatPositionLegsSummary,
+  hydrateTradeCompositeFields,
+} = require('./services/positionLegsUtils');
+const { calculateTradeCommission, resolveAccountCommissionPerLot } = require('./services/tradeCommission');
+
+const TRADE_COMPOSITE_FORMS = {
+  create: {
+    enabled: 'tradeCompositeEnabled',
+    section: 'tradeCompositeSection',
+    list: 'tradePositionLegsList',
+    addBtn: 'tradeAddPositionLeg',
+    empty: 'tradeCompositeEmptyHint',
+    summary: 'tradeCompositeSummary',
+    pnl: 'pnl',
+    pnlPresets: 'pnlPresetRow',
+    result: 'result',
+  },
+  edit: {
+    enabled: 'editTradeCompositeEnabled',
+    section: 'editTradeCompositeSection',
+    list: 'editTradePositionLegsList',
+    addBtn: 'editTradeAddPositionLeg',
+    empty: 'editTradeCompositeEmptyHint',
+    summary: 'editTradeCompositeSummary',
+    pnl: 'editPnl',
+    pnlPresets: null,
+    result: 'editResult',
+  },
+};
+
+function getTradeCompositeFormConfig(form = 'create') {
+  return TRADE_COMPOSITE_FORMS[form] || TRADE_COMPOSITE_FORMS.create;
+}
+
+function isTradeCompositeEnabled(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  return Boolean(document.getElementById(cfg.enabled)?.checked);
+}
+
+function syncTradeCompositeSectionVisibility(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  const enabled = isTradeCompositeEnabled(form);
+  const section = document.getElementById(cfg.section);
+  const pnlEl = document.getElementById(cfg.pnl);
+  const presets = cfg.pnlPresets ? document.getElementById(cfg.pnlPresets) : null;
+  if (section) section.hidden = !enabled;
+  if (pnlEl) {
+    pnlEl.readOnly = enabled;
+    pnlEl.classList.toggle('pnl-readonly-composite', enabled);
+    if (enabled) pnlEl.setAttribute('aria-readonly', 'true');
+    else pnlEl.removeAttribute('aria-readonly');
+  }
+  if (presets) presets.style.display = enabled ? 'none' : '';
+  updateTradeCompositeEmptyHint(form);
+  if (enabled) recalculateTradeCompositeTotals(form);
+}
+
+function updateTradeCompositeEmptyHint(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  const hint = document.getElementById(cfg.empty);
+  const section = document.getElementById(cfg.section);
+  if (!hint) return;
+  if (!section || section.hidden) {
+    hint.hidden = true;
+    return;
+  }
+  hint.hidden = collectTradePositionLegsFromDom(form).length > 0;
+}
+
+function renderTradePositionLegsList(form = 'create', legs = []) {
+  const cfg = getTradeCompositeFormConfig(form);
+  const list = document.getElementById(cfg.list);
+  if (!list) return;
+  const ranges = parsePositionLegs(legs);
+  list.innerHTML = '';
+  ranges.forEach((leg, idx) => {
+    const card = document.createElement('div');
+    card.className = 'trade-position-leg-card';
+    card.dataset.legId = leg.id;
+    const lotVal = leg.lot_size != null && Number.isFinite(Number(leg.lot_size)) ? String(leg.lot_size) : '';
+    const pnlVal = Number.isFinite(Number(leg.pnl)) ? String(leg.pnl) : '';
+    card.innerHTML = `
+      <div class="trade-position-leg-card-head">
+        <strong>${leg.label || `Entrada ${idx + 1}`}</strong>
+        <button type="button" class="button button-delete trade-position-leg-remove" data-leg-id="${leg.id}" aria-label="Eliminar entrada">×</button>
+      </div>
+      <div class="trade-position-leg-fields">
+        <label>Lotaje
+          <input type="number" class="input trade-leg-lot" step="0.01" min="0" value="${lotVal}" placeholder="Opcional" />
+        </label>
+        <label>PnL
+          <input type="number" class="input trade-leg-pnl" step="0.01" value="${pnlVal}" placeholder="0.00" />
+        </label>
+        <label class="field-full" style="grid-column:1/-1">Comentario
+          <input type="text" class="input trade-leg-comment" value="${String(leg.comment || '').replace(/"/g, '&quot;')}" placeholder="Opcional" />
+        </label>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+  list.querySelectorAll('.trade-position-leg-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const legId = btn.dataset.legId;
+      const next = collectTradePositionLegsFromDom(form).filter((l) => String(l.id) !== String(legId));
+      renderTradePositionLegsList(form, next);
+      recalculateTradeCompositeTotals(form);
+    });
+  });
+  list.querySelectorAll('.trade-leg-pnl, .trade-leg-lot').forEach((input) => {
+    input.addEventListener('input', () => recalculateTradeCompositeTotals(form));
+    input.addEventListener('change', () => recalculateTradeCompositeTotals(form));
+  });
+  updateTradeCompositeEmptyHint(form);
+}
+
+function collectTradePositionLegsFromDom(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  const list = document.getElementById(cfg.list);
+  if (!list) return [];
+  const out = [];
+  list.querySelectorAll('.trade-position-leg-card').forEach((card, idx) => {
+    const lotRaw = card.querySelector('.trade-leg-lot')?.value;
+    const pnlRaw = card.querySelector('.trade-leg-pnl')?.value;
+    const comment = String(card.querySelector('.trade-leg-comment')?.value || '').trim();
+    const pnl =
+      pnlRaw === '' || pnlRaw === null || pnlRaw === undefined
+        ? null
+        : parseMoneyInput(pnlRaw);
+    if (pnl === null || !Number.isFinite(pnl)) return;
+    let lot_size = null;
+    if (lotRaw !== '' && lotRaw != null) {
+      const lotNum = parseFloat(String(lotRaw).replace(',', '.'));
+      if (Number.isFinite(lotNum)) lot_size = lotNum;
+    }
+    out.push({
+      id: card.dataset.legId || createEmptyPositionLeg(idx + 1).id,
+      label: `Entrada ${idx + 1}`,
+      lot_size,
+      pnl,
+      comment,
+    });
+  });
+  return out;
+}
+
+function applyCompositeLegPnlSign(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  if (!isTradeCompositeEnabled(form)) return;
+  const result = document.getElementById(cfg.result)?.value;
+  const list = document.getElementById(cfg.list);
+  if (!list || !result) return;
+  list.querySelectorAll('.trade-leg-pnl').forEach((input) => {
+    const raw = input.value;
+    if (raw === '' || raw === '-' || raw === '+' || raw.endsWith(',') || raw.endsWith('.')) return;
+    const value = Math.abs(parseMoneyInput(raw));
+    if (result === 'SL') input.value = String(-value);
+    else if (result === 'TP') input.value = String(value);
+  });
+}
+
+function recalculateTradeCompositeTotals(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  if (!isTradeCompositeEnabled(form)) return;
+  const legs = collectTradePositionLegsFromDom(form);
+  const totalPnl = sumLegsPnl(legs);
+  const totalLot = sumLegsLotSize(legs);
+  const fee = getTradeCommissionCalc({ lotSize: totalLot, grossPnl: totalPnl, form });
+
+  const pnlEl = document.getElementById(cfg.pnl);
+  if (pnlEl) pnlEl.value = legs.length ? String(Number(totalPnl.toFixed(2))) : '';
+
+  if (form === 'create') {
+    const lotEl = document.getElementById('lotSize') || document.getElementById('lotaje');
+    if (totalLot > 0 && lotEl) lotEl.value = String(totalLot);
+    const pnlNetInput = document.getElementById('pnlNet');
+    const commissionInput = document.getElementById('commissionValue');
+    if (pnlNetInput) {
+      pnlNetInput.value = `${fee.netPnl.toFixed(2)}€`;
+      pnlNetInput.classList.remove('trade-profit', 'trade-loss', 'trade-be');
+      pnlNetInput.classList.add(
+        fee.netPnl > 0 ? 'trade-profit' : fee.netPnl < 0 ? 'trade-loss' : 'trade-be'
+      );
+    }
+    if (commissionInput) commissionInput.value = `${fee.commission.toFixed(2)}€`;
+    updateTradeRiskDisplay();
+  } else {
+    const lotEl = document.getElementById('editLotSize');
+    if (totalLot > 0 && lotEl) lotEl.value = String(totalLot);
+    const editCommission = document.getElementById('editCommission');
+    const editAccountCapital = document.getElementById('editAccountCapital');
+    const account = getSelectedAccount('editAccount');
+    const accountCapital = account ? Number(account.capital) || 0 : 0;
+    if (editCommission) editCommission.value = fee.commission.toFixed(2);
+    if (editAccountCapital) editAccountCapital.value = accountCapital.toFixed(2);
+  }
+
+  updateCompositeSummaryDom(form, totalPnl, totalLot, fee);
+  updateTradeCompositeEmptyHint(form);
+}
+
+function updateCompositeSummaryDom(form, totalPnl, totalLot, feePrecomputed = null) {
+  const cfg = getTradeCompositeFormConfig(form);
+  const summary = document.getElementById(cfg.summary);
+  if (!summary) return;
+  const fee =
+    feePrecomputed ??
+    getTradeCommissionCalc({
+      lotSize: totalLot,
+      grossPnl: totalPnl,
+      form,
+    });
+  const lotTxt = totalLot > 0 ? String(totalLot) : '—';
+  const grossTxt = `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}€`;
+  const commTxt =
+    !fee.isPro || !fee.hasAccount
+      ? '—'
+      : `${fee.commission.toFixed(2)}€`;
+  const netTxt =
+    fee.isPro && fee.hasAccount
+      ? `${fee.netPnl >= 0 ? '+' : ''}${fee.netPnl.toFixed(2)}€`
+      : grossTxt;
+  summary.textContent = `Lotaje total: ${lotTxt} · PnL bruto: ${grossTxt} · Comisión: ${commTxt} · PnL neto: ${netTxt}`;
+}
+
+function appendCompositeFieldsToTradePayload(trade, form = 'create') {
+  const composite = isTradeCompositeEnabled(form);
+  if (!composite) {
+    return { ...trade, is_composite_position: false, position_legs: [] };
+  }
+  const legs = collectTradePositionLegsFromDom(form);
+  const validation = validatePositionLegs(legs, { requireAtLeastOne: true });
+  if (!validation.valid) return { error: validation.error, trade: null };
+  const totalLot = validation.totalLot > 0 ? validation.totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
+  const fee = getTradeCommissionCalc({
+    lotSize: totalLot,
+    grossPnl: validation.totalPnl,
+    trade,
+    form,
+  });
+  return applyCompositeToTradeFields({
+    ...trade,
+    is_composite_position: true,
+    position_legs: validation.legs,
+    pnl: validation.totalPnl,
+    lotaje: totalLot,
+    lotSize: totalLot,
+    commission: fee.commission,
+    pnl_net: fee.netPnl,
+  });
+}
+
+function resetTradeCompositeForm(form = 'create') {
+  const cfg = getTradeCompositeFormConfig(form);
+  const enabledEl = document.getElementById(cfg.enabled);
+  if (enabledEl) enabledEl.checked = false;
+  renderTradePositionLegsList(form, []);
+  syncTradeCompositeSectionVisibility(form);
+}
+
+function ensureTradeCompositeFormListeners() {
+  ['create', 'edit'].forEach((form) => {
+    const cfg = getTradeCompositeFormConfig(form);
+    const enabledEl = document.getElementById(cfg.enabled);
+    if (enabledEl && enabledEl.dataset.bound !== 'true') {
+      enabledEl.dataset.bound = 'true';
+      enabledEl.addEventListener('change', () => syncTradeCompositeSectionVisibility(form));
+    }
+    const addBtn = document.getElementById(cfg.addBtn);
+    if (addBtn && addBtn.dataset.bound !== 'true') {
+      addBtn.dataset.bound = 'true';
+      addBtn.addEventListener('click', () => {
+        const next = [
+          ...collectTradePositionLegsFromDom(form),
+          createEmptyPositionLeg(collectTradePositionLegsFromDom(form).length + 1),
+        ];
+        renderTradePositionLegsList(form, next);
+        recalculateTradeCompositeTotals(form);
+      });
+    }
+    const resultEl = document.getElementById(cfg.result);
+    if (resultEl && resultEl.dataset.compositeBound !== 'true') {
+      resultEl.dataset.compositeBound = 'true';
+      resultEl.addEventListener('change', () => {
+        if (isTradeCompositeEnabled(form)) applyCompositeLegPnlSign(form);
+        else if (form === 'create') normalizePnlByResult();
+      });
+    }
+    const accountSelectId = form === 'edit' ? 'editAccount' : 'account';
+    const accountEl = document.getElementById(accountSelectId);
+    if (accountEl && accountEl.dataset.compositeBound !== 'true') {
+      accountEl.dataset.compositeBound = 'true';
+      accountEl.addEventListener('change', () => {
+        if (form === 'create') updateCreateDerivedFields();
+        if (isTradeCompositeEnabled(form)) recalculateTradeCompositeTotals(form);
+        else if (form === 'create') recalculateCreateNetPnl();
+        else recalculateEditNetPnl();
+      });
+    }
+  });
+}
+
+function renderTradeCompositeDetailHtml(trade) {
+  if (!isCompositePositionFlag(trade?.is_composite_position ?? trade?.isCompositePosition)) return '';
+  const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
+  if (!legs.length) return '';
+  const rows = legs
+    .map(
+      (leg) =>
+        `<li><strong>${leg.label}</strong> · Lote: ${leg.lot_size != null ? leg.lot_size : '—'} · PnL: ${leg.pnl >= 0 ? '+' : ''}${Number(leg.pnl).toFixed(2)}€${leg.comment ? ` · ${leg.comment}` : ''}</li>`
+    )
+    .join('');
+  return `<div class="trade-composite-detail"><span class="trade-composite-badge">Posición construida</span><ul class="trade-composite-legs-detail">${rows}</ul><p class="trade-composite-summary">${formatPositionLegsSummary(legs)}</p></div>`;
+}
+const {
+  calculateBacktestingScheduleDiscipline,
+  filterBacktestingTradesForMetrics,
+  normalizeTimeField: normalizeBtTimeField,
+} = require('./services/backtestingScheduleStats');
 
 ChartJS.register(...registerables);
 if (typeof window.Chart === 'undefined') {
@@ -2175,19 +2950,120 @@ console.log('Chart disponible:', typeof window.Chart);
 /** Caché en memoria de listas reales (sincronizada desde localStorage scoped por usuario). */
 let realAccountsCache = [];
 let realStrategiesCache = [];
+let migrateRealDataPromise = null;
+let syncRealListsPromise = null;
+let loadStrategiesPromise = null;
+/** @type {Map<string, { name: string, description: string, schedule_enabled: boolean, operating_hours: object[], client_uuid?: string }>} */
+let realStrategiesByName = new Map();
 
-async function getCurrentUserIdSafe() {
-  const {
-    data: { user },
-    error
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    console.error('Usuario no autenticado', error);
-    return null;
+/**
+ * Fuente única para UI: SQLite (IPC) si está disponible; si no, localStorage scoped.
+ * Además, refleja a localStorage scoped para mantener compatibilidad con otras vistas.
+ */
+async function refreshRealAccountsAndStrategies(userIdArg = null) {
+  const userId = userIdArg || (await getCurrentUserIdSafe());
+  console.log('Current user id for real lists:', userId);
+  if (!userId) {
+    realAccountsCache = [];
+    realStrategiesCache = [];
+    realStrategiesByName = new Map();
+    console.log('Refreshing real selects: sin userId');
+    return { accounts: [], strategies: [] };
   }
 
-  return user.id;
+  const backend = getBackendApi();
+  const ak = `real_accounts_${userId}`;
+  const sk = `real_strategies_${userId}`;
+
+  let accounts = [];
+  let strategies = [];
+
+  // 1) Preferimos SQLite via IPC (misma fuente para todas las vistas/páginas)
+  if (backend?.getRealAccountsLocal) {
+    try {
+      const rows = await backend.getRealAccountsLocal();
+      accounts = (Array.isArray(rows) ? rows : [])
+        .map((r) => ({
+          name: String(r?.name || '').trim(),
+          capital: Number(r?.balance ?? 0) || 0,
+          commissionPerLot: Number(r?.commission_per_lot ?? 0) || 0,
+          freeSwap: Boolean(Number(r?.free_swap ?? 0)),
+        }))
+        .filter((a) => a.name);
+      console.log('Real accounts loaded from SQLite:', accounts.length);
+    } catch (err) {
+      console.warn('Real accounts SQLite load failed:', err);
+    }
+  }
+
+  let strategyRows = [];
+  if (backend?.getRealStrategiesLocal) {
+    try {
+      const rows = await backend.getRealStrategiesLocal();
+      strategyRows = Array.isArray(rows) ? rows : [];
+      strategies = strategyRows.map((r) => String(r?.name || '').trim()).filter(Boolean);
+      console.log('Real strategies loaded from SQLite:', strategies.length);
+    } catch (err) {
+      console.warn('Real strategies SQLite load failed:', err);
+    }
+  }
+
+  // 2) Fallback localStorage scoped (si SQLite aún no tiene nada)
+  if (!accounts.length) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ak) || '[]');
+      accounts = (Array.isArray(parsed) ? parsed : []).map((row) => normalizeAccount(row)).filter((a) => a.name);
+    } catch {
+      accounts = [];
+    }
+  }
+
+  if (!strategies.length) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(sk) || '[]');
+      const arr = Array.isArray(parsed) ? parsed : [];
+      strategies = arr
+        .map((s) => (typeof s === 'string' ? s : String(s?.name || '').trim()))
+        .filter(Boolean);
+      strategyRows = arr
+        .map((s) => (typeof s === 'string' ? { name: s } : s))
+        .filter((s) => String(s?.name || '').trim());
+    } catch {
+      strategies = [];
+      strategyRows = [];
+    }
+  }
+
+  realStrategiesByName = buildStrategyByNameMap(strategyRows);
+
+  // 3) Reflejar a localStorage scoped (compatibilidad stats/otras vistas)
+  try {
+    localStorage.setItem(ak, JSON.stringify(accounts));
+    localStorage.setItem(sk, JSON.stringify([...realStrategiesByName.values()]));
+    console.log('Real accounts saved locally:', accounts.length);
+  } catch (err) {
+    console.warn('No se pudo guardar real lists en localStorage:', err);
+  }
+
+  realAccountsCache = accounts;
+  realStrategiesCache = strategies;
+
+  console.log('Refreshing real selects:', { accounts: accounts.length, strategies: strategies.length });
+  return { accounts, strategies };
+}
+
+async function getCurrentUserIdSafe() {
+  if (window.currentUser?.id) return window.currentUser.id;
+  if (isOfflineModeActive()) {
+    return localStorage.getItem('user_id') || null;
+  }
+  try {
+    const user = await getCurrentUserSafe();
+    return user?.id || localStorage.getItem('user_id') || null;
+  } catch (err) {
+    console.warn('getCurrentUserIdSafe falló, usando localStorage user_id:', err);
+    return localStorage.getItem('user_id') || null;
+  }
 }
 
 /**
@@ -2196,12 +3072,7 @@ async function getCurrentUserIdSafe() {
  */
 async function getUserScopedStorageKey(baseKey) {
   const userId = await getCurrentUserIdSafe();
-
-  if (!userId) {
-    console.warn('No hay usuario, no se cargan cuentas/estrategias reales en localStorage');
-    return null;
-  }
-
+  if (!userId) return null;
   return `${baseKey}_${userId}`;
 }
 
@@ -2210,78 +3081,70 @@ async function getUserScopedStorageKey(baseKey) {
  * Solo permitido para el propietario histórico; luego limpia claves globales.
  */
 async function migrateGlobalRealDataToUserScopedStorage() {
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user?.id) return;
+  if (migrateRealDataPromise) return migrateRealDataPromise;
 
-  const allowedEmail = 'javilaox@gmail.com';
-  if (user.email !== allowedEmail) {
-    return;
-  }
+  migrateRealDataPromise = (async () => {
+    const user = await getCurrentUserSafe();
+    if (!user?.id) return;
 
-  const migrationFlag = `real_data_migrated_${user.id}`;
-  if (localStorage.getItem(migrationFlag) === 'true') return;
-
-  const pairs = [
-    ['accounts', 'real_accounts'],
-    ['trading_accounts', 'real_accounts'],
-    ['real_accounts', 'real_accounts'],
-    ['strategies', 'real_strategies'],
-    ['trading_strategies', 'real_strategies'],
-    ['real_strategies', 'real_strategies']
-  ];
-
-  for (const [oldKey, newBaseKey] of pairs) {
-    const oldValue = localStorage.getItem(oldKey);
-    if (!oldValue) continue;
-
-    const newKey = `${newBaseKey}_${user.id}`;
-
-    if (!localStorage.getItem(newKey)) {
-      localStorage.setItem(newKey, oldValue);
+    const allowedEmail = 'javilaox@gmail.com';
+    if (user.email !== allowedEmail) {
+      return;
     }
-  }
 
-  // Limpieza de legado global: evita exposición cruzada entre usuarios.
-  localStorage.removeItem('accounts');
-  localStorage.removeItem('trading_accounts');
-  localStorage.removeItem('real_accounts');
-  localStorage.removeItem('strategies');
-  localStorage.removeItem('trading_strategies');
-  localStorage.removeItem('real_strategies');
+    const migrationFlag = `real_data_migrated_${user.id}`;
+    if (localStorage.getItem(migrationFlag) === 'true') return;
 
-  localStorage.setItem(migrationFlag, 'true');
+    const pairs = [
+      ['accounts', 'real_accounts'],
+      ['trading_accounts', 'real_accounts'],
+      ['real_accounts', 'real_accounts'],
+      ['strategies', 'real_strategies'],
+      ['trading_strategies', 'real_strategies'],
+      ['real_strategies', 'real_strategies']
+    ];
+
+    for (const [oldKey, newBaseKey] of pairs) {
+      const oldValue = localStorage.getItem(oldKey);
+      if (!oldValue) continue;
+
+      const newKey = `${newBaseKey}_${user.id}`;
+
+      if (!localStorage.getItem(newKey)) {
+        localStorage.setItem(newKey, oldValue);
+      }
+    }
+
+    localStorage.removeItem('accounts');
+    localStorage.removeItem('trading_accounts');
+    localStorage.removeItem('real_accounts');
+    localStorage.removeItem('strategies');
+    localStorage.removeItem('trading_strategies');
+    localStorage.removeItem('real_strategies');
+
+    localStorage.setItem(migrationFlag, 'true');
+  })().finally(() => {
+    migrateRealDataPromise = null;
+  });
+
+  return migrateRealDataPromise;
 }
 
 /** Lee localStorage scoped y actualiza realAccountsCache / realStrategiesCache. */
 async function syncRealListsFromStorage() {
-  const userId = await getCurrentUserIdSafe();
-  if (!userId) {
-    realAccountsCache = [];
-    realStrategiesCache = [];
-    return;
+  if (syncRealListsPromise) {
+    console.log('[real-lists] already loading, skip');
+    return syncRealListsPromise;
   }
 
-  await migrateGlobalRealDataToUserScopedStorage();
+  syncRealListsPromise = (async () => {
+    await migrateGlobalRealDataToUserScopedStorage();
+    return refreshRealAccountsAndStrategies();
+  })().finally(() => {
+    syncRealListsPromise = null;
+  });
 
-  const ak = await getUserScopedStorageKey('real_accounts');
-  const sk = await getUserScopedStorageKey('real_strategies');
-  if (ak) console.log('Real accounts storage key:', ak);
-  if (sk) console.log('Real strategies storage key:', sk);
-
-  try {
-    realAccountsCache = ak
-      ? getStoredList(ak)
-          .map((row) => normalizeAccount(row))
-          .filter((account) => account.name)
-      : [];
-    realStrategiesCache = sk ? getStoredList(sk).filter(Boolean) : [];
-  } catch (e) {
-    console.warn('syncRealListsFromStorage', e);
-    realAccountsCache = [];
-    realStrategiesCache = [];
-  }
+  return syncRealListsPromise;
 }
 
 const MODE_KEY = 'mode';
@@ -2317,6 +3180,7 @@ let btManagementCollapsed = true;
 let btResultCollapsed = true;
 /** Unidad de riesgo en el modal Nueva/Editar estrategia (`'eur'` | `'percent'`). */
 let btStrategyRiskUnit = 'eur';
+const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
 
 let backtestingSettings = {
   accounts: [],
@@ -2511,18 +3375,15 @@ async function renderDashboardFilters(trades = cachedTrades) {
 
   await syncRealListsFromStorage();
 
-  const tradeList = Array.isArray(trades) ? trades : [];
-
+  // Solo cuentas/estrategias configuradas por el usuario actual (localStorage scoped).
   const configuredAccounts =
     typeof getAccounts === 'function' ? getAccounts().map((acc) => acc.name).filter(Boolean) : [];
-  const tradeAccounts = [...new Set(tradeList.map((t) => t.account).filter(Boolean))];
-  const accounts = [...new Set([...configuredAccounts, ...tradeAccounts])].sort((a, b) =>
+  const accounts = [...new Set(configuredAccounts)].sort((a, b) =>
     String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
   );
 
   const configuredStrategies = realStrategiesCache.filter(Boolean);
-  const tradeStrategies = [...new Set(tradeList.map((t) => t.strategy).filter(Boolean))];
-  const strategies = [...new Set([...configuredStrategies, ...tradeStrategies])].sort((a, b) =>
+  const strategies = [...new Set(configuredStrategies)].sort((a, b) =>
     String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
   );
 
@@ -2611,11 +3472,25 @@ function renderTradeList(trades) {
     li.appendChild(pnl);
     li.appendChild(result);
 
+    if (isCompositePositionFlag(trade.is_composite_position)) {
+      const badge = document.createElement('span');
+      badge.className = 'trade-composite-badge';
+      badge.textContent = 'Posición';
+      li.appendChild(badge);
+    }
+
     if (Number(trade.commission) > 0) {
       const meta = document.createElement('span');
       meta.className = 'meta-line';
       meta.textContent = `${t('commission_line')}: ${Number(trade.commission).toFixed(2)}€`;
       li.appendChild(meta);
+    }
+
+    if (isCompositePositionFlag(trade.is_composite_position)) {
+      const legsMeta = document.createElement('span');
+      legsMeta.className = 'meta-line';
+      legsMeta.textContent = formatPositionLegsSummary(trade.position_legs);
+      li.appendChild(legsMeta);
     }
 
     li.addEventListener('click', () => openTradeForEdit(trade.id));
@@ -3253,10 +4128,38 @@ function normalizeAccount(account) {
   }
   return {
     name: (account?.name || '').trim(),
-    capital: Number(account?.capital) || 0,
-    commissionPerLot: Number(account?.commissionPerLot) || 0,
-    freeSwap: Boolean(account?.freeSwap)
+    capital: Number(account?.capital ?? account?.balance) || 0,
+    commissionPerLot: resolveAccountCommissionPerLot(account),
+    freeSwap: Boolean(account?.freeSwap ?? account?.free_swap)
   };
+}
+
+function getCommissionPerLotFromAccountUi(account, form = 'create') {
+  let perLot = resolveAccountCommissionPerLot(account);
+  if (perLot > 0) return perLot;
+  if (form !== 'edit') {
+    const el = document.getElementById('commissionPerLot');
+    const fromInput = Number(String(el?.value ?? '').replace(',', '.'));
+    if (Number.isFinite(fromInput) && fromInput >= 0) return fromInput;
+  }
+  return perLot;
+}
+
+function getTradeCommissionCalc({ account = null, lotSize = 0, grossPnl = 0, trade = null, form = 'create' } = {}) {
+  const accountKey = form === 'edit' ? 'editAccount' : 'account';
+  let acc = account ?? getSelectedAccount(accountKey);
+  if (!acc && trade?.account) {
+    acc = getAccounts().find((a) => String(a.name) === String(trade.account)) || null;
+  }
+  const perLot = getCommissionPerLotFromAccountUi(acc, form);
+  return calculateTradeCommission({
+    account: acc,
+    lotSize,
+    grossPnl,
+    trade,
+    mode: getMode(),
+    commissionPerLot: perLot,
+  });
 }
 
 function getAccounts() {
@@ -3282,9 +4185,151 @@ async function saveRealStrategiesList(strategies) {
   const key = await getUserScopedStorageKey('real_strategies');
   if (!key) return;
 
-  const arr = Array.isArray(strategies) ? strategies.filter(Boolean) : [];
-  saveStoredList(key, arr);
-  realStrategiesCache = arr;
+  const names = (Array.isArray(strategies) ? strategies : [])
+    .map((s) => (typeof s === 'string' ? s : String(s?.name || '').trim()))
+    .filter(Boolean);
+  const records = names.map((name) => realStrategiesByName.get(name) || { name, description: '', schedule_enabled: false, operating_hours: [] });
+  saveStoredList(key, records);
+  realStrategiesCache = names;
+  realStrategiesByName = buildStrategyByNameMap(records);
+}
+
+function getStrategyRecordByName(name) {
+  const key = String(name || '').trim();
+  if (!key) return null;
+  return realStrategiesByName.get(key) || null;
+}
+
+function syncStrategyHoursSectionVisibility() {
+  const enabled = Boolean(document.getElementById('strategyScheduleEnabled')?.checked);
+  const section = document.getElementById('strategyHoursSection');
+  if (section) section.hidden = !enabled;
+}
+
+function renderStrategyHoursList(hours) {
+  const list = document.getElementById('strategyHoursList');
+  if (!list) return;
+  const ranges = parseOperatingHours(hours);
+  list.innerHTML = '';
+  ranges.forEach((range, idx) => {
+    const row = document.createElement('div');
+    row.className = 'strategy-hour-row';
+    row.dataset.index = String(idx);
+    row.innerHTML = `
+      <input type="time" class="input strategy-hour-start" value="${range.start || ''}" aria-label="Inicio" />
+      <span class="strategy-hour-sep">—</span>
+      <input type="time" class="input strategy-hour-end" value="${range.end || ''}" aria-label="Fin" />
+      <button type="button" class="button button-delete strategy-hour-remove" data-index="${idx}" aria-label="Eliminar">×</button>
+    `;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('.strategy-hour-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.index);
+      const next = parseOperatingHours(collectStrategyHoursFromDom());
+      next.splice(i, 1);
+      renderStrategyHoursList(next);
+    });
+  });
+}
+
+function collectStrategyHoursFromDom() {
+  const list = document.getElementById('strategyHoursList');
+  if (!list) return [];
+  const out = [];
+  list.querySelectorAll('.strategy-hour-row').forEach((row) => {
+    const start = row.querySelector('.strategy-hour-start')?.value?.trim();
+    const end = row.querySelector('.strategy-hour-end')?.value?.trim();
+    if (start && end) out.push({ start, end });
+  });
+  return out;
+}
+
+function collectStrategyFormPayload() {
+  const name = String(document.getElementById('newStrategy')?.value || '').trim();
+  const description = String(document.getElementById('strategyDescription')?.value || '').trim();
+  const schedule_enabled = Boolean(document.getElementById('strategyScheduleEnabled')?.checked);
+  let operating_hours = [];
+  if (schedule_enabled) {
+    operating_hours = collectStrategyHoursFromDom();
+    const validation = validateOperatingHoursList(operating_hours);
+    if (!validation.valid) return { error: validation.error };
+    operating_hours = validation.hours;
+  }
+  const existing = getStrategyRecordByName(name);
+  return {
+    name,
+    description,
+    schedule_enabled,
+    operating_hours,
+    client_uuid: existing?.client_uuid || null,
+  };
+}
+
+function loadStrategyFormFromRecord(record) {
+  const desc = document.getElementById('strategyDescription');
+  const sched = document.getElementById('strategyScheduleEnabled');
+  if (desc) desc.value = record?.description || '';
+  if (sched) sched.checked = Boolean(record?.schedule_enabled);
+  renderStrategyHoursList(record?.operating_hours || []);
+  syncStrategyHoursSectionVisibility();
+}
+
+function clearStrategyExtraFields() {
+  const desc = document.getElementById('strategyDescription');
+  const sched = document.getElementById('strategyScheduleEnabled');
+  if (desc) desc.value = '';
+  if (sched) sched.checked = false;
+  renderStrategyHoursList([]);
+  syncStrategyHoursSectionVisibility();
+}
+
+async function persistStrategyRecord(payload) {
+  const backend = getBackendApi();
+  if (!backend?.addRealStrategyLocal || !payload?.name) return;
+  await backend.addRealStrategyLocal(payload);
+  await refreshRealAccountsAndStrategies();
+}
+
+function updateTradeScheduleHints({ strategyId = 'strategy', entryId = 'entryTime', exitId = 'exitTime', noticeId = 'tradeScheduleNotice', warnId = 'tradeScheduleWarning', dateId = 'date' } = {}) {
+  const notice = document.getElementById(noticeId);
+  const warn = document.getElementById(warnId);
+  if (!notice || !warn) return;
+
+  const strategyName = String(document.getElementById(strategyId)?.value || '').trim();
+  const entryTime = document.getElementById(entryId)?.value || '';
+  const exitTime = document.getElementById(exitId)?.value || '';
+  const tradeDate = document.getElementById(dateId)?.value || '';
+  const rec = getStrategyRecordByName(strategyName);
+
+  notice.hidden = true;
+  warn.hidden = true;
+  notice.textContent = '';
+  warn.textContent = '';
+
+  if (entryTime && exitTime) {
+    const exitM = parseTimeToMinutes(exitTime);
+    const entryMin = parseTimeToMinutes(entryTime);
+    if (exitM != null && entryMin != null && exitM < entryMin) {
+      notice.hidden = false;
+      notice.textContent = t('trade_duration_midnight_hint');
+    }
+  }
+
+  if (!rec?.schedule_enabled) return;
+
+  const summary = formatOperatingHoursSummary(rec.operating_hours);
+  if (summary) {
+    notice.hidden = false;
+    notice.textContent = t('trade_schedule_notice', 'Horario operativo: {hours}').replace('{hours}', summary);
+  }
+
+  if (!entryTime) return;
+  const within = isEntryWithinOperatingHours(entryTime, rec.operating_hours, tradeDate);
+  if (within === false) {
+    warn.hidden = false;
+    warn.textContent = t('trade_outside_schedule_warning');
+  }
 }
 
 function fillSelect(selectId, values, placeholderKey) {
@@ -3476,16 +4521,27 @@ function openImageViewer(imagePathOrSrc) {
 }
 
 async function loadStrategies() {
-  await syncRealListsFromStorage();
-  const strategies = realStrategiesCache;
-  fillSelect('strategy', strategies, 'placeholder_select_strategy');
-  fillSelect('settingsStrategy', strategies, 'placeholder_select_strategy');
-  fillSelect('editStrategy', strategies, 'placeholder_select_strategy');
-  fillSelect('resetStrategySelect', strategies, 'placeholder_select_strategy');
-  if (currentView === 'dashboard') {
-    await renderDashboardFilters(cachedTrades);
-    renderDashboardWithFilters({ skipCalendar: true });
+  if (loadStrategiesPromise) {
+    console.log('[real-lists] already loading, skip');
+    return loadStrategiesPromise;
   }
+
+  loadStrategiesPromise = (async () => {
+    await syncRealListsFromStorage();
+    const strategies = realStrategiesCache;
+    fillSelect('strategy', strategies, 'placeholder_select_strategy');
+    fillSelect('settingsStrategy', strategies, 'placeholder_select_strategy');
+    fillSelect('editStrategy', strategies, 'placeholder_select_strategy');
+    fillSelect('resetStrategySelect', strategies, 'placeholder_select_strategy');
+    if (currentView === 'dashboard') {
+      await renderDashboardFilters(cachedTrades);
+      renderDashboardWithFilters({ skipCalendar: true });
+    }
+  })().finally(() => {
+    loadStrategiesPromise = null;
+  });
+
+  return loadStrategiesPromise;
 }
 
 function resetStrategyForm() {
@@ -3496,6 +4552,7 @@ function resetStrategyForm() {
     input.removeAttribute('data-editing');
     input.placeholder = t('placeholder_new_strategy');
   }
+  clearStrategyExtraFields();
   const sel = document.getElementById('settingsStrategy');
   if (sel) sel.value = '';
   document.getElementById('settingsStrategyCard')?.classList.remove('is-editing');
@@ -3519,6 +4576,7 @@ function onSettingsStrategyChange() {
     input.setAttribute('data-editing', '1');
     input.placeholder = t('placeholder_editing_strategy');
   }
+  loadStrategyFormFromRecord(getStrategyRecordByName(value));
   document.getElementById('settingsStrategyCard')?.classList.add('is-editing');
   const cancelBtn = document.getElementById('cancelStrategyEditBtn');
   if (cancelBtn) cancelBtn.hidden = false;
@@ -3538,6 +4596,13 @@ async function updateStrategyName(oldName, newName) {
     return false;
   }
 
+  const oldMeta = getStrategyRecordByName(o);
+  const formMeta = collectStrategyFormPayload();
+  if (formMeta.error) {
+    showToast(t('strategy_hours_invalid'), 'error');
+    return false;
+  }
+
   if (o !== n) {
     const backend = getBackendApi();
     if (backend?.updateTradesStrategy) {
@@ -3551,6 +4616,22 @@ async function updateStrategyName(oldName, newName) {
 
   const updated = strategies.map((s) => (s === o ? n : s));
   await saveRealStrategiesList(updated);
+  try {
+    await persistStrategyRecord({
+      name: n,
+      description: formMeta.description ?? oldMeta?.description ?? '',
+      schedule_enabled: formMeta.schedule_enabled ?? oldMeta?.schedule_enabled ?? false,
+      operating_hours: formMeta.operating_hours ?? oldMeta?.operating_hours ?? [],
+    });
+    if (o !== n) {
+      const backend = getBackendApi();
+      if (backend?.deleteRealStrategyLocal) {
+        await backend.deleteRealStrategyLocal(o);
+      }
+    }
+  } catch (err) {
+    console.warn('No se pudo reflejar estrategia en SQLite:', err);
+  }
   return true;
 }
 
@@ -3560,9 +4641,20 @@ async function saveOrUpdateStrategy() {
   const value = input.value.trim();
   if (!value) return;
 
+  const formMeta = collectStrategyFormPayload();
+  if (formMeta.error) {
+    showToast(t('strategy_hours_invalid'), 'error');
+    return;
+  }
+
   if (editingSettingsStrategy) {
     if (value === editingSettingsStrategy) {
-      showToast(t('no_changes_to_save'), 'success');
+      await persistStrategyRecord(formMeta);
+      showToast(t('saved_changes'), 'success');
+      resetStrategyForm();
+      await loadStrategies();
+      const sel = document.getElementById('settingsStrategy');
+      if (sel) sel.value = value;
       return;
     }
     const ok = await updateStrategyName(editingSettingsStrategy, value);
@@ -3573,6 +4665,9 @@ async function saveOrUpdateStrategy() {
     if (sel) sel.value = value;
     await loadTrades();
     showToast(t('saved_changes'), 'success');
+    await syncRealListsFromStorage();
+    await loadAccounts();
+    await loadStrategies();
     return;
   }
 
@@ -3584,8 +4679,15 @@ async function saveOrUpdateStrategy() {
   }
   strategies.push(value);
   await saveRealStrategiesList(strategies);
+  try {
+    await persistStrategyRecord(formMeta);
+  } catch (err) {
+    console.warn('No se pudo persistir estrategia en SQLite:', err);
+  }
+  await syncRealListsFromStorage();
   resetStrategyForm();
   await loadStrategies();
+  await loadAccounts();
   const sel = document.getElementById('settingsStrategy');
   if (sel) sel.value = value;
   showToast(t('saved_changes'), 'success');
@@ -3603,8 +4705,18 @@ function deleteStrategy() {
     await syncRealListsFromStorage();
     const strategies = realStrategiesCache.filter((item) => item !== removed);
     await saveRealStrategiesList(strategies);
+    try {
+      const backend = getBackendApi();
+      if (backend?.deleteRealStrategyLocal) {
+        await backend.deleteRealStrategyLocal(removed);
+      }
+    } catch (err) {
+      console.warn('No se pudo borrar estrategia en SQLite:', err);
+    }
+    await syncRealListsFromStorage();
     if (editingSettingsStrategy === removed) resetStrategyForm();
     await loadStrategies();
+    await loadAccounts();
     showToast(t('saved_changes'));
   })();
 }
@@ -3716,8 +4828,18 @@ async function saveOrUpdateAccount() {
       a.name === editingSettingsAccount ? normalizeAccount(payload) : a
     );
     await saveAccounts(updatedList);
+    try {
+      const backend = getBackendApi();
+      if (backend?.addRealAccountLocal) {
+        await backend.addRealAccountLocal({ name, capital: payload.capital, commissionPerLot: payload.commissionPerLot, freeSwap: payload.freeSwap });
+      }
+    } catch (err) {
+      console.warn('No se pudo persistir cuenta en SQLite:', err);
+    }
+    await syncRealListsFromStorage();
     resetAccountForm();
     await loadAccounts();
+    await loadStrategies();
     const sel = document.getElementById('settingsAccount');
     if (sel) sel.value = name;
     updateCreateDerivedFields();
@@ -3740,8 +4862,18 @@ async function saveOrUpdateAccount() {
     })
   );
   await saveAccounts(accounts);
+  try {
+    const backend = getBackendApi();
+    if (backend?.addRealAccountLocal) {
+      await backend.addRealAccountLocal({ name, capital: payload.capital, commissionPerLot: payload.commissionPerLot, freeSwap: payload.freeSwap });
+    }
+  } catch (err) {
+    console.warn('No se pudo persistir cuenta en SQLite:', err);
+  }
+  await syncRealListsFromStorage();
   resetAccountForm();
   await loadAccounts();
+  await loadStrategies();
   const sel = document.getElementById('settingsAccount');
   if (sel) sel.value = name;
   updateCreateDerivedFields();
@@ -3759,7 +4891,17 @@ function deleteAccount() {
     if (!selected) return;
     if (editingSettingsAccount === selected) resetAccountForm();
     await saveAccounts(getAccounts().filter((account) => account.name !== selected));
+    try {
+      const backend = getBackendApi();
+      if (backend?.deleteRealAccountLocal) {
+        await backend.deleteRealAccountLocal(selected);
+      }
+    } catch (err) {
+      console.warn('No se pudo borrar cuenta en SQLite:', err);
+    }
+    await syncRealListsFromStorage();
     await loadAccounts();
+    await loadStrategies();
     updateCreateDerivedFields();
     showToast(t('saved_changes'));
   })();
@@ -3785,6 +4927,12 @@ async function requireDangerConfirmation(actionLabel) {
 }
 
 async function refreshAfterTradeDeletion() {
+  const backend = getBackendApi();
+  if (backend?.getTradesLocal) {
+    const local = await backend.getTradesLocal();
+    await loadTrades(Array.isArray(local) ? local : []);
+    return;
+  }
   await loadTrades();
 }
 
@@ -3804,8 +4952,14 @@ async function deleteTradesByStrategyAction() {
     showToast(t('error_api_delete_strategy'), 'error');
     return;
   }
+  console.log('[bulkDeleteTrades] strategy requested (UI)', strategy);
   const result = await backend.deleteTradesByStrategy(strategy);
+  if (!result?.success) {
+    showToast(t('error_api_delete_strategy'), 'error');
+    return;
+  }
   const deletedCount = Number(result?.deleted || 0);
+  console.log('[bulkDeleteTrades] strategy done', result);
   showToast(t('deleted_trades_count').replace('{count}', String(deletedCount)).replace('{name}', strategy));
   await refreshAfterTradeDeletion();
 }
@@ -3826,8 +4980,14 @@ async function deleteTradesByAccountAction() {
     showToast(t('error_api_delete_account'), 'error');
     return;
   }
+  console.log('[bulkDeleteTrades] account requested (UI)', account);
   const result = await backend.deleteTradesByAccount(account);
+  if (!result?.success) {
+    showToast(t('error_api_delete_account'), 'error');
+    return;
+  }
   const deletedCount = Number(result?.deleted || 0);
+  console.log('[bulkDeleteTrades] account done', result);
   showToast(t('deleted_trades_count').replace('{count}', String(deletedCount)).replace('{name}', account));
   await refreshAfterTradeDeletion();
 }
@@ -3853,59 +5013,44 @@ function updateWinrateInfoLabel() {
   info.textContent = isExcludeBEEnabled() ? t('exclude_be_toggle') : t('include_be_toggle');
 }
 
-function navigateTo(page) {
-  const target = String(page || '').toLowerCase();
-  const isFileProtocol = window.location.protocol === 'file:';
-  if (!target) return;
-
-  if (isFileProtocol) {
-    window.location.href = `${target}.html`;
-    return;
-  }
-
-  if (target === 'stats') {
-    window.location.href = `${window.location.origin}/stats`;
-    return;
-  }
-
-  if (target === 'dashboard') {
-    window.location.href = `${window.location.origin}/main_window`;
-    return;
-  }
-
-  if (target === 'trade' || target === 'config' || target === 'backtesting' || target === 'backtestingconfig') {
-    const fragment = target === 'backtestingconfig' ? 'backtestingconfig' : target;
-    window.location.href = `${window.location.origin}/main_window#${fragment}`;
-    return;
-  }
-
-  window.location.href = `${window.location.origin}/${target}`;
-}
-
 function getViewFromHash() {
   const hash = (window.location.hash || '').replace('#', '').toLowerCase();
   if (hash === 'backtestingconfig') return 'backtestingConfig';
-  if (hash === 'trade' || hash === 'config' || hash === 'dashboard' || hash === 'backtesting') return hash;
+  if (
+    hash === 'trade' ||
+    hash === 'config' ||
+    hash === 'dashboard' ||
+    hash === 'backtesting' ||
+    hash === 'stats'
+  ) {
+    return hash;
+  }
   return 'dashboard';
 }
 
 function showView(viewId) {
-  normalizeSidebarStructure();
-  const views = ['dashboard', 'trade', 'config', 'backtesting', 'backtestingConfig'];
+  const views = ['dashboard', 'trade', 'config', 'stats', 'backtesting', 'backtestingConfig'];
+  const previousView = currentView;
   currentView = views.includes(viewId) ? viewId : 'dashboard';
+
+  if (previousView === 'stats' && currentView !== 'stats') {
+    unmountStatsView();
+  }
+
+  normalizeSidebarStructure(currentView);
+  setSidebarActiveView(currentView);
   if (currentView !== 'dashboard') closeTradePanel();
 
-  ['dashboard', 'trade', 'config', 'backtesting', 'backtestingConfig'].forEach((v) => {
+  ['dashboard', 'trade', 'config', 'stats', 'backtesting', 'backtestingConfig'].forEach((v) => {
     const el = document.getElementById(`${v}View`);
     if (el) el.style.display = v === currentView ? 'block' : 'none';
   });
 
-  document.getElementById('btnDashboard')?.classList.toggle('active', currentView === 'dashboard');
-  document.getElementById('btnTrade')?.classList.toggle('active', currentView === 'trade');
-  document.getElementById('btnConfig')?.classList.toggle('active', currentView === 'config');
-  document.getElementById('btnBacktesting')?.classList.toggle('active', currentView === 'backtesting');
-  document.getElementById('btnBacktestingConfig')?.classList.toggle('active', currentView === 'backtestingConfig');
-  document.getElementById('btnStats')?.classList.toggle('active', false);
+  if (currentView === 'stats') {
+    console.log('SPA navigate to stats');
+    const statsRoot = document.getElementById('statsView');
+    void mountStatsView(statsRoot).catch(console.error);
+  }
 
   if (currentView === 'dashboard') renderDashboard();
   if (currentView === 'trade') {
@@ -3917,6 +5062,7 @@ function showView(viewId) {
     void refreshBacktestingView().catch(console.error);
   }
   if (currentView === 'backtestingConfig') {
+    ensureBtStrategyModalScheduleListeners();
     void (async () => {
       await loadBacktestingSettings();
       await loadBacktestingMetrics();
@@ -3925,13 +5071,13 @@ function showView(viewId) {
   }
   refreshLucideIcons();
   setTimeout(() => {
-    normalizeSidebarStructure();
-    console.log('Sidebar normalized after view render');
+    normalizeSidebarStructure(currentView);
   }, 0);
 
   console.log('Vista actual:', currentView);
 }
 window.navigateTo = navigateTo;
+window.showView = showView;
 window.removeBacktestingItem = removeBacktestingItem;
 window.testAPI = () => {
   console.log(getBackendApi());
@@ -3971,69 +5117,8 @@ function calculateNetPnL() {
 }
 
 function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  if (!sidebar) return;
-  sidebar.classList.toggle('collapsed');
-  sidebar.classList.toggle('closed');
+  toggleSidebarCollapse();
   refreshLucideIcons();
-}
-
-function getSidebarActionButton(target) {
-  const normalized = String(target || '').toLowerCase();
-  if (!normalized) return null;
-  return (
-    document.getElementById(`btn${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`) ||
-    document.querySelector(`[onclick*="navigateTo('${normalized}')"]`) ||
-    document.querySelector(`[onclick*='navigateTo("${normalized}")']`)
-  );
-}
-
-function getSidebarSectionByLabel(label) {
-  const expected = String(label || '').trim().toUpperCase();
-  if (!expected) return null;
-  const sections = Array.from(document.querySelectorAll('#sidebar .sidebar-section'));
-  return (
-    sections.find((section) => {
-      const title = section.querySelector('.sidebar-title, .sidebar-label, h2, h3');
-      return String(title?.textContent || '').trim().toUpperCase() === expected;
-    }) || null
-  );
-}
-
-function normalizeSidebarStructure() {
-  const sidebar = document.getElementById('sidebar');
-  if (!sidebar) return;
-
-  const btnConfig = getSidebarActionButton('config');
-  const btnStats = getSidebarActionButton('stats');
-  const btnTrade = getSidebarActionButton('trade');
-
-  if (!btnConfig) return;
-  if (!btnConfig.id) btnConfig.id = 'btnConfig';
-  if (btnStats && !btnStats.id) btnStats.id = 'btnStats';
-  if (btnTrade && !btnTrade.id) btnTrade.id = 'btnTrade';
-
-  const wrapperSelector = 'li, .sidebar-item, .nav-item, .menu-item, .item';
-  const configNode = btnConfig.closest(wrapperSelector) || btnConfig;
-  const targetNode = (btnStats || btnTrade)?.closest(wrapperSelector) || btnStats || btnTrade;
-  const realSection = getSidebarSectionByLabel('REAL');
-  const systemSection = getSidebarSectionByLabel('SISTEMA');
-
-  if (targetNode && configNode && configNode !== targetNode) {
-    targetNode.parentElement?.insertBefore(configNode, targetNode.nextSibling);
-  }
-
-  if (realSection && configNode && configNode.parentElement !== realSection) {
-    if (targetNode && targetNode.parentElement === realSection) {
-      realSection.insertBefore(configNode, targetNode.nextSibling);
-    } else {
-      realSection.appendChild(configNode);
-    }
-  }
-
-  if (systemSection && configNode.parentElement === systemSection && realSection) {
-    realSection.appendChild(configNode);
-  }
 }
 
 async function loadStats() {
@@ -4234,12 +5319,18 @@ function parseMoneyInput(value) {
 }
 
 function recalculateCreateNetPnl() {
-  const mode = getMode();
+  if (isTradeCompositeEnabled('create')) {
+    recalculateTradeCompositeTotals('create');
+    const grossPnl = parseMoneyInput(document.getElementById('pnl')?.value);
+    const lotSize = Number((document.getElementById('lotSize') || document.getElementById('lotaje'))?.value) || 0;
+    const fee = getTradeCommissionCalc({ lotSize, grossPnl, form: 'create' });
+    return { grossPnl: fee.grossPnl, commission: fee.commission, netPnl: fee.netPnl };
+  }
   const grossPnl = parseMoneyInput(document.getElementById('pnl')?.value);
   const lotSize = Number(document.getElementById('lotSize')?.value) || 0;
-  const account = getSelectedAccount('account');
-  const commission = mode === 'pro' ? lotSize * (account?.commissionPerLot || 0) : 0;
-  const netPnl = grossPnl - commission;
+  const fee = getTradeCommissionCalc({ lotSize, grossPnl, form: 'create' });
+  const netPnl = fee.netPnl;
+  const commission = fee.commission;
 
   const pnlNetInput = document.getElementById('pnlNet');
   const commissionInput = document.getElementById('commissionValue');
@@ -4260,6 +5351,11 @@ function applyPnlSignForResult(rawValue) {
 }
 
 function normalizePnlByResult() {
+  if (isTradeCompositeEnabled('create')) {
+    applyCompositeLegPnlSign('create');
+    recalculateTradeCompositeTotals('create');
+    return;
+  }
   const pnlEl = document.getElementById('pnl');
   const resultEl = document.getElementById('result');
 
@@ -5085,17 +6181,25 @@ function refreshPnlPresetButtons() {
 }
 
 function recalculateEditNetPnl() {
-  const mode = getMode();
+  if (isTradeCompositeEnabled('edit')) {
+    recalculateTradeCompositeTotals('edit');
+    const grossPnl = parseMoneyInput(document.getElementById('editPnl')?.value);
+    const lotSize = Number(document.getElementById('editLotSize')?.value) || 0;
+    const fee = getTradeCommissionCalc({ lotSize, grossPnl, form: 'edit' });
+    const account = getSelectedAccount('editAccount');
+    const accountCapital = account ? Number(account.capital) || 0 : 0;
+    return { commission: fee.commission, netPnl: fee.netPnl, accountCapital };
+  }
   const grossPnl = Number(document.getElementById('editPnl')?.value) || 0;
   const lotSize = Number(document.getElementById('editLotSize')?.value) || 0;
+  const fee = getTradeCommissionCalc({ lotSize, grossPnl, form: 'edit' });
   const account = getSelectedAccount('editAccount');
-  const commission = mode === 'pro' ? lotSize * (account?.commissionPerLot || 0) : 0;
   const accountCapital = account ? Number(account.capital) || 0 : 0;
   const editCommission = document.getElementById('editCommission');
   const editAccountCapital = document.getElementById('editAccountCapital');
-  if (editCommission) editCommission.value = commission.toFixed(2);
+  if (editCommission) editCommission.value = fee.commission.toFixed(2);
   if (editAccountCapital) editAccountCapital.value = accountCapital.toFixed(2);
-  return { commission, netPnl: grossPnl - commission, accountCapital };
+  return { commission: fee.commission, netPnl: fee.netPnl, accountCapital };
 }
 
 function updateDashboardMetrics(trades, options = {}) {
@@ -5629,14 +6733,13 @@ function renderWeek(daysArray, year, month, weekendMode = false, sourceTrades = 
     });
 
     if (dayTrades.length > 0) {
+      const abs = Math.abs(pnl);
+      const tier = abs < 50 ? 1 : abs < 200 ? 2 : 3;
+
       if (pnl > 0) {
-        cell.classList.add('day-profit');
-        const intensity = Math.min(Math.abs(pnl) / 500, 1);
-        cell.style.background = `rgba(34,197,94,${Math.max(intensity, 0.15)})`;
+        cell.classList.add('day-profit', `day-profit-${tier}`);
       } else if (pnl < 0) {
-        cell.classList.add('day-loss');
-        const intensity = Math.min(Math.abs(pnl) / 500, 1);
-        cell.style.background = `rgba(239,68,68,${Math.max(intensity, 0.15)})`;
+        cell.classList.add('day-loss', `day-loss-${tier}`);
       } else {
         cell.classList.add('day-neutral');
       }
@@ -5708,6 +6811,12 @@ async function resetNewTradeForm(presetDate = null) {
 
   if (lotajeEl) lotajeEl.value = '';
 
+  const entryEl = document.getElementById('entryTime');
+  const exitEl = document.getElementById('exitTime');
+  if (entryEl) entryEl.value = '';
+  if (exitEl) exitEl.value = '';
+  updateTradeScheduleHints();
+
   if (beforeEl) beforeEl.value = '';
   if (afterEl) afterEl.value = '';
 
@@ -5717,6 +6826,7 @@ async function resetNewTradeForm(presetDate = null) {
   await updateImagePreview('beforeImagePreview', 'openBeforeImageBtnCreate', '');
   await updateImagePreview('afterImagePreview', 'openAfterImageBtnCreate', '');
 
+  resetTradeCompositeForm('create');
   recalculateCreateNetPnl();
   refreshPnlPresetButtons();
 
@@ -5895,11 +7005,18 @@ function renderTradePanel(trades) {
     console.log('🧾 Render trade row:', trade.id, trade.asset);
     const pnl = getTradeRealPnl(trade);
     const valueClass = pnl >= 0 ? 'green' : 'red';
+    const compositeHtml = isCompositePositionFlag(trade.is_composite_position)
+      ? `<span class="trade-composite-badge">Posición</span>`
+      : '';
+    const legsSummary = isCompositePositionFlag(trade.is_composite_position)
+      ? `<span class="trade-meta">${formatPositionLegsSummary(trade.position_legs)}</span>`
+      : '';
     return `
       <div class="trade-row" data-id="${trade.id}">
         <div class="trade-info">
-          <strong>${trade.asset || '-'}</strong>
+          <strong>${trade.asset || '-'} ${compositeHtml}</strong>
           <span class="trade-meta">${trade.strategy || '-'} · ${trade.result || 'BE'}</span>
+          ${legsSummary}
           <span class="trade-value ${valueClass}">${pnl > 0 ? '+' : ''}${pnl.toFixed(2)}€</span>
         </div>
         <button class="delete-btn icon-btn danger" type="button" data-id="${trade.id}" aria-label="${t('delete_trade')}">
@@ -5962,27 +7079,32 @@ function showUndoToast() {
 async function restoreLastDeletedTrade() {
   if (!lastDeletedTrade) return;
   const backend = getBackendApi();
-  if (!backend?.addTrade) {
+  if (!backend?.restoreDeletedTrade) {
     showToast(t('error_api_undo'), 'error');
     return;
   }
   if (!(await ensureUserReady())) return;
-  const userId = localStorage.getItem('user_id');
-  let result = await backend.addTrade({ ...lastDeletedTrade, user_id: userId });
-  if (result?.error === 'NO_USER_ID') {
-    console.log('🔁 Retrying after syncing user_id...');
-    await ensureUserReady();
-    const userIdRetry = localStorage.getItem('user_id');
-    result = await backend.addTrade({ ...lastDeletedTrade, user_id: userIdRetry });
-  }
+
+  const localId = Number(lastDeletedTrade.id);
+  const result = await backend.restoreDeletedTrade({
+    id: Number.isFinite(localId) ? localId : null,
+    trade: lastDeletedTrade,
+  });
+
   if (!result?.success) {
     showToast(t('error_api_undo'), 'error');
     return;
   }
+
   if (result.id) rememberOwnInsertedTradeId(result.id);
   removeUndoToast();
   lastDeletedTrade = null;
-  await loadTrades();
+
+  const fresh =
+    typeof backend.getTradesLocal === 'function'
+      ? await backend.getTradesLocal()
+      : await backend.getTrades();
+  await loadTrades(Array.isArray(fresh) ? fresh : []);
   if (activeTradePanelDate) openTradePanel(activeTradePanelDate);
 }
 
@@ -6002,24 +7124,35 @@ async function deleteTradeFromPanel(tradeId, rowElement) {
   if (deletingTradeInProgress) return;
   if (!(await ensureUserReady())) return;
   const api = window.api || window.electronAPI;
-  if (!api?.deleteTrade || !api?.getTrades) {
+  if (!api?.deleteTrade) {
     showToast(t('error_api_delete_trade'), 'error');
     return;
   }
 
-  const id = Number(tradeId);
-  const trade = (Array.isArray(cachedTrades) ? cachedTrades : []).find((item) => Number(item.id) === id);
+  console.log('[deleteTrade] requested (UI)', tradeId);
+
+  const idNum = Number(tradeId);
+  const trade = (Array.isArray(cachedTrades) ? cachedTrades : []).find(
+    (item) =>
+      (Number.isFinite(idNum) && Number(item.id) === idNum) ||
+      (item.client_uuid && String(item.client_uuid) === String(tradeId))
+  );
   if (!trade) return;
-  lastDeletedTrade = { ...trade };
+  lastDeletedTrade = { ...trade, sync_status: trade.sync_status || 'synced' };
+
+  const cacheKey = Number(trade.id);
+  deletingTradeInProgress = true;
 
   if (rowElement) rowElement.remove();
-  cachedTrades = cachedTrades.filter((item) => Number(item.id) !== id);
+  cachedTrades = (Array.isArray(cachedTrades) ? cachedTrades : []).filter(
+    (item) => Number(item.id) !== cacheKey
+  );
   window.cachedTrades = cachedTrades;
   renderTradePanel(getTradesByDate(activeTradePanelDate));
 
-  deletingTradeInProgress = true;
   try {
-    const result = await api.deleteTrade(id);
+    const deleteKey = trade.id;
+    const result = await api.deleteTrade(deleteKey);
 
     if (!result?.success && result?.error !== 'NOT_FOUND') {
       showToast('Error al eliminar trade', 'error');
@@ -6028,20 +7161,19 @@ async function deleteTradeFromPanel(tradeId, rowElement) {
       return;
     }
 
-    const rawList = await (window.api || window.electronAPI).getTrades();
+    const rawList =
+      typeof api.getTradesLocal === 'function'
+        ? await api.getTradesLocal()
+        : await api.getTrades();
     const updatedTrades = Array.isArray(rawList) ? rawList : [];
 
-    if (typeof cachedTrades !== 'undefined') {
-      cachedTrades = updatedTrades;
-    }
+    cachedTrades = updatedTrades;
     window.cachedTrades = updatedTrades;
-
     if (typeof trades !== 'undefined') {
       trades = updatedTrades;
     }
 
-    console.log('🗑 Eliminado ID:', tradeId);
-    console.log('📦 Trades actualizados:', updatedTrades);
+    console.log('[deleteTrade] UI refresh, visible trades:', updatedTrades.length);
 
     if (typeof renderCalendar === 'function') {
       await renderCalendar(currentYear, currentMonth, true, getDashboardFilteredTrades());
@@ -6057,6 +7189,8 @@ async function deleteTradeFromPanel(tradeId, rowElement) {
 
     if (typeof loadTrades === 'function') {
       await loadTrades(updatedTrades, { skipCalendar: true });
+    } else {
+      await renderCalendar(currentYear, currentMonth, true, getDashboardFilteredTrades());
     }
 
     showToast('Trade eliminado', 'success');
@@ -6197,9 +7331,40 @@ async function renderCalendar(year, month, useCurrentCache = false, displayTrade
     updateKpiCards(latestTrades, month, year);
     if (activeKPIType) renderKpiExpandedChart(activeKPIType, month, year, latestTrades);
 
+    logCalendarLayoutDiagnostics(calendar);
+
   } catch (error) {
     console.error('ERROR EN CALENDARIO:', error);
   }
+}
+
+function logCalendarLayoutDiagnostics(calendarEl) {
+  if (!calendarEl || typeof window === 'undefined') return;
+  const grid = calendarEl;
+  const wrapper =
+    grid.closest('.calendar-wrapper') ||
+    grid.closest('.calendar-card') ||
+    grid.closest('.calendar-container') ||
+    grid.parentElement;
+  const main = document.querySelector('.main-content');
+  const cs = window.getComputedStyle(grid);
+  const row = grid.querySelector('.calendar-row');
+  const rowCs = row ? window.getComputedStyle(row) : null;
+  const payload = {
+    calendarWidth: grid.offsetWidth,
+    calendarClientWidth: grid.clientWidth,
+    gridDisplay: cs.display,
+    gridTemplateColumns: cs.gridTemplateColumns,
+    gridMinWidth: cs.minWidth,
+    rowTemplateColumns: rowCs?.gridTemplateColumns ?? null,
+    rowCount: grid.querySelectorAll('.calendar-row').length,
+    parentWidths: {
+      wrapper: wrapper?.offsetWidth ?? null,
+      mainContent: main?.offsetWidth ?? null,
+      statsView: document.getElementById('statsView')?.offsetWidth ?? null,
+    },
+  };
+  console.log('[calendar-layout]', payload);
 }
 
 function renderCalendarFromState(useCurrentCache = false, displayTrades = null) {
@@ -7476,6 +8641,8 @@ function openBacktestingTradeEditor(trade) {
   if (hid) hid.value = String(editingBacktestingTradeId);
 
   setValueIfExists('btDate', (trade.date || '').slice(0, 10));
+  setValueIfExists('btEntryTime', trade.entry_time || trade.entryTime || '');
+  setValueIfExists('btExitTime', trade.exit_time || trade.exitTime || '');
 
   ensureSelectHasValue(document.getElementById('btStrategy'), trade.strategy || '');
   ensureSelectHasValue(document.getElementById('btSession'), trade.session || '');
@@ -7504,6 +8671,7 @@ function openBacktestingTradeEditor(trade) {
   setValueIfExists('btNotes', trade.notes || '');
 
   renderBacktestingCustomMetricFields(cm);
+  updateBacktestingTradeScheduleHints();
 
   backtestingAssetComboboxState?.rebuildFromSettings?.();
   const av = trade.asset || '';
@@ -7703,9 +8871,240 @@ function normalizeBacktestingStrategy(item, defaultRisk = 100, defaultRr = 2) {
     risk: riskValueSafe,
     rr,
     notes: String(o.notes || ''),
+    description: String(o.description || o.notes || '').trim(),
+    schedule_enabled: Boolean(o.schedule_enabled),
+    operating_hours: parseOperatingHours(o.operating_hours ?? []),
     active: o.active !== false,
     risk_per_trade: riskPerTradeStored
   };
+}
+
+function syncBtStrategyHoursSectionVisibility() {
+  const enabled = Boolean(document.getElementById('btStrategyScheduleEnabled')?.checked);
+  const section = document.getElementById('btStrategyHoursSection');
+  if (section) section.hidden = !enabled;
+  updateBtStrategyHoursEmptyHint();
+}
+
+function updateBtStrategyHoursEmptyHint() {
+  const hint = document.getElementById('btStrategyHoursEmptyHint');
+  const section = document.getElementById('btStrategyHoursSection');
+  if (!hint) return;
+  if (!section || section.hidden) {
+    hint.hidden = true;
+    return;
+  }
+  hint.hidden = collectBtStrategyHoursFromDom().length > 0;
+}
+
+function ensureBtStrategyModalScheduleListeners() {
+  const sched = document.getElementById('btStrategyScheduleEnabled');
+  if (sched && sched.dataset.bound !== 'true') {
+    sched.dataset.bound = 'true';
+    sched.addEventListener('change', syncBtStrategyHoursSectionVisibility);
+  }
+  const addBtn = document.getElementById('btAddStrategyHour');
+  if (addBtn && addBtn.dataset.bound !== 'true') {
+    addBtn.dataset.bound = 'true';
+    addBtn.addEventListener('click', () => {
+      const next = [...collectBtStrategyHoursFromDom(), { start: '08:00', end: '10:00' }];
+      renderBtStrategyHoursList(next);
+      updateBtStrategyHoursEmptyHint();
+    });
+  }
+}
+
+function renderBtStrategyHoursList(hours) {
+  const list = document.getElementById('btStrategyHoursList');
+  if (!list) return;
+  const ranges = parseOperatingHours(hours);
+  list.innerHTML = '';
+  ranges.forEach((range, idx) => {
+    const row = document.createElement('div');
+    row.className = 'strategy-hour-row';
+    row.dataset.index = String(idx);
+    row.innerHTML = `
+      <input type="time" class="input strategy-hour-start" value="${range.start || ''}" aria-label="Inicio" />
+      <span class="strategy-hour-sep">—</span>
+      <input type="time" class="input strategy-hour-end" value="${range.end || ''}" aria-label="Fin" />
+      <button type="button" class="button button-delete strategy-hour-remove" data-index="${idx}" aria-label="Eliminar">×</button>
+    `;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('.strategy-hour-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.index);
+      const next = parseOperatingHours(collectBtStrategyHoursFromDom());
+      next.splice(i, 1);
+      renderBtStrategyHoursList(next);
+      updateBtStrategyHoursEmptyHint();
+    });
+  });
+  updateBtStrategyHoursEmptyHint();
+}
+
+function collectBtStrategyHoursFromDom() {
+  const list = document.getElementById('btStrategyHoursList');
+  if (!list) return [];
+  const out = [];
+  list.querySelectorAll('.strategy-hour-row').forEach((row) => {
+    const start = row.querySelector('.strategy-hour-start')?.value?.trim();
+    const end = row.querySelector('.strategy-hour-end')?.value?.trim();
+    if (start && end) out.push({ start, end });
+  });
+  return out;
+}
+
+function getBacktestingStrategyRecordByName(name) {
+  return getBacktestingStrategies().find((s) => String(s.name || '').trim() === String(name || '').trim()) || null;
+}
+
+function updateBacktestingTradeScheduleHints() {
+  const notice = document.getElementById('btTradeScheduleNotice');
+  const warn = document.getElementById('btTradeScheduleWarning');
+  if (!notice || !warn) return;
+
+  const strategyName = String(document.getElementById('btStrategy')?.value || '').trim();
+  const entryTime = document.getElementById('btEntryTime')?.value || '';
+  const exitTime = document.getElementById('btExitTime')?.value || '';
+  const tradeDate = document.getElementById('btDate')?.value || '';
+  const rec = getBacktestingStrategyRecordByName(strategyName);
+
+  notice.hidden = true;
+  warn.hidden = true;
+  notice.textContent = '';
+  warn.textContent = '';
+
+  if (entryTime && exitTime) {
+    const exitM = parseTimeToMinutes(exitTime);
+    const entryMin = parseTimeToMinutes(entryTime);
+    if (exitM != null && entryMin != null && exitM < entryMin) {
+      notice.hidden = false;
+      notice.textContent = t('trade_duration_midnight_hint');
+    }
+  }
+
+  if (!rec?.schedule_enabled) return;
+
+  const summary = formatOperatingHoursSummary(rec.operating_hours);
+  if (summary) {
+    notice.hidden = false;
+    notice.textContent = t('trade_schedule_notice', 'Horario operativo: {hours}').replace('{hours}', summary);
+  }
+
+  if (!entryTime) return;
+  const within = isEntryWithinOperatingHours(entryTime, rec.operating_hours, tradeDate);
+  if (within === false) {
+    warn.hidden = false;
+    warn.textContent = t('trade_outside_schedule_warning');
+  }
+}
+
+function isBtExcludeOutOfScheduleEnabled() {
+  const el = document.getElementById('btExcludeOutOfSchedule');
+  if (!el) return false;
+  return el.checked === true;
+}
+
+async function getBtExcludeScheduleStorageKey() {
+  const userId = await getCurrentUserIdSafe();
+  return userId ? `${BT_EXCLUDE_SCHEDULE_KEY_PREFIX}_${userId}` : null;
+}
+
+async function loadBtExcludeScheduleState() {
+  const el = document.getElementById('btExcludeOutOfSchedule');
+  if (!el) return;
+  const key = await getBtExcludeScheduleStorageKey();
+  if (key) {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) el.checked = saved === 'true';
+  }
+}
+
+async function saveBtExcludeScheduleState() {
+  const key = await getBtExcludeScheduleStorageKey();
+  if (!key) return;
+  const el = document.getElementById('btExcludeOutOfSchedule');
+  localStorage.setItem(key, el?.checked ? 'true' : 'false');
+}
+
+function updateBtScheduleFilterUi({ active = false, excludedCount = 0, useSessionReference = false } = {}) {
+  const notice = document.getElementById('btScheduleFilterNotice');
+  if (!notice) return;
+  notice.classList.toggle('show', active);
+  if (!active) {
+    notice.textContent = '';
+    return;
+  }
+  if (excludedCount > 0) {
+    const key = useSessionReference
+      ? 'stats_schedule_filter_active_selected'
+      : 'stats_schedule_filter_active';
+    const fallback = useSessionReference
+      ? 'Vista filtrada: {count} trades fuera de horario o sin hora ocultos.'
+      : 'Vista filtrada: {count} trades fuera de horario ocultos. Los trades sin horario evaluable se mantienen.';
+    notice.textContent = t(key, fallback).replace('{count}', String(excludedCount));
+  } else {
+    notice.textContent = t('stats_schedule_filter_active_none', 'No hay trades fuera de horario para ocultar.');
+  }
+}
+
+function getBacktestingTradesForMetrics() {
+  const base = getFilteredBacktestingTrades();
+  const strategies = getBacktestingStrategies();
+
+  if (!isBtExcludeOutOfScheduleEnabled()) {
+    updateBtScheduleFilterUi({ active: false, excludedCount: 0 });
+    return base;
+  }
+
+  const result = filterBacktestingTradesForMetrics(base, strategies, {
+    excludeOutside: true,
+    selectedSessionIds: selectedBacktestingSessionIds,
+    sessions: cachedBacktestingSessions || [],
+  });
+
+  updateBtScheduleFilterUi({
+    active: true,
+    excludedCount: result.excludedTrades.length,
+    useSessionReference: Boolean(result.useSessionReference),
+  });
+
+  return result.includedTrades;
+}
+
+function renderBacktestingScheduleDiscipline(trades) {
+  const sched = calculateBacktestingScheduleDiscipline(trades, {
+    strategies: getBacktestingStrategies(),
+    selectedSessionIds: selectedBacktestingSessionIds,
+    sessions: cachedBacktestingSessions || [],
+  });
+
+  const metricsEl = document.getElementById('btScheduleStatsMetrics');
+  const emptyEl = document.getElementById('btScheduleStatsEmpty');
+  if (metricsEl) {
+    metricsEl.hidden = false;
+    metricsEl.style.display = 'grid';
+  }
+  if (emptyEl) emptyEl.hidden = sched.hasEvaluableDiscipline;
+
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}€`;
+
+  set('btStatTradesInSchedule', String(sched.tradesIn));
+  set('btStatTradesOutSchedule', String(sched.tradesOut));
+  set('btStatTradesMissingTime', String(sched.tradesMissingTime));
+  set('btStatTradesNoSchedule', String(sched.tradesNoSchedule));
+  set('btStatScheduleCompliance', sched.compliancePct == null ? '—' : `${sched.compliancePct.toFixed(1)}%`);
+  set('btStatPnlInSchedule', money(sched.pnlIn));
+  set('btStatPnlOutSchedule', money(sched.pnlOut));
+  set('btStatPnlMissingTime', money(sched.pnlMissingTime));
+  set('btStatAvgDurationInSchedule', formatMinutesAsHm(sched.avgDurationIn));
+  set('btStatAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
+  set('btStatAvgDurationTotal', formatMinutesAsHm(sched.avgDurationTotal));
 }
 
 function getBacktestingStrategyRiskEuroForForm(strategy) {
@@ -7826,6 +9225,7 @@ function openBacktestingStrategyModal(strategyId = null) {
   const overlay = document.getElementById('btStrategyModalOverlay');
   if (!overlay) return;
 
+  ensureBtStrategyModalScheduleListeners();
   ensureBtStrategyRiskUnitToggleBound();
 
   const title = document.getElementById('btStrategyModalTitle');
@@ -7869,6 +9269,14 @@ function openBacktestingStrategyModal(strategyId = null) {
   if (rr) rr.value = strategy != null ? String(strategy.rr ?? 2) : '2';
   if (nt) nt.value = strategy?.notes || '';
   if (ac) ac.checked = strategy?.active !== false;
+
+  const desc = document.getElementById('btStrategyDescription');
+  const schedEn = document.getElementById('btStrategyScheduleEnabled');
+  if (desc) desc.value = strategy?.description || '';
+  if (schedEn) schedEn.checked = Boolean(strategy?.schedule_enabled);
+  renderBtStrategyHoursList(strategy?.operating_hours || []);
+  syncBtStrategyHoursSectionVisibility();
+  updateBtStrategyHoursEmptyHint();
 
   syncBtStrategyRiskUnitToggleUi();
 
@@ -7915,6 +9323,23 @@ async function saveBacktestingStrategyFromModal() {
     return;
   }
 
+  const description = String(document.getElementById('btStrategyDescription')?.value || '').trim();
+  const schedule_enabled = Boolean(document.getElementById('btStrategyScheduleEnabled')?.checked);
+  let operating_hours = [];
+  if (schedule_enabled) {
+    operating_hours = collectBtStrategyHoursFromDom();
+    if (operating_hours.length) {
+      const validation = validateOperatingHoursList(operating_hours);
+      if (!validation.valid) {
+        showToast('Revisa los horarios operativos', 'error');
+        return;
+      }
+      operating_hours = validation.hours;
+    } else {
+      showToast('Horarios activados sin rangos. Puedes añadirlos después.', 'info');
+    }
+  }
+
   const payload = {
     id: id || crypto.randomUUID(),
     name,
@@ -7922,6 +9347,9 @@ async function saveBacktestingStrategyFromModal() {
     risk_unit: riskUnit,
     rr,
     notes,
+    description: description || notes,
+    schedule_enabled,
+    operating_hours,
     active,
     risk_per_trade: riskUnit === 'eur' ? riskValue : null
   };
@@ -8339,6 +9767,30 @@ function initBacktestingIncludeBeSwitch() {
   });
 }
 
+function initBtExcludeOutOfScheduleSwitch() {
+  const el = document.getElementById('btExcludeOutOfSchedule');
+  if (!el) return;
+  if (el.dataset.bound !== 'true') {
+    el.dataset.bound = 'true';
+    el.addEventListener('change', () => {
+      void saveBtExcludeScheduleState();
+      rerenderBacktestingLocal();
+    });
+  }
+}
+
+function ensureBacktestingScheduleFormListeners() {
+  ensureBtStrategyModalScheduleListeners();
+  if (document.documentElement.dataset.btScheduleFormBound === 'true') return;
+  document.documentElement.dataset.btScheduleFormBound = 'true';
+
+  ['btEntryTime', 'btExitTime', 'btDate'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', updateBacktestingTradeScheduleHints);
+    document.getElementById(id)?.addEventListener('change', updateBacktestingTradeScheduleHints);
+  });
+  document.getElementById('btStrategy')?.addEventListener('change', updateBacktestingTradeScheduleHints);
+}
+
 function getBacktestingEstimatedPnlMoney() {
   const input = getBacktestingPnlInputElement();
   const mode = document.getElementById('btPnlMode')?.value || 'money';
@@ -8573,6 +10025,8 @@ function clearBacktestForm() {
   const today = getTodayDateString();
   const ids = [
     ['btDate', today],
+    ['btEntryTime', ''],
+    ['btExitTime', ''],
     ['btEntry', ''],
     ['btSl', ''],
     ['btTp', ''],
@@ -8624,6 +10078,7 @@ function clearBacktestForm() {
     msg.className = 'form-hint';
   }
   refreshBacktestingFormUiWidgets();
+  updateBacktestingTradeScheduleHints();
 }
 
 async function loadBacktestingSessions() {
@@ -8681,16 +10136,21 @@ async function refreshBacktestingView(opts = {}) {
   rerenderBacktestingLocal();
   refreshBacktestingFormUiWidgets();
   initBacktestingCommissionConfig();
+  void loadBtExcludeScheduleState();
+  ensureBacktestingScheduleFormListeners();
 }
 
 function rerenderBacktestingLocal() {
-  const filtered = getFilteredBacktestingTrades();
-  renderBacktestingMetrics(filtered);
-  renderBacktestingPairTable(filtered);
-  renderBacktestingMetricAnalysis(filtered);
+  const filteredForDiscipline = getFilteredBacktestingTrades();
+  const filteredForMetrics = getBacktestingTradesForMetrics();
+  renderBacktestingMetrics(filteredForMetrics);
+  renderBacktestingScheduleDiscipline(filteredForDiscipline);
+  renderBacktestingPairTable(filteredForMetrics);
+  renderBacktestingMetricAnalysis(filteredForMetrics);
   renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
   renderBacktestingDayTrades();
   initBacktestingIncludeBeSwitch();
+  initBtExcludeOutOfScheduleSwitch();
 }
 
 function openBacktestingCommissionModal() {
@@ -9125,16 +10585,13 @@ async function openTradeForEdit(tradeId) {
   const source = Array.isArray(window.cachedTrades) ? window.cachedTrades : cachedTrades;
   trade = source.find((item) => Number(item.id) === id) || null;
 
-  // 2. Fallback: backend/local solo si no está en cache
-  if (!trade) {
-    const backend = getBackendApi();
-
-    if (backend?.getTrade) {
-      try {
-        trade = await backend.getTrade(id);
-      } catch (err) {
-        console.warn('⚠️ getTrade falló:', err);
-      }
+  const backend = getBackendApi();
+  if (backend?.getTrade) {
+    try {
+      const fresh = await backend.getTrade(id);
+      if (fresh) trade = trade ? { ...trade, ...fresh } : fresh;
+    } catch (err) {
+      console.warn('⚠️ getTrade falló:', err);
     }
   }
 
@@ -9144,6 +10601,7 @@ async function openTradeForEdit(tradeId) {
     return;
   }
 
+  trade = hydrateTradeCompositeFields(trade);
   console.log('✏️ Abriendo trade para editar:', trade);
 
   const setValue = (elementId, value) => {
@@ -9159,6 +10617,8 @@ async function openTradeForEdit(tradeId) {
 
   setValue('editTradeId', String(trade.id));
   setValue('editDate', toInputDate(trade.date || ''));
+  setValue('editEntryTime', trade.entry_time || '');
+  setValue('editExitTime', trade.exit_time || '');
   setValue('editAsset', trade.asset || '');
   setValue('editStrategy', trade.strategy || '');
   setValue('editResult', trade.result || '');
@@ -9177,9 +10637,34 @@ async function openTradeForEdit(tradeId) {
   await updateImagePreview('editBeforeImagePreview', 'openBeforeImageBtn', editBeforeImagePath);
   await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
 
+  const composite = Boolean(trade.is_composite_position);
+  const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
+  const enabledEl = document.getElementById('editTradeCompositeEnabled');
+  if (enabledEl) enabledEl.checked = composite;
+  renderTradePositionLegsList('edit', legs);
+  syncTradeCompositeSectionVisibility('edit');
+  if (composite) {
+    recalculateTradeCompositeTotals('edit');
+  }
+
+  const detailHost = document.getElementById('editTradeCompositeDetail');
+  if (detailHost) {
+    detailHost.innerHTML = composite ? renderTradeCompositeDetailHtml(trade) : '';
+    detailHost.hidden = !composite;
+  }
+
   if (typeof recalculateEditNetPnl === 'function') {
     recalculateEditNetPnl();
   }
+
+  updateTradeScheduleHints({
+    strategyId: 'editStrategy',
+    entryId: 'editEntryTime',
+    exitId: 'editExitTime',
+    noticeId: 'editTradeScheduleNotice',
+    warnId: 'editTradeScheduleWarning',
+    dateId: 'editDate',
+  });
 
   ['editAsset', 'editStrategy', 'editResult', 'editAccount'].forEach((selectId) => {
     const select = document.getElementById(selectId);
@@ -9199,28 +10684,49 @@ async function loadTrades(preloadedTrades, options = {}) {
   isSyncing = true;
   try {
     const backend = getBackendApi();
-    let trades;
+
+    const applyLoadedTrades = async (rawTrades) => {
+      const trades = (Array.isArray(rawTrades) ? rawTrades : []).map((t) => hydrateTradeCompositeFields(t));
+      window.cachedTrades = trades;
+      cachedTrades = trades;
+
+      await renderDashboardFilters(trades);
+      if (currentView === 'dashboard') {
+        renderDashboardWithFilters({ skipCalendar });
+      } else {
+        loadStats();
+      }
+
+      if (activeTradePanelDate && document.getElementById('tradePanel')?.classList.contains('open')) {
+        openTradePanel(activeTradePanelDate);
+      }
+      refreshHistoryHeight();
+    };
+
     if (preloadedTrades !== undefined) {
-      trades = Array.isArray(preloadedTrades) ? preloadedTrades : [];
+      await applyLoadedTrades(preloadedTrades);
     } else if (!backend?.getTrades) {
       return;
-    } else {
-      trades = await backend.getTrades();
-    }
-    window.cachedTrades = trades;
-    cachedTrades = trades;
+    } else if (
+      typeof backend.getTradesLocal === 'function' &&
+      typeof backend.syncTradesFromSupabase === 'function'
+    ) {
+      const localTrades = await backend.getTradesLocal();
+      await applyLoadedTrades(localTrades);
 
-    await renderDashboardFilters(trades);
-    if (currentView === 'dashboard') {
-      renderDashboardWithFilters({ skipCalendar });
+      try {
+        const syncResult = await backend.syncTradesFromSupabase();
+        if (syncResult && Array.isArray(syncResult.trades)) {
+          await applyLoadedTrades(syncResult.trades);
+        }
+      } catch (err) {
+        console.log('Supabase unavailable, using local cache');
+        if (err) console.warn(err);
+      }
     } else {
-      loadStats();
+      const trades = await backend.getTrades();
+      await applyLoadedTrades(trades);
     }
-
-    if (activeTradePanelDate && document.getElementById('tradePanel')?.classList.contains('open')) {
-      openTradePanel(activeTradePanelDate);
-    }
-    refreshHistoryHeight();
   } finally {
     isSyncing = false;
   }
@@ -9240,6 +10746,7 @@ async function saveTrade() {
   console.log('🧠 saveTrade INICIO');
 
   normalizePnlByResult();
+  if (isTradeCompositeEnabled('create')) recalculateTradeCompositeTotals('create');
 
   const pnlInput = document.getElementById('pnl').value;
 
@@ -9248,14 +10755,13 @@ async function saveTrade() {
       ? parseMoneyInput(pnlInput)
       : null;
 
-  const grossPnl = parsedPnl !== null && parsedPnl !== undefined ? parsedPnl : 0;
+  let grossPnl = parsedPnl !== null && parsedPnl !== undefined ? parsedPnl : 0;
 
-  const mode = getMode();
-  const lotSize =
+  let lotSize =
     Number((document.getElementById('lotaje') || document.getElementById('lotSize'))?.value) || 0;
-  const account = getSelectedAccount('account');
-  const commission = mode === 'pro' ? lotSize * (Number(account?.commissionPerLot) || 0) : 0;
-  const pnlNet = grossPnl - commission;
+  let fee = getTradeCommissionCalc({ lotSize, grossPnl, form: 'create' });
+  let commission = fee.commission;
+  let pnlNet = fee.netPnl;
 
   console.log('🧠 DEBUG PNL:', {
     raw: pnlInput,
@@ -9286,11 +10792,32 @@ async function saveTrade() {
     commission,
     pnl_net: pnlNet,
 
+    entry_time: document.getElementById('entryTime')?.value || null,
+    exit_time: document.getElementById('exitTime')?.value || null,
+
     image_before: isPersistentImagePath(createBeforeImagePath) ? createBeforeImagePath : null,
     image_after: isPersistentImagePath(createAfterImagePath) ? createAfterImagePath : null,
     beforeImage: isPersistentImagePath(createBeforeImagePath) ? createBeforeImagePath : '',
     afterImage: isPersistentImagePath(createAfterImagePath) ? createAfterImagePath : ''
   };
+
+  const compositeMerge = appendCompositeFieldsToTradePayload(trade, 'create');
+  if (compositeMerge.error) {
+    if (compositeMerge.error === 'NO_LEGS') {
+      showToast('Añade al menos una entrada o desactiva Construir posición', 'error');
+    } else {
+      showToast('Revisa los PnL de las entradas parciales', 'error');
+    }
+    return;
+  }
+  Object.assign(trade, compositeMerge);
+  grossPnl = Number(trade.pnl) || 0;
+  lotSize = Number(trade.lotaje) || lotSize;
+  fee = getTradeCommissionCalc({ lotSize, grossPnl, trade, form: 'create' });
+  commission = fee.commission;
+  pnlNet = fee.netPnl;
+  trade.commission = commission;
+  trade.pnl_net = pnlNet;
 
   console.log('🧠 TRADE ENVIADO DESDE RENDERER:', trade);
 
@@ -9313,12 +10840,18 @@ async function saveTrade() {
   console.log('🚀 Llamando a backend.addTrade');
 
   try {
-    if (!(await ensureUserReady())) {
-      console.log('⛔ ensureUserReady bloqueó el guardado');
-      return;
+    const offlineActive = isOfflineModeActive() || !(await checkInternetConnection().catch(() => false));
+
+    if (!offlineActive) {
+      if (!(await ensureUserReady())) {
+        console.log('⛔ ensureUserReady bloqueó el guardado');
+        return;
+      }
     }
 
-    let result = await backend.addTrade(trade);
+    let result = offlineActive && backend.addTradeOffline
+      ? await backend.addTradeOffline(trade)
+      : await backend.addTrade(trade);
 
     if (result?.error === 'NO_USER_ID') {
       console.warn('🔁 Reintentando tras sync de user_id...');
@@ -9340,7 +10873,7 @@ async function saveTrade() {
       console.log('✅ Trade guardado correctamente');
       if (result.id) rememberOwnInsertedTradeId(result.id);
       addRecentPair(trade.asset);
-      showToast('Trade guardado', 'success');
+      showToast(offlineActive ? 'Trade guardado (pendiente de sync)' : 'Trade guardado', 'success');
       document.getElementById('beforeImage').value = '';
       document.getElementById('afterImage').value = '';
       createBeforeImagePath = '';
@@ -9382,12 +10915,12 @@ async function saveEditedTrade() {
     return;
   }
 
-  const grossPnl = Number(document.getElementById('editPnl')?.value) || 0;
-  const lots = Number(document.getElementById('editLotSize')?.value) || 0;
+  let grossPnl = Number(document.getElementById('editPnl')?.value) || 0;
+  let lots = Number(document.getElementById('editLotSize')?.value) || 0;
   const accountForCommission = getSelectedAccount('editAccount');
   const commissionPerLot = Number(accountForCommission?.commissionPerLot) || 0;
-  const commission = Number(calc?.commission ?? 0) || 0;
-  const pnlNet = grossPnl - commission;
+  let commission = Number(calc?.commission ?? 0) || 0;
+  let pnlNet = grossPnl - commission;
   const existingTrade =
     (Array.isArray(window.cachedTrades) ? window.cachedTrades : cachedTrades).find((t) => Number(t.id) === id) || null;
 
@@ -9422,11 +10955,32 @@ async function saveEditedTrade() {
 
     commission,
 
+    entry_time: document.getElementById('editEntryTime')?.value || null,
+    exit_time: document.getElementById('editExitTime')?.value || null,
+
     image_before: isPersistentImagePath(editBeforeImagePath) ? editBeforeImagePath : null,
     image_after: isPersistentImagePath(editAfterImagePath) ? editAfterImagePath : null,
     beforeImage: isPersistentImagePath(editBeforeImagePath) ? editBeforeImagePath : '',
     afterImage: isPersistentImagePath(editAfterImagePath) ? editAfterImagePath : ''
   };
+
+  const compositeMerge = appendCompositeFieldsToTradePayload(payload, 'edit');
+  if (compositeMerge.error) {
+    if (compositeMerge.error === 'NO_LEGS') {
+      showToast('Añade al menos una entrada o desactiva Construir posición', 'error');
+    } else {
+      showToast('Revisa los PnL de las entradas parciales', 'error');
+    }
+    return;
+  }
+  Object.assign(payload, compositeMerge);
+  grossPnl = Number(payload.pnl) || 0;
+  lots = Number(payload.lotaje) || lots;
+  const feeEdit = getTradeCommissionCalc({ lotSize: lots, grossPnl, trade: payload, form: 'edit' });
+  commission = feeEdit.commission;
+  pnlNet = feeEdit.netPnl;
+  payload.commission = commission;
+  payload.pnl_net = pnlNet;
 
   console.log('✏️ Payload updateTrade:', payload);
 
@@ -9459,8 +11013,13 @@ async function saveEditedTrade() {
     beforeImage: updatedTrade.image_before ?? payload.beforeImage ?? '',
     afterImage: updatedTrade.image_after ?? payload.afterImage ?? '',
     image_before: updatedTrade.image_before ?? payload.image_before ?? null,
-    image_after: updatedTrade.image_after ?? payload.image_after ?? null
+    image_after: updatedTrade.image_after ?? payload.image_after ?? null,
+    is_composite_position: Boolean(
+      payload.is_composite_position ?? updatedTrade.is_composite_position
+    ),
+    position_legs: parsePositionLegs(payload.position_legs ?? updatedTrade.position_legs ?? []),
   };
+  Object.assign(normalizedForCache, hydrateTradeCompositeFields(normalizedForCache));
 
   const replaceInCache = (list) =>
     (Array.isArray(list) ? list : []).map((item) =>
@@ -9490,8 +11049,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   injectBacktestingProStyles();
   const isAuth = await checkAuth();
   if (isAuth && window.electronAPI?.setUserId) {
-    const { data } = await supabase.auth.getUser();
-    const uid = localStorage.getItem('user_id') || data?.user?.id;
+    const uid = window.currentUser?.id || localStorage.getItem('user_id');
     await window.electronAPI.setUserId(uid);
   }
 
@@ -9502,10 +11060,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   const resetStrategyBtn = document.getElementById('resetStrategyBtn');
   const resetAccountBtn = document.getElementById('resetAccountBtn');
   const addTradeBtn = document.getElementById('addTradeBtn');
-  const btnDashboard = document.getElementById('btnDashboard');
-  const btnTrade = document.getElementById('btnTrade');
-  const btnConfig = document.getElementById('btnConfig');
-  const btnStats = document.getElementById('btnStats');
   const basicModeBtn = document.getElementById('basicModeBtn');
   const proModeBtn = document.getElementById('proModeBtn');
   const accountSelect = document.getElementById('account');
@@ -9531,8 +11085,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   const nextYearBtn = document.getElementById('nextYear');
   const saveEditTradeBtn = document.getElementById('saveEditTradeBtn') || document.getElementById('updateTradeBtn');
   const closeEditModalBtn = document.getElementById('closeEditModalBtn');
-  const toggleBtn = document.getElementById('toggleSidebar');
-
   initLanguageSwitcher();
   loadLanguage(detectUserLanguage()).catch((error) => {
     console.error('Error cargando idioma', error);
@@ -9542,18 +11094,91 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadUserInfo().catch((error) => {
       console.error('Error cargando usuario', error);
     });
-    subscribeToTradesRealtime();
+    if (!isOfflineModeActive()) {
+      subscribeToTradesRealtime();
+    } else {
+      console.log('📴 Realtime omitido en modo offline');
+    }
+    updateOfflineBanner();
   }
 
-  document.getElementById('profile-btn')?.addEventListener('click', () => {
-    showProfileModal().catch(console.error);
+  // Estado de sync desde main (no bloquea UI).
+  try {
+    if (window.syncAPI?.onStatusChanged) {
+      ensureSyncBannerHost();
+      window.syncAPI.onStatusChanged((payload) => {
+        const state = String(payload?.state || '');
+        const pending = Number(payload?.pending || 0) || 0;
+        const failed = Number(payload?.failed || 0) || 0;
+
+        if (state === 'syncing') {
+          setSyncBannerText('Online · Sincronizando...');
+          return;
+        }
+        if (state === 'online_up_to_date') {
+          setSyncBannerText('Online · Sincronizado al día');
+          return;
+        }
+        if (state === 'online_error') {
+          setSyncBannerText(`Online · ${failed} errores de sincronización`);
+          return;
+        }
+        if (state === 'online_pending') {
+          setSyncBannerText(`Online · ${pending} pendientes`);
+          return;
+        }
+        if (state === 'offline') {
+          setSyncBannerText(`Offline · ${pending} pendientes`);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('No se pudo inicializar listener de sync status:', err);
+  }
+
+  window.addEventListener('online', async () => {
+    console.log('🌐 Conexión recuperada');
+    if (!isAppAuthenticated) return;
+
+    if (isOfflineModeActive()) {
+      try {
+        const user = await getCurrentUserSafe();
+        if (user?.id) {
+          console.log('🔄 Sesión Supabase válida tras reconectar');
+          setOfflineMode(false);
+          await syncSupabaseSessionWithMain();
+          subscribeToTradesRealtime();
+          updateOfflineBanner();
+          setTimeout(() => {
+            const backend = getBackendApi();
+            if (backend?.syncPendingChanges) backend.syncPendingChanges().catch(() => {});
+          }, 0);
+          if (typeof loadTrades === 'function') loadTrades();
+          showToast?.('Conexión recuperada. Sincronizando...', 'success');
+        } else {
+          showToast?.('Conexión recuperada, pero la sesión online ha caducado. Inicia sesión cuando puedas.', 'warning');
+        }
+      } catch (err) {
+        console.warn('No se pudo refrescar sesión online:', err);
+        showToast?.('Conexión recuperada pero Supabase no responde. Sigue en modo offline.', 'warning');
+      }
+    }
   });
 
-  document.getElementById('logout-btn')?.addEventListener('click', async () => {
+  window.addEventListener('offline', () => {
+    console.log('📴 Conexión perdida');
+    if (!isAppAuthenticated) return;
+    setOfflineMode(true);
+    updateOfflineBanner();
+    showToast?.('Sin conexión. Datos cargados desde la cache local.', 'warning');
+  });
+
+  const handleLogout = async () => {
     unsubscribeTradesRealtime();
 
     await logout();
 
+    clearAuthUserCache();
     window.currentUser = null;
 
     if (window.electronAPI?.setUserId) {
@@ -9563,6 +11188,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     isAppAuthenticated = false;
     realAccountsCache = [];
     realStrategiesCache = [];
+    realStrategiesByName = new Map();
     cachedTrades = [];
     window.cachedTrades = [];
     selectedDashboardAccounts = new Set(['ALL']);
@@ -9570,15 +11196,39 @@ window.addEventListener('DOMContentLoaded', async () => {
     void renderDashboardFilters([]);
     lastInsertedIds.clear();
 
-    const emailEl = document.getElementById('user-email');
-    if (emailEl) emailEl.textContent = '';
-
     const tradeList = document.getElementById('tradeList');
     if (tradeList) tradeList.innerHTML = '';
 
     showLoginModal();
 
     console.log('🚪 Logout realizado correctamente');
+  };
+
+  initSidebar({
+    activeView: getViewFromHash(),
+    mode: 'spa',
+    onSpaView: showView,
+    onThemeChange: (theme) => {
+      applyTheme(theme);
+      if (currentView === 'stats') applyStatsFilters();
+    },
+    refreshIcons: refreshLucideIcons,
+    getUserEmail: async () => {
+      if (window.currentUser?.email) return window.currentUser.email;
+      try {
+        if (isOnline() && !isOfflineModeActive()) {
+          const user = await getCurrentUserSafe();
+          if (user?.email) return user.email;
+        }
+      } catch (err) {
+        console.warn('Sidebar getUserEmail:', err);
+      }
+      return getLastOfflineUser()?.email || '';
+    },
+    onProfile: () => {
+      showProfileModal().catch(console.error);
+    },
+    onLogout: handleLogout
   });
 
   if (addStrategyBtn) addStrategyBtn.onclick = addStrategy;
@@ -9589,6 +11239,37 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('settingsAccount')?.addEventListener('change', onSettingsAccountChange);
   document.getElementById('cancelStrategyEditBtn')?.addEventListener('click', resetStrategyForm);
   document.getElementById('cancelAccountEditBtn')?.addEventListener('click', resetAccountForm);
+  document.getElementById('strategyScheduleEnabled')?.addEventListener('change', syncStrategyHoursSectionVisibility);
+  document.getElementById('addStrategyHourBtn')?.addEventListener('click', () => {
+    const next = collectStrategyHoursFromDom();
+    next.push({ start: '08:00', end: '10:30' });
+    renderStrategyHoursList(next);
+  });
+  const tradeScheduleInputs = [
+    ['strategy', 'entryTime', 'exitTime', 'date'],
+    ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
+  ];
+  tradeScheduleInputs.forEach(([strategyId, entryId, exitId, dateId]) => {
+    [strategyId, entryId, exitId, dateId].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.scheduleHintBound) return;
+      el.dataset.scheduleHintBound = '1';
+      el.addEventListener('change', () => {
+        if (id.startsWith('edit')) {
+          updateTradeScheduleHints({
+            strategyId: 'editStrategy',
+            entryId: 'editEntryTime',
+            exitId: 'editExitTime',
+            noticeId: 'editTradeScheduleNotice',
+            warnId: 'editTradeScheduleWarning',
+            dateId: 'editDate',
+          });
+        } else {
+          updateTradeScheduleHints();
+        }
+      });
+    });
+  });
   if (resetStrategyBtn) resetStrategyBtn.onclick = () => {
     deleteTradesByStrategyAction().catch((error) => {
       console.error('Error borrando trades por estrategia', error);
@@ -9612,21 +11293,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  if (toggleBtn) toggleBtn.onclick = toggleSidebar;
-  if (btnDashboard) btnDashboard.onclick = () => showView('dashboard');
-  if (btnTrade) btnTrade.onclick = () => showView('trade');
-  if (btnConfig) btnConfig.onclick = () => showView('config');
-  const btnBacktesting = document.getElementById('btnBacktesting');
-  if (btnBacktesting) btnBacktesting.onclick = () => showView('backtesting');
-  const btnBacktestingConfig = document.getElementById('btnBacktestingConfig');
-  if (btnBacktestingConfig) btnBacktestingConfig.onclick = () => showView('backtestingConfig');
-  if (btnStats) btnStats.onclick = () => navigateTo('stats');
   if (addTradeBtn) addTradeBtn.onclick = () => showView('trade');
-  normalizeSidebarStructure();
-  setTimeout(() => {
-    normalizeSidebarStructure();
-    console.log('Sidebar normalized after view render');
-  }, 0);
 
   const realBeSelect = ensureBeAfterResultField({
     resultId: 'result',
@@ -9670,6 +11337,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('addBtSession')?.addEventListener('click', () => {
     void addBacktestingItem('sessions', 'btSessionInput');
   });
+  ensureBtStrategyModalScheduleListeners();
   document.getElementById('openBtStrategyModalBtn')?.addEventListener('click', () => {
     openBacktestingStrategyModal(null);
   });
@@ -9824,7 +11492,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       rr_planned: Number(document.getElementById('btRrPlanned')?.value) || 0,
       rr_result: 0,
       pnl: btPnlFinal,
-      notes: document.getElementById('btNotes')?.value.trim() || ''
+      notes: document.getElementById('btNotes')?.value.trim() || '',
+      entry_time: normalizeBtTimeField(document.getElementById('btEntryTime')?.value),
+      exit_time: normalizeBtTimeField(document.getElementById('btExitTime')?.value)
     };
     payload.rr_result = getBacktestingTradeRValue(payload);
     const payloadEditId = Number(editingBacktestingTradeId);
@@ -9877,6 +11547,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     updateCreateDerivedFields();
     recalculateCreateNetPnl();
   });
+  ensureTradeCompositeFormListeners();
+  document.getElementById('editPnl')?.addEventListener('input', () => {
+    if (isTradeCompositeEnabled('edit')) return;
+    recalculateEditNetPnl();
+  });
+  document.getElementById('pnl')?.addEventListener('input', () => {
+    if (isTradeCompositeEnabled('create')) return;
+    recalculateCreateNetPnl();
+  });
+
   document.getElementById('result')?.addEventListener('change', () => {
     normalizePnlByResult();
     refreshPnlPresetButtons();

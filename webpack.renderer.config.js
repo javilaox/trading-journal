@@ -1,4 +1,6 @@
+const webpack = require('webpack');
 const rules = require('./webpack.rules');
+const { getEnvDefinePluginValues } = require('./webpack.env');
 
 rules.push({
   test: /\.css$/,
@@ -6,8 +8,10 @@ rules.push({
 });
 
 module.exports = {
-  // Put your normal webpack config below here
   module: {
     rules,
   },
+  plugins: [
+    new webpack.DefinePlugin(getEnvDefinePluginValues()),
+  ],
 };

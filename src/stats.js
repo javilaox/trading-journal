@@ -3,6 +3,7 @@ let allTradesCache = [];
 let compareMode = false;
 const DATE_FILTER_KEY = 'statsDateFilter';
 const INCLUDE_BE_KEY = 'statsIncludeBE';
+const EXCLUDE_SCHEDULE_KEY_PREFIX = 'stats_exclude_out_of_schedule';
 let datePickerStart = null;
 let datePickerEnd = null;
 let datePickerViewMonth = new Date();
@@ -16,6 +17,24 @@ const {
   getCurrentLanguage
 } = require('./i18n');
 const { formatDateEs, formatDateRangeEs } = require('./dateDisplay.js');
+const {
+  buildStrategyByNameMap,
+  getTradeScheduleStatus,
+  strategyHasEvaluableSchedule,
+  computeDurationMinutes,
+  formatMinutesAsHm,
+  filterTradesByScheduleCompliance,
+} = require('./services/scheduleUtils');
+const { navigateTo } = require('./navigation.js');
+const { logout } = require('./auth.js');
+const { getLastOfflineUser } = require('./services/offlineAuth.js');
+
+const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
+let statsEventsBound = false;
+let statsInitialized = false;
+let statsLoading = false;
+let statsLangChangeHandler = null;
+let statsDocClickHandler = null;
 const zeroLinePlugin = {
   id: 'zeroLine',
   afterDraw(chart) {
@@ -77,6 +96,288 @@ function formatMonthYearStats(year, monthIndex) {
 
 function getBackendApi() {
   return window.api || window.electronAPI;
+}
+
+/**
+ * Cuentas/estrategias del usuario actual leídas del mismo localStorage scoped
+ * que usa Dashboard (`real_accounts_<userId>`, `real_strategies_<userId>`).
+ */
+async function getCurrentUserIdForFilters() {
+  if (typeof window !== 'undefined' && window.currentUser?.id) {
+    return window.currentUser.id;
+  }
+  const api = getBackendApi();
+  if (api && typeof api.getCurrentUserId === 'function') {
+    try {
+      const id = await api.getCurrentUserId();
+      if (id) return id;
+    } catch (err) {
+      console.warn('No se pudo obtener user_id para filtros stats:', err);
+    }
+  }
+  return localStorage.getItem('user_id') || null;
+}
+
+function readScopedList(baseKey, userId) {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(`${baseKey}_${userId}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn(`Error leyendo ${baseKey}_${userId}:`, err);
+    return [];
+  }
+}
+
+async function getUserScopedRealAccountsAndStrategies() {
+  const userId = await getCurrentUserIdForFilters();
+  const api = getBackendApi();
+
+  // Fuente preferida: SQLite via IPC (evita problemas de localStorage entre vistas/páginas).
+  if (api?.getRealAccountsLocal && api?.getRealStrategiesLocal && userId) {
+    try {
+      console.log('Loading real accounts for user:', userId);
+      const rowsA = await api.getRealAccountsLocal();
+      const rowsS = await api.getRealStrategiesLocal();
+
+      const accounts = (Array.isArray(rowsA) ? rowsA : [])
+        .map((r) => String(r?.name || '').trim())
+        .filter(Boolean);
+      const strategies = (Array.isArray(rowsS) ? rowsS : [])
+        .map((r) => String(r?.name || '').trim())
+        .filter(Boolean);
+
+      console.log('Real accounts loaded from SQLite:', accounts.length);
+      console.log('Real strategies loaded from SQLite:', strategies.length);
+      return { accounts, strategies };
+    } catch (err) {
+      console.warn('Stats real lists SQLite failed, fallback localStorage:', err);
+    }
+  }
+
+  const accountsRaw = readScopedList('real_accounts', userId);
+  const strategiesRaw = readScopedList('real_strategies', userId);
+
+  const accounts = accountsRaw
+    .map((account) => (typeof account === 'string' ? account : String(account?.name || '').trim()))
+    .filter(Boolean);
+  const strategies = strategiesRaw
+    .map((strategy) => String(strategy || '').trim())
+    .filter(Boolean);
+
+  return { accounts, strategies };
+}
+
+async function getStrategyMetaByName() {
+  const userId = await getCurrentUserIdForFilters();
+  const api = getBackendApi();
+  if (api?.getRealStrategiesLocal && userId) {
+    try {
+      const rows = await api.getRealStrategiesLocal();
+      return buildStrategyByNameMap(rows);
+    } catch (err) {
+      console.warn('Stats strategy meta SQLite failed:', err);
+    }
+  }
+  const raw = readScopedList('real_strategies', userId);
+  const rows = raw.map((s) => (typeof s === 'string' ? { name: s } : s));
+  return buildStrategyByNameMap(rows);
+}
+
+function getSelectedStatsStrategyName() {
+  const selected =
+    document.getElementById('filterStrategy')?.value ||
+    document.getElementById('filterEstrategia')?.value ||
+    '';
+  const allLabel = t('all_strategies', 'Todas las estrategias');
+  if (!selected || selected === 'Todas las estrategias' || selected === allLabel) return null;
+  return String(selected).trim();
+}
+
+function resolveScheduleContext(strategyByName) {
+  const selectedStrategyName = getSelectedStatsStrategyName();
+  const referenceStrategy = selectedStrategyName
+    ? strategyByName.get(selectedStrategyName) || null
+    : null;
+  const useSelectedReference = Boolean(
+    referenceStrategy && strategyHasEvaluableSchedule(referenceStrategy)
+  );
+  return { selectedStrategyName, referenceStrategy, useSelectedReference };
+}
+
+function classifyTradeForStats(trade, strategyByName, context) {
+  if (context.useSelectedReference) {
+    return getTradeScheduleStatus(trade, null, { referenceStrategy: context.referenceStrategy });
+  }
+  const strategyName = String(trade?.strategy || trade?.estrategia || '').trim();
+  const meta = strategyByName.get(strategyName);
+  return getTradeScheduleStatus(trade, meta);
+}
+
+function calculateScheduleAndDurationStats(trades, strategyByName) {
+  const context = resolveScheduleContext(strategyByName);
+  let tradesIn = 0;
+  let tradesOut = 0;
+  let tradesMissingTime = 0;
+  let tradesNoSchedule = 0;
+  let pnlIn = 0;
+  let pnlOut = 0;
+  let pnlMissingTime = 0;
+  const durationsIn = [];
+  const durationsOut = [];
+
+  (Array.isArray(trades) ? trades : []).forEach((trade) => {
+    const pnl = Number(trade?.pnl ?? 0) || 0;
+    const entryTime = trade?.entry_time ?? trade?.entryTime ?? null;
+    const exitTime = trade?.exit_time ?? trade?.exitTime ?? null;
+    const status = classifyTradeForStats(trade, strategyByName, context);
+
+    if (status === 'no_schedule') {
+      tradesNoSchedule += 1;
+      return;
+    }
+    if (status === 'missing_time') {
+      tradesMissingTime += 1;
+      pnlMissingTime += pnl;
+      return;
+    }
+    if (status === 'inside') {
+      tradesIn += 1;
+      pnlIn += pnl;
+    } else if (status === 'outside') {
+      tradesOut += 1;
+      pnlOut += pnl;
+    }
+
+    const dur = computeDurationMinutes(entryTime, exitTime);
+    if (dur == null) return;
+    if (status === 'inside') durationsIn.push(dur);
+    else if (status === 'outside') durationsOut.push(dur);
+  });
+
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+  const disciplineTotal = tradesIn + tradesOut + tradesMissingTime;
+
+  return {
+    tradesIn,
+    tradesOut,
+    tradesMissingTime,
+    tradesNoSchedule,
+    compliancePct: disciplineTotal ? (tradesIn / disciplineTotal) * 100 : null,
+    pnlIn,
+    pnlOut,
+    pnlMissingTime,
+    avgDurationIn: avg(durationsIn),
+    avgDurationOut: avg(durationsOut),
+    hasDisciplineData: disciplineTotal > 0 || tradesNoSchedule > 0,
+    useSelectedReference: context.useSelectedReference,
+    selectedStrategyName: context.selectedStrategyName,
+  };
+}
+
+/** Switch ON = excluir fuera/sin hora según reglas; OFF = no tocar el listado de trades. */
+function isExcludeOutOfScheduleEnabled() {
+  const el = document.getElementById('excludeOutOfSchedule');
+  if (!el) return false;
+  return el.checked === true;
+}
+
+async function getExcludeScheduleStorageKey() {
+  const userId = await getCurrentUserIdForFilters();
+  return userId ? `${EXCLUDE_SCHEDULE_KEY_PREFIX}_${userId}` : null;
+}
+
+async function loadExcludeScheduleState() {
+  const el = document.getElementById('excludeOutOfSchedule');
+  if (!el) return;
+  const key = await getExcludeScheduleStorageKey();
+  if (key) {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) el.checked = saved === 'true';
+  }
+}
+
+async function saveExcludeScheduleState() {
+  const key = await getExcludeScheduleStorageKey();
+  if (!key) return;
+  const el = document.getElementById('excludeOutOfSchedule');
+  localStorage.setItem(key, el?.checked ? 'true' : 'false');
+}
+
+function updateScheduleFilterUi({ active = false, excludedCount = 0, useSelectedReference = false } = {}) {
+  const notice = document.getElementById('statsScheduleFilterNotice');
+  const hint = document.getElementById('statsScheduleExcludedHint');
+  if (notice) {
+    notice.classList.toggle('show', active);
+    if (!active) {
+      notice.textContent = '';
+    } else if (active) {
+      if (excludedCount > 0) {
+        const key = useSelectedReference
+          ? 'stats_schedule_filter_active_selected'
+          : 'stats_schedule_filter_active';
+        const fallback = useSelectedReference
+          ? 'Vista filtrada: {count} trades fuera de horario o sin hora ocultos.'
+          : 'Vista filtrada: {count} trades fuera de horario ocultos. Los trades sin horario evaluable se mantienen.';
+        notice.textContent = t(key, fallback).replace('{count}', String(excludedCount));
+      } else {
+        notice.textContent = t(
+          'stats_schedule_filter_active_none',
+          'No hay trades fuera de horario para ocultar.'
+        );
+      }
+    }
+  }
+  if (hint) {
+    hint.hidden = true;
+    hint.textContent = '';
+  }
+}
+
+async function getScheduleFilteredTradesForMetrics() {
+  const base = getFilteredTrades();
+  const strategyByName = await getStrategyMetaByName();
+  const selectedStrategyName = getSelectedStatsStrategyName();
+  const excludeEnabled = isExcludeOutOfScheduleEnabled();
+
+  console.log('[stats-schedule] selectedStrategyId', selectedStrategyName || '(none)');
+  const ref = selectedStrategyName ? strategyByName.get(selectedStrategyName) : null;
+  if (ref) {
+    console.log('[stats-schedule] selectedStrategy operating_hours', ref.operating_hours);
+  }
+  console.log('[stats-schedule] trades before schedule filter', base.length);
+  console.log('[stats-schedule] exclude switch', excludeEnabled ? 'ON' : 'OFF');
+
+  if (!excludeEnabled) {
+    updateScheduleFilterUi({ active: false, excludedCount: 0 });
+    console.log('[stats-schedule] switch OFF — no schedule exclusion, showing', base.length, 'trades');
+    return { trades: base, strategyByName, scheduleFilterActive: false };
+  }
+
+  const result = filterTradesByScheduleCompliance(base, strategyByName, {
+    excludeOutside: true,
+    selectedStrategyName,
+  });
+
+  console.log('[stats-schedule] inside/outside/missing_time/no_schedule', {
+    inside: result.insideCount,
+    outside: result.outsideCount,
+    missing_time: result.missingTimeCount,
+    no_schedule: result.noScheduleCount,
+  });
+  console.log('[stats-schedule] trades after schedule filter', result.includedTrades.length);
+
+  updateScheduleFilterUi({
+    active: true,
+    excludedCount: result.excludedTrades.length,
+    useSelectedReference: result.useSelectedReference,
+  });
+  return {
+    trades: result.includedTrades,
+    strategyByName,
+    scheduleFilterActive: true,
+  };
 }
 
 function closeAllCustomSelects(exceptElement = null) {
@@ -192,36 +493,14 @@ function applyTheme(theme) {
   updateThemeIcon();
 }
 
-function navigateTo(page) {
-  const target = String(page || '').toLowerCase();
-  const isFileProtocol = window.location.protocol === 'file:';
-  if (!target) return;
-
-  if (isFileProtocol) {
-    window.location.href = `${target}.html`;
-    return;
+function showStatsBootError(message, err) {
+  const el = document.getElementById('stats-boot-error');
+  if (el) {
+    el.hidden = false;
+    el.textContent = message;
   }
-
-  if (target === 'stats') {
-    window.location.href = `${window.location.origin}/stats`;
-    return;
-  }
-
-  if (target === 'dashboard') {
-    window.location.href = `${window.location.origin}/main_window`;
-    return;
-  }
-
-  if (target === 'trade' || target === 'config' || target === 'backtesting' || target === 'backtestingconfig') {
-    const fragment = target === 'backtestingconfig' ? 'backtestingconfig' : target;
-    window.location.href = `${window.location.origin}/main_window#${fragment}`;
-    return;
-  }
-
-  window.location.href = `${window.location.origin}/${target}`;
+  console.error('Stats error:', err || message);
 }
-
-window.navigateTo = navigateTo;
 
 function getAllTrades() {
   return Array.isArray(allTradesCache) ? allTradesCache : [];
@@ -273,7 +552,9 @@ function normalizeTrades(trades) {
       account: trade?.account ?? trade?.cuenta ?? '',
       strategy: trade?.strategy ?? trade?.estrategia ?? '',
       date: normalizeDate(trade?.date),
-      pnl: normalizePnl(trade)
+      pnl: normalizePnl(trade),
+      entry_time: trade?.entry_time ?? null,
+      exit_time: trade?.exit_time ?? null,
     }))
     .filter((trade) => Boolean(trade.date));
 }
@@ -951,6 +1232,30 @@ function resetSummary() {
   if (lossDaysEl) lossDaysEl.textContent = '0';
   if (bestDayEl) bestDayEl.textContent = '+0.00€';
   if (worstDayEl) worstDayEl.textContent = '0.00€';
+  const schedIds = [
+    'statTradesInSchedule',
+    'statTradesOutSchedule',
+    'statTradesMissingTime',
+    'statTradesNoSchedule',
+    'statScheduleCompliance',
+    'statPnlInSchedule',
+    'statPnlOutSchedule',
+    'statPnlMissingTime',
+    'statAvgDurationInSchedule',
+    'statAvgDurationOutSchedule',
+  ];
+  schedIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = id.includes('Pnl') ? '0.00€' : id.includes('Compliance') || id.includes('Duration') ? '—' : '0';
+  });
+  const scheduleEmpty = document.getElementById('scheduleStatsEmpty');
+  const scheduleMetrics = document.getElementById('scheduleStatsMetrics');
+  if (scheduleEmpty) scheduleEmpty.hidden = false;
+  if (scheduleMetrics) scheduleMetrics.hidden = false;
+  const missingEl = document.getElementById('statTradesMissingTime');
+  const noSchedEl = document.getElementById('statTradesNoSchedule');
+  if (missingEl) missingEl.textContent = '0';
+  if (noSchedEl) noSchedEl.textContent = '0';
   setChartKpi('equityChartKpi', '0.00€', false);
   setChartKpi('dailyChartKpi', '0.00€', false);
   setChartKpi('drawdownChartKpi', '0.00€', true);
@@ -1000,15 +1305,13 @@ function appendOptions(select, values) {
   refreshCustomSelectForNative(select);
 }
 
-function loadFilters() {
-  const trades = getAllTrades();
+async function loadFilters() {
+  // Solo cuentas/estrategias creadas por el usuario actual (alineado con Dashboard).
+  const { accounts: scopedAccounts, strategies: scopedStrategies } =
+    await getUserScopedRealAccountsAndStrategies();
 
-  const accounts = [...new Set(
-    trades.map((trade) => String(trade.account ?? trade.cuenta ?? '').trim()).filter((value) => Boolean(value))
-  )].sort((a, b) => a.localeCompare(b));
-  const strategies = [...new Set(
-    trades.map((trade) => String(trade.strategy ?? trade.estrategia ?? '').trim()).filter((value) => Boolean(value))
-  )].sort((a, b) => a.localeCompare(b));
+  const accounts = [...new Set(scopedAccounts)].sort((a, b) => a.localeCompare(b));
+  const strategies = [...new Set(scopedStrategies)].sort((a, b) => a.localeCompare(b));
 
   const accountPlaceholder = t('all_accounts', 'Todas las cuentas');
   const strategyPlaceholder = t('all_strategies', 'Todas las estrategias');
@@ -1034,7 +1337,12 @@ function getFilteredTrades() {
     const account = String(trade.account ?? trade.cuenta ?? '').trim();
     const strategy = String(trade.strategy ?? trade.estrategia ?? '').trim();
     const accountMatch = !selectedAccount || selectedAccount === 'Todas las cuentas' || account === selectedAccount;
-    const strategyMatch = !selectedStrategy || selectedStrategy === 'Todas las estrategias' || strategy === selectedStrategy;
+    const allStrategiesLabel = t('all_strategies', 'Todas las estrategias');
+    const strategyMatch =
+      !selectedStrategy ||
+      selectedStrategy === 'Todas las estrategias' ||
+      selectedStrategy === allStrategiesLabel ||
+      strategy === selectedStrategy;
     return accountMatch && strategyMatch;
   });
 
@@ -1302,8 +1610,47 @@ function loadIncludeBeState() {
   if (saved !== null) includeBE.checked = saved === 'true';
 }
 
+async function renderScheduleStats(trades) {
+  const strategyByName = await getStrategyMetaByName();
+  const sched = calculateScheduleAndDurationStats(trades, strategyByName);
+  const emptyEl = document.getElementById('scheduleStatsEmpty');
+  const metricsEl = document.getElementById('scheduleStatsMetrics');
+
+  if (metricsEl) {
+    metricsEl.hidden = false;
+    metricsEl.style.display = 'grid';
+  }
+  const showEmptyMessage =
+    sched.useSelectedReference &&
+    sched.tradesIn + sched.tradesOut + sched.tradesMissingTime === 0;
+  if (emptyEl) emptyEl.hidden = !showEmptyMessage;
+
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set('statTradesInSchedule', String(sched.tradesIn));
+  set('statTradesOutSchedule', String(sched.tradesOut));
+  set('statTradesMissingTime', String(sched.tradesMissingTime));
+  set('statTradesNoSchedule', String(sched.tradesNoSchedule));
+  set(
+    'statScheduleCompliance',
+    sched.compliancePct == null ? '—' : `${sched.compliancePct.toFixed(1)}%`
+  );
+  set('statPnlInSchedule', `${sched.pnlIn >= 0 ? '+' : ''}${sched.pnlIn.toFixed(2)}€`);
+  set('statPnlOutSchedule', `${sched.pnlOut >= 0 ? '+' : ''}${sched.pnlOut.toFixed(2)}€`);
+  set(
+    'statPnlMissingTime',
+    `${sched.pnlMissingTime >= 0 ? '+' : ''}${sched.pnlMissingTime.toFixed(2)}€`
+  );
+  set('statAvgDurationInSchedule', formatMinutesAsHm(sched.avgDurationIn));
+  set('statAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
+}
+
 function renderAllCharts(trades, compareEnabled = compareMode) {
   console.log('Trades para gráfica:', trades);
+  // Disciplina por horario: siempre sobre el listado completo (switch OFF no oculta trades aquí).
+  void renderScheduleStats(getFilteredTrades());
   const sortedTrades = sortTradesByDate(trades);
   const dailyData = groupTradesByDay(sortedTrades);
   const daily = getDailyPnL(dailyData);
@@ -1709,11 +2056,12 @@ function renderAllCharts(trades, compareEnabled = compareMode) {
   renderStrategyWinrateList(strategyWinrates);
 }
 
-function applyFilters() {
-  const filteredTrades = getFilteredTrades();
-  console.log('TRADES FILTRADOS:', filteredTrades);
+async function applyFilters() {
   saveDateFilterState();
   saveIncludeBeState();
+  void saveExcludeScheduleState();
+  const { trades: filteredTrades } = await getScheduleFilteredTradesForMetrics();
+  console.log('TRADES FILTRADOS:', filteredTrades);
   setCompareSectionVisibility(compareMode);
   destroyCharts();
 
@@ -1724,6 +2072,7 @@ function applyFilters() {
     setEmptyState(true);
     resetSummary();
     renderStrategyWinrateList([]);
+    void renderScheduleStats(getFilteredTrades());
     return;
   }
 
@@ -1740,34 +2089,35 @@ function applyFilters() {
 window.applyFilters = applyFilters;
 window.renderAllStats = applyFilters;
 
-async function init() {
-  initLanguageSwitcher();
-  await loadLanguage(detectUserLanguage()).catch((error) => {
-    console.error('Error cargando idioma', error);
-  });
-
-  const savedTheme = localStorage.getItem('theme');
-  applyTheme(savedTheme === 'light' ? 'light' : 'dark');
-  refreshLucideIcons();
-  initCustomSelects();
-
+async function loadStatsTrades() {
   const backend = getBackendApi();
   if (!backend?.getTrades) {
     allTradesCache = [];
-    loadFilters();
-    applyFilters();
+    await loadFilters();
     return;
   }
-
   try {
     const trades = await backend.getTrades();
     allTradesCache = normalizeTrades(Array.isArray(trades) ? trades : []);
-    loadFilters();
+    console.log('Stats loaded trades:', allTradesCache.length);
+    await loadFilters();
   } catch (error) {
-    console.error('Error cargando stats:', error);
+    console.error('Stats error:', error);
+    showStatsBootError(
+      'No se pudieron cargar las estadísticas. Comprueba la conexión o vuelve al panel.',
+      error
+    );
     allTradesCache = [];
-    loadFilters();
+    await loadFilters();
   }
+}
+
+async function bindStatsEventsOnce() {
+  if (statsEventsBound) return;
+  statsEventsBound = true;
+
+  initLanguageSwitcher();
+  initCustomSelects();
 
   const accountSelect = document.getElementById('filterAccount');
   const strategySelect = document.getElementById('filterStrategy');
@@ -1786,8 +2136,6 @@ async function init() {
     clearBtn: clearDatesBtn,
     applyBtn: applyDatesBtn
   } = getDatePickerElements();
-  const toggleSidebarStats = document.getElementById('toggleSidebarStats');
-  const sidebar = document.getElementById('sidebar');
   accountSelect?.addEventListener('change', applyFilters);
   strategySelect?.addEventListener('change', applyFilters);
   accountSelectLegacy?.addEventListener('change', applyFilters);
@@ -1849,6 +2197,15 @@ async function init() {
     });
   }
   includeBEToggle?.addEventListener('change', applyFilters);
+  const excludeScheduleToggle = document.getElementById('excludeOutOfSchedule');
+  excludeScheduleToggle?.addEventListener('change', () => {
+    console.log(
+      '[stats-schedule] toggle changed ->',
+      excludeScheduleToggle.checked ? 'ON' : 'OFF'
+    );
+    void saveExcludeScheduleState();
+    void applyFilters();
+  });
   if (toggleAdvancedBtn && advancedStats) {
     toggleAdvancedBtn.textContent = t('insights_advanced_toggle_show');
     toggleAdvancedBtn.onclick = () => {
@@ -1857,18 +2214,8 @@ async function init() {
       toggleAdvancedBtn.textContent = willOpen ? t('insights_advanced_toggle_hide') : t('insights_advanced_toggle_show');
     };
   }
-  toggleSidebarStats?.addEventListener('click', () => {
-    sidebar?.classList.toggle('collapsed');
-    refreshLucideIcons();
-  });
-  themeToggle?.addEventListener('change', () => {
-    const nextTheme = themeToggle.checked ? 'light' : 'dark';
-    localStorage.setItem('theme', nextTheme);
-    applyTheme(nextTheme);
-    applyFilters();
-  });
 
-  document.addEventListener('click', (event) => {
+  statsDocClickHandler = (event) => {
     if (!(event.target instanceof Element)) return;
     if (!event.target.closest('.custom-select')) {
       closeAllCustomSelects();
@@ -1879,19 +2226,103 @@ async function init() {
     if (!event.target.closest('.date-picker-wrapper')) {
       setDatePickerOpen(false);
     }
-  });
+  };
+  document.addEventListener('click', statsDocClickHandler);
 
-  loadDateFilterState();
-  loadIncludeBeState();
-  applyFilters();
-
-  window.addEventListener('app:languagechanged', () => {
+  statsLangChangeHandler = () => {
     if (toggleAdvancedBtn && advancedStats) {
       const open = advancedStats.classList.contains('open');
       toggleAdvancedBtn.textContent = open ? t('insights_advanced_toggle_hide') : t('insights_advanced_toggle_show');
     }
     applyFilters();
+  };
+  window.addEventListener('app:languagechanged', statsLangChangeHandler);
+
+  loadDateFilterState();
+  loadIncludeBeState();
+  void loadExcludeScheduleState();
+}
+
+/**
+ * Monta Estadísticas dentro del shell SPA (dashboard).
+ */
+async function mountStatsView(container) {
+  if (statsLoading) {
+    console.log('[stats] already loading, skip');
+    return;
+  }
+
+  statsLoading = true;
+  console.log('SPA navigate to stats');
+  console.log('Stats view rendered inside dashboard shell');
+  console.log('Stats current user:', localStorage.getItem('user_id') || '(none)');
+  console.log('Stats env:', process.env.APP_ENV);
+  console.log('Stats preload available:', Boolean(window.api || window.electronAPI));
+
+  try {
+    await bindStatsEventsOnce();
+    if (!statsInitialized) {
+      await loadStatsTrades();
+      statsInitialized = true;
+    }
+    await applyFilters();
+    refreshLucideIcons();
+  } catch (error) {
+    console.error('Stats error:', error);
+    showStatsBootError('Error al cargar Estadísticas.', error);
+  } finally {
+    statsLoading = false;
+  }
+}
+
+function unmountStatsView() {
+  console.log('Leaving stats view');
+  destroyCharts();
+  setDatePickerOpen(false);
+}
+
+async function initStandaloneStatsPage() {
+  const { initSidebar } = require('./sidebar.js');
+  require('./sidebar.css');
+  require('./stats-layout.css');
+
+  window.navigateTo = navigateTo;
+
+  initSidebar({
+    activeView: 'stats',
+    mode: 'page',
+    onThemeChange: (theme) => {
+      applyTheme(theme);
+      applyFilters();
+    },
+    refreshIcons: refreshLucideIcons,
+    getUserEmail: async () => getLastOfflineUser()?.email || '',
+    onProfile: () => navigateTo('config'),
+    onLogout: async () => {
+      await logout();
+      navigateTo('dashboard');
+    }
+  });
+
+  await loadLanguage(detectUserLanguage()).catch((error) => {
+    console.error('Error cargando idioma', error);
+  });
+  const savedTheme = localStorage.getItem('theme');
+  applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+  await mountStatsView(document.querySelector('.stats-page'));
+}
+
+if (isStandaloneStatsPage()) {
+  window.addEventListener('DOMContentLoaded', () => {
+    initStandaloneStatsPage().catch((error) => {
+      console.error('Stats error:', error);
+      showStatsBootError('Error fatal en Estadísticas.', error);
+    });
   });
 }
 
-window.addEventListener('DOMContentLoaded', init);
+module.exports = {
+  mountStatsView,
+  unmountStatsView,
+  applyFilters
+};

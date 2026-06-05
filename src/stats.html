@@ -75,9 +75,17 @@
         --shadow-md: 0 6px 16px rgba(0,0,0,0.08);
         --shadow-lg: 0 12px 28px rgba(0,0,0,0.12);
       }
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
-        transition: background 0.2s, color 0.2s, border-color 0.2s;
+      }
+      button,
+      .sidebar-item,
+      .input-base,
+      .date-picker-btn,
+      .lang-btn {
+        transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
       }
       html,
       body {
@@ -92,415 +100,21 @@
         color: var(--text);
         overflow-x: hidden;
       }
-      .sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        z-index: 30;
-        width: var(--sidebar-width);
-        min-width: var(--sidebar-collapsed-width);
-        height: 100vh;
-        background: var(--sidebar-bg);
-        border-right: 1px solid var(--border);
-        padding: 12px;
+      /* Crítico: evita flash de layout antes de stats-layout.css (webpack) */
+      .app-shell {
         display: flex;
-        flex-direction: column;
-        gap: 16px;
-        transition: width 0.25s ease, padding 0.25s ease;
-        align-items: stretch;
-        box-sizing: border-box;
-      }
-      .sidebar.closed,
-      .sidebar.collapsed {
-        width: var(--sidebar-collapsed-width);
-        min-width: var(--sidebar-collapsed-width);
-        padding: 14px 10px;
-        align-items: center;
-        overflow: hidden;
-      }
-      .sidebar-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      .logo {
-        font-size: var(--font-lg);
-        font-weight: var(--fw-semibold);
-        white-space: nowrap;
-      }
-      .sidebar-section {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .sidebar-label {
-        font-size: var(--font-xs);
-        opacity: 0.5;
-        padding: 6px 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-      }
-      .sidebar-title {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        padding: 6px 10px;
-        opacity: 0.75;
-      }
-      .sidebar-section + .sidebar-section {
-        border-top: 1px solid rgba(255, 255, 255, 0.04);
-        padding-top: 10px;
-        margin-top: 4px;
-      }
-      body.light .sidebar-section + .sidebar-section {
-        border-top-color: rgba(0, 0, 0, 0.06);
-      }
-      .sidebar-icon.lucide {
-        width: 20px;
-        height: 20px;
-      }
-      .sidebar-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
         width: 100%;
-        border: 1px solid var(--border);
-        background: transparent;
-        color: var(--text);
-        border-radius: 10px;
-        padding: 10px 12px;
-        cursor: pointer;
-        font-weight: var(--fw-medium);
-        position: relative;
-        transition: background 0.2s ease, transform 0.1s ease, color 0.2s ease, border-color 0.2s ease;
-      }
-      .sidebar-item:hover { background: rgba(255,255,255,0.04); }
-      body.light .sidebar-item:hover { background: rgba(0,0,0,0.04); }
-      .sidebar-item:active { transform: scale(0.98); }
-      .sidebar-item.active {
-        background: rgba(22,163,74,0.15);
-        color: var(--green);
-        border-color: rgba(22,163,74,0.25);
-      }
-      .sidebar-item.active::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 20%;
-        height: 60%;
-        width: 3px;
-        border-radius: 2px;
-        background: var(--green);
-      }
-      .icon {
-        margin-right: 2px;
-        opacity: 0.7;
-      }
-      .sidebar-item.active .icon {
-        opacity: 1;
-      }
-      .sidebar-toggle {
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        background: var(--surface-2);
-        color: var(--text-muted);
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-      .sidebar-toggle svg {
-        width: 18px;
-        height: 18px;
-      }
-      .sidebar-toggle:hover {
-        background: var(--hover-soft);
-        color: var(--text);
-      }
-      body.light .sidebar-toggle {
-        background: #fff;
-        border: 1px solid rgba(0,0,0,0.06);
-      }
-      .sidebar-footer {
-        width: 100%;
-        margin-top: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .sidebar-footer .theme-toggle,
-      .sidebar-footer .lang-btn,
-      .sidebar-footer .lang-switch {
-        transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
-      }
-      .sidebar-footer .theme-toggle:active,
-      .sidebar-footer .lang-btn:active,
-      .sidebar-footer .lang-switch:active {
-        transform: scale(0.96);
-      }
-      .theme-toggle {
-        padding: 10px;
-        border-radius: 10px;
-        background: var(--surface-2);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: background 0.2s ease;
-      }
-      .theme-toggle:hover {
-        background: rgba(255, 255, 255, 0.05);
-      }
-      body.light .theme-toggle:hover {
-        background: rgba(0, 0, 0, 0.04);
-      }
-      .theme-toggle-content {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        cursor: pointer;
-        flex: 1;
-        min-width: 0;
-      }
-      .theme-icon-slot {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-      }
-      .theme-toggle-content .theme-icon-slot svg,
-      .theme-icon-slot svg {
-        width: 18px;
-        height: 18px;
-        opacity: 0.7;
-      }
-      .lang-switch {
-        width: 100%;
-        display: flex;
-        gap: 6px;
-        padding: 4px;
-        border-radius: 12px;
-        background: var(--surface-2);
-        margin-top: 0;
-        box-sizing: border-box;
-      }
-      .lang-btn {
-        flex: 1;
-        height: 34px;
-        border: none;
-        border-radius: 9px;
-        background: transparent;
-        color: var(--text-muted);
-        font-weight: 600;
-        font-size: 12px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        transform: scale(1);
-        padding: 0 8px;
-      }
-      .lang-btn.active {
-        background: var(--green);
-        color: #ffffff;
-      }
-      .lang-btn:hover {
-        background: var(--hover-soft);
-      }
-      .lang-btn:active {
-        transform: scale(0.95);
-      }
-      .sidebar.collapsed .sidebar-header,
-      .sidebar.closed .sidebar-header {
-        justify-content: center;
-        width: 100%;
-      }
-
-      .sidebar.collapsed .logo,
-      .sidebar.closed .logo {
-        display: none;
-      }
-
-      .sidebar.collapsed .sidebar-section,
-      .sidebar.closed .sidebar-section {
-        align-items: center;
-        width: 100%;
-      }
-
-      .sidebar.collapsed .sidebar-toggle svg,
-      .sidebar.closed .sidebar-toggle svg {
-        transform: rotate(180deg);
-      }
-
-      .sidebar.collapsed .sidebar-item,
-      .sidebar.closed .sidebar-item,
-      .sidebar.collapsed .sidebar-btn,
-      .sidebar.closed .sidebar-btn {
-        width: 48px;
-        height: 48px;
-        padding: 0;
-        justify-content: center;
-        align-items: center;
-        border-radius: 14px;
-      }
-
-      .sidebar.collapsed .sidebar-item.active::before,
-      .sidebar.closed .sidebar-item.active::before {
-        display: none;
-      }
-
-      .sidebar.collapsed .sidebar-item-label,
-      .sidebar.closed .sidebar-item-label,
-      .sidebar.collapsed .sidebar-label,
-      .sidebar.closed .sidebar-label,
-      .sidebar.collapsed .sidebar-title,
-      .sidebar.closed .sidebar-title,
-      .sidebar.collapsed .sidebar-btn span,
-      .sidebar.closed .sidebar-btn span,
-      .sidebar.collapsed .logo-text,
-      .sidebar.closed .logo-text,
-      .sidebar.collapsed .theme-label,
-      .sidebar.closed .theme-label {
-        display: none !important;
-      }
-
-      .sidebar.collapsed .sidebar-item svg,
-      .sidebar.closed .sidebar-item svg,
-      .sidebar.collapsed .sidebar-btn svg,
-      .sidebar.closed .sidebar-btn svg {
-        margin: 0;
-        width: 20px;
-        height: 20px;
-      }
-
-      .sidebar.collapsed .sidebar-footer,
-      .sidebar.closed .sidebar-footer {
-        align-items: center;
-      }
-
-      .sidebar.collapsed .theme-toggle,
-      .sidebar.closed .theme-toggle {
-        width: 48px;
-        height: 48px;
-        padding: 0;
-        justify-content: center;
-        align-items: center;
-        border-radius: 14px;
-        box-sizing: border-box;
-      }
-
-      .sidebar.collapsed .switch,
-      .sidebar.closed .switch {
-        display: none !important;
-      }
-
-      .sidebar.collapsed .theme-toggle-content,
-      .sidebar.closed .theme-toggle-content {
-        justify-content: center;
-        width: 100%;
-        flex: none;
-      }
-
-      .sidebar.collapsed .theme-icon-slot svg,
-      .sidebar.closed .theme-icon-slot svg {
-        width: 20px;
-        height: 20px;
-        opacity: 0.85;
-      }
-
-      .sidebar.collapsed .lang-switch,
-      .sidebar.closed .lang-switch {
-        width: 48px;
-        height: 48px;
-        padding: 0;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        margin-top: 0;
-      }
-
-      .sidebar.collapsed .lang-btn,
-      .sidebar.closed .lang-btn {
-        display: none !important;
-      }
-
-      .sidebar.collapsed .lang-btn.active,
-      .sidebar.closed .lang-btn.active {
-        display: flex !important;
-        width: 48px;
-        height: 48px;
-        padding: 0;
-        align-items: center;
-        justify-content: center;
-        border-radius: 14px;
-        font-size: 13px;
-        font-weight: 700;
-        flex: none;
-        background: var(--green);
-        color: #ffffff;
-      }
-
-      .sidebar.collapsed .sidebar-toggle,
-      .sidebar.closed .sidebar-toggle,
-      .sidebar.collapsed #toggleSidebarStats,
-      .sidebar.closed #toggleSidebarStats {
-        width: 48px;
-        height: 48px;
-        padding: 0;
-        justify-content: center;
-        border-radius: 14px;
-      }
-      .sidebar-item svg {
-        width: 18px;
-        height: 18px;
-        margin-right: 8px;
-        opacity: 0.8;
-        flex-shrink: 0;
-        transition: all 0.2s ease;
-      }
-      .sidebar-item.active svg {
-        opacity: 1;
-        stroke: var(--green);
-      }
-      .title-with-icon {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .title-with-icon svg {
-        width: 18px;
-        height: 18px;
-        stroke-width: 2;
-        opacity: 0.8;
-      }
-      body.light .title-with-icon svg {
-        opacity: 0.7;
-      }
-      .main-content {
-        margin-left: var(--sidebar-width);
-        width: auto;
-        max-width: none;
+        max-width: 100%;
         min-height: 100vh;
-        padding: var(--page-padding-y) var(--page-padding-x);
-        overflow-y: auto;
         overflow-x: hidden;
-        display: flex;
-        flex-direction: column;
-        gap: var(--page-gap);
-        box-sizing: border-box;
-        transition: margin-left 0.25s ease;
       }
-      .sidebar.collapsed ~ .main-content,
-      .sidebar.closed ~ .main-content {
-        margin-left: var(--sidebar-collapsed-width);
-        width: auto;
+      .app-shell > .main-content.stats-main {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-x: hidden;
       }
-      .main-content,
+      /* Sidebar: sidebar.css | Layout shell: stats-layout.css (stats.js) */
+      .main-content.stats-main,
       .stats-page,
       .chart-grid,
       .stats-grid,
@@ -522,11 +136,6 @@
         width: 100%;
         max-width: none;
         box-sizing: border-box;
-      }
-      .stats-page {
-        display: flex;
-        flex-direction: column;
-        gap: var(--page-gap);
       }
       .page-title {
         margin: 0;
@@ -1283,22 +892,6 @@
           --page-padding-y: 16px;
           --page-gap: 16px;
         }
-        .sidebar {
-          position: absolute;
-          z-index: 10;
-          height: 100%;
-        }
-        .main-content {
-          margin-left: 0;
-          width: 100%;
-          max-width: none;
-          padding: var(--page-padding-y) var(--page-padding-x);
-        }
-        .sidebar.collapsed ~ .main-content,
-        .sidebar.closed ~ .main-content {
-          margin-left: 0;
-          width: 100%;
-        }
         .insights-card {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -1313,68 +906,26 @@
       }
     </style>
   </head>
-  <body>
-    <div class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo"><span class="logo-text">Trading Journal</span></div>
-        <button id="toggleSidebarStats" class="sidebar-toggle" type="button" data-i18n-title="sidebar_toggle_tooltip" data-i18n-aria-label="sidebar_toggle_tooltip">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 6H20M4 12H20M4 18H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-          </svg>
-        </button>
-      </div>
-      <div class="sidebar-section">
-        <div class="sidebar-title">REAL</div>
-        <button class="sidebar-btn sidebar-item" type="button" onclick="navigateTo('dashboard')">
-          <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" stroke="currentColor" stroke-width="2"/></svg>
-          <span class="sidebar-item-label" data-i18n="dashboard">Dashboard</span>
-        </button>
-        <button class="sidebar-btn sidebar-item" type="button" onclick="navigateTo('trade')">
-          <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span class="sidebar-item-label" data-i18n="new_trade">Nuevo trade</span>
-        </button>
-        <button class="sidebar-btn sidebar-item active" type="button" onclick="navigateTo('stats')">
-          <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 18V9M10 18V5M16 18v-7M22 18V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span class="sidebar-item-label" data-i18n="stats">Estadísticas</span>
-        </button>
-        <button id="btnConfig" class="sidebar-btn sidebar-item" type="button" onclick="navigateTo('config')">
-          <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>
-          <span class="sidebar-item-label" data-i18n="settings">Configuración</span>
-        </button>
-      </div>
-      <div class="sidebar-section">
-        <div class="sidebar-title">BACKTEST</div>
-        <button id="btnBacktesting" class="sidebar-btn sidebar-item" type="button" onclick="navigateTo('backtesting')">
-          <i data-lucide="flask-conical" class="sidebar-icon" aria-hidden="true"></i>
-          <span class="sidebar-item-label">Backtesting</span>
-        </button>
-        <button id="btnBacktestingConfig" class="sidebar-btn sidebar-item" type="button" onclick="navigateTo('backtestingconfig')">
-          <i data-lucide="sliders-horizontal" class="sidebar-icon" aria-hidden="true"></i>
-          <span class="sidebar-item-label">Config. Backtesting</span>
-        </button>
-      </div>
-      <div class="sidebar-section">
-        <div class="sidebar-title">SISTEMA</div>
-      </div>
-      <div class="sidebar-footer">
-        <div class="theme-toggle">
-          <label class="theme-toggle-content" for="themeToggle">
-            <span id="themeIcon" class="theme-icon-slot"><i data-lucide="moon" aria-hidden="true"></i></span>
-            <span class="theme-label" data-i18n="theme_light">Tema claro</span>
-          </label>
-          <label class="switch" for="themeToggle">
-            <input type="checkbox" id="themeToggle" />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="lang-switch">
-          <button class="lang-btn" data-lang="es" type="button">ES</button>
-          <button class="lang-btn" data-lang="en" type="button">EN</button>
-        </div>
-      </div>
-    </div>
+  <body class="route-stats">
+    <div class="app-shell">
+      <aside id="sidebar" class="sidebar open" aria-label="Navegación principal"></aside>
 
-    <div class="main-content stats-page">
+      <main class="main-content stats-main">
+        <div class="stats-page">
+      <div
+        id="stats-boot-error"
+        hidden
+        role="alert"
+        style="
+          margin-bottom: 16px;
+          padding: 12px 16px;
+          border-radius: 8px;
+          background: rgba(239, 68, 68, 0.15);
+          border: 1px solid rgba(239, 68, 68, 0.45);
+          color: #fecaca;
+          font-size: 14px;
+        "
+      ></div>
       <h1 class="page-title title-with-icon"><i data-lucide="bar-chart-3"></i><span data-i18n="stats_title">Estadísticas</span></h1>
 
       <div class="filters filters-row">
@@ -1413,7 +964,17 @@
           </label>
           <span class="toggle-label" data-i18n="include_be">Incluir BE</span>
         </div>
+        <div class="toggle-row">
+          <label class="switch" for="excludeOutOfSchedule">
+            <input type="checkbox" id="excludeOutOfSchedule" />
+            <span class="slider"></span>
+          </label>
+          <span class="toggle-label" data-i18n="stats_exclude_out_of_schedule">Excluir trades fuera de horario</span>
+        </div>
       </div>
+
+      <div id="statsScheduleFilterNotice" class="stats-schedule-notice" role="status"></div>
+      <p id="statsScheduleExcludedHint" class="stats-schedule-hint" hidden></p>
 
       <div id="statsEmptyState" class="empty-state" data-i18n="no_data_filters">No hay datos para los filtros seleccionados.</div>
 
@@ -1449,6 +1010,58 @@
         <div data-i18n-title="insight_rr_tip"><span data-i18n="insight_rr">R:R:</span> <strong id="statRR">0.00</strong></div>
         <div data-i18n-title="insight_max_dd_tip"><span data-i18n="insight_max_dd">Max drawdown:</span> <strong id="statMaxDrawdown" class="negative">-0.00€</strong></div>
       </div>
+
+      <section id="scheduleStatsSection" class="schedule-discipline-card card">
+        <h2 class="section-title title-with-icon schedule-discipline-title">
+          <i data-lucide="clock"></i>
+          <span data-i18n="schedule_discipline_title">Disciplina por horario</span>
+        </h2>
+        <div id="scheduleStatsEmpty" class="empty-state schedule-discipline-empty" hidden data-i18n="schedule_discipline_empty">
+          No hay suficientes trades con horario configurado.
+        </div>
+        <div id="scheduleStatsMetrics" class="stats-grid schedule-discipline-metrics">
+          <div class="advanced-item">
+            <span data-i18n="stat_trades_in_schedule">Trades dentro de horario</span>
+            <h2 id="statTradesInSchedule">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_trades_out_schedule">Trades fuera de horario</span>
+            <h2 id="statTradesOutSchedule">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_trades_missing_time">Sin hora</span>
+            <h2 id="statTradesMissingTime">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_trades_no_schedule">Sin horario configurado</span>
+            <h2 id="statTradesNoSchedule">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_schedule_compliance">% respetando horario</span>
+            <h2 id="statScheduleCompliance">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_pnl_in_schedule">PnL dentro de horario</span>
+            <h2 id="statPnlInSchedule">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_pnl_out_schedule">PnL fuera de horario</span>
+            <h2 id="statPnlOutSchedule">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_pnl_missing_time">PnL sin hora</span>
+            <h2 id="statPnlMissingTime">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_avg_duration_in_schedule">Duración media dentro de horario</span>
+            <h2 id="statAvgDurationInSchedule">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_avg_duration_out_schedule">Duración media fuera de horario</span>
+            <h2 id="statAvgDurationOutSchedule">—</h2>
+          </div>
+        </div>
+      </section>
 
       <button id="toggleAdvanced" class="advanced-toggle" type="button" data-i18n="insights_advanced_toggle_show">Ver análisis avanzado</button>
 
@@ -1608,10 +1221,10 @@
         </div>
       </div>
       <div id="donutTooltip" class="donut-tooltip"></div>
+        </div>
+      </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="./stats.js"></script>
   </body>
 </html>
