@@ -119,9 +119,12 @@ function normalizeStrategyFromRow(row) {
   return {
     name,
     client_uuid: row?.client_uuid ? String(row.client_uuid) : null,
+    remote_id: row?.remote_id != null && row.remote_id !== '' ? String(row.remote_id) : null,
+    id: row?.id != null && row.id !== '' ? row.id : null,
     description: String(row?.description || '').trim(),
     schedule_enabled,
     operating_hours: parseOperatingHours(row?.operating_hours ?? row?.operatingHours ?? '[]'),
+    previous_names: Array.isArray(row?.previous_names) ? row.previous_names.map(String) : [],
   };
 }
 

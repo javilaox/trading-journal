@@ -2627,6 +2627,19 @@ const {
   formatPositionLegsSummary,
   hydrateTradeCompositeFields,
 } = require('./services/positionLegsUtils');
+const {
+  mergeRealAccounts,
+  mergeRealStrategies,
+  dedupeRealAccounts,
+  dedupeRealStrategies,
+  filterTradeRecoveryAccounts,
+  filterTradeRecoveryStrategies,
+  extractAccountsFromTrades,
+  extractStrategiesFromTrades,
+  mapSqliteAccountRows,
+  mapSqliteStrategyRows,
+  mergePreviousNames,
+} = require('./services/realListsMerge');
 const { calculateTradeCommission, resolveAccountCommissionPerLot } = require('./services/tradeCommission');
 
 const TRADE_COMPOSITE_FORMS = {
@@ -2967,9 +2980,30 @@ let loadStrategiesPromise = null;
 /** @type {Map<string, { name: string, description: string, schedule_enabled: boolean, operating_hours: object[], client_uuid?: string }>} */
 let realStrategiesByName = new Map();
 
+async function getTradesForListRecovery() {
+  if (Array.isArray(cachedTrades) && cachedTrades.length) return cachedTrades;
+  const backend = getBackendApi();
+  if (backend?.getTradesLocal) {
+    try {
+      const local = await backend.getTradesLocal();
+      if (Array.isArray(local) && local.length) return local;
+    } catch (err) {
+      console.warn('[real-lists] trade recovery load failed:', err);
+    }
+  }
+  return [];
+}
+
+function makeClientUuidLocal() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
- * Fuente única para UI: SQLite (IPC) si está disponible; si no, localStorage scoped.
- * Además, refleja a localStorage scoped para mantener compatibilidad con otras vistas.
+ * Fuente unificada: SQLite + localStorage scoped + nombres en trades → merge sin pérdidas.
  */
 async function refreshRealAccountsAndStrategies(userIdArg = null) {
   const userId = userIdArg || (await getCurrentUserIdSafe());
@@ -2986,71 +3020,87 @@ async function refreshRealAccountsAndStrategies(userIdArg = null) {
   const ak = `real_accounts_${userId}`;
   const sk = `real_strategies_${userId}`;
 
-  let accounts = [];
-  let strategies = [];
-
-  // 1) Preferimos SQLite via IPC (misma fuente para todas las vistas/páginas)
+  let sqliteAccounts = [];
+  let sqliteStrategies = [];
   if (backend?.getRealAccountsLocal) {
     try {
       const rows = await backend.getRealAccountsLocal();
-      accounts = (Array.isArray(rows) ? rows : [])
-        .map((r) => ({
-          name: String(r?.name || '').trim(),
-          capital: Number(r?.balance ?? 0) || 0,
-          commissionPerLot: Number(r?.commission_per_lot ?? 0) || 0,
-          freeSwap: Boolean(Number(r?.free_swap ?? 0)),
-        }))
-        .filter((a) => a.name);
-      console.log('Real accounts loaded from SQLite:', accounts.length);
+      sqliteAccounts = mapSqliteAccountRows(rows);
+      console.log('Real accounts loaded from SQLite:', sqliteAccounts.length);
     } catch (err) {
       console.warn('Real accounts SQLite load failed:', err);
     }
   }
-
-  let strategyRows = [];
   if (backend?.getRealStrategiesLocal) {
     try {
       const rows = await backend.getRealStrategiesLocal();
-      strategyRows = Array.isArray(rows) ? rows : [];
-      strategies = strategyRows.map((r) => String(r?.name || '').trim()).filter(Boolean);
-      console.log('Real strategies loaded from SQLite:', strategies.length);
+      sqliteStrategies = mapSqliteStrategyRows(rows);
+      console.log('Real strategies loaded from SQLite:', sqliteStrategies.length);
     } catch (err) {
       console.warn('Real strategies SQLite load failed:', err);
     }
   }
 
-  // 2) Fallback localStorage scoped (si SQLite aún no tiene nada)
-  if (!accounts.length) {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(ak) || '[]');
-      accounts = (Array.isArray(parsed) ? parsed : []).map((row) => normalizeAccount(row)).filter((a) => a.name);
-    } catch {
-      accounts = [];
-    }
+  let lsAccounts = [];
+  let lsStrategies = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ak) || '[]');
+    lsAccounts = (Array.isArray(parsed) ? parsed : [])
+      .map((row) => normalizeAccount(row))
+      .filter((a) => a.name);
+  } catch {
+    lsAccounts = [];
+  }
+  try {
+    const parsed = JSON.parse(localStorage.getItem(sk) || '[]');
+    const arr = Array.isArray(parsed) ? parsed : [];
+    lsStrategies = arr
+      .map((s) => (typeof s === 'string' ? { name: s } : s))
+      .filter((s) => String(s?.name || '').trim());
+  } catch {
+    lsStrategies = [];
   }
 
-  if (!strategies.length) {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(sk) || '[]');
-      const arr = Array.isArray(parsed) ? parsed : [];
-      strategies = arr
-        .map((s) => (typeof s === 'string' ? s : String(s?.name || '').trim()))
-        .filter(Boolean);
-      strategyRows = arr
-        .map((s) => (typeof s === 'string' ? { name: s } : s))
-        .filter((s) => String(s?.name || '').trim());
-    } catch {
-      strategies = [];
-      strategyRows = [];
-    }
-  }
+  const trades = await getTradesForListRecovery();
+  const deletedAccountsRegistry = await loadDeletedAccountsRegistry();
+  const deletedStrategiesRegistry = await loadDeletedStrategiesRegistry();
 
-  realStrategiesByName = buildStrategyByNameMap(strategyRows);
+  console.log('[accounts] before merge count:', realAccountsCache.length);
+  let accounts = mergeRealAccounts([], sqliteAccounts);
+  accounts = mergeRealAccounts(accounts, lsAccounts);
+  accounts = filterActiveAccounts(accounts, deletedAccountsRegistry);
+  const rawTradeAccounts = filterRecoverySkipDeleted(
+    extractAccountsFromTrades(trades),
+    deletedAccountsRegistry
+  );
+  const { accounts: fromTradesAccounts } = filterTradeRecoveryAccounts(rawTradeAccounts, accounts);
+  console.log('[accounts] recovered from trades count:', fromTradesAccounts.length);
+  accounts = mergeRealAccounts(accounts, fromTradesAccounts);
+  accounts = dedupeRealAccounts(accounts);
+  accounts = filterActiveAccounts(accounts, deletedAccountsRegistry);
+  console.log('[accounts] after merge count:', accounts.length);
 
-  // 3) Reflejar a localStorage scoped (compatibilidad stats/otras vistas)
+  console.log('[strategies] before merge count:', realStrategiesCache.length);
+  let strategyRecords = mergeRealStrategies([], sqliteStrategies);
+  strategyRecords = mergeRealStrategies(strategyRecords, lsStrategies);
+  strategyRecords = filterActiveStrategies(strategyRecords, deletedStrategiesRegistry);
+  const rawTradeStrategies = filterRecoverySkipDeleted(
+    extractStrategiesFromTrades(trades),
+    deletedStrategiesRegistry
+  );
+  const { accounts: fromTradesStrategies } = filterTradeRecoveryStrategies(rawTradeStrategies, strategyRecords);
+  console.log('[strategies] recovered from trades count:', fromTradesStrategies.length);
+  strategyRecords = mergeRealStrategies(strategyRecords, fromTradesStrategies);
+  strategyRecords = dedupeRealStrategies(strategyRecords);
+  strategyRecords = filterActiveStrategies(strategyRecords, deletedStrategiesRegistry);
+  console.log('[strategies] after merge count:', strategyRecords.length);
+
+  realStrategiesByName = buildStrategyByNameMap(strategyRecords);
+  const strategies = strategyRecords.map((s) => String(s.name)).filter(Boolean);
+
   try {
     localStorage.setItem(ak, JSON.stringify(accounts));
-    localStorage.setItem(sk, JSON.stringify([...realStrategiesByName.values()]));
+    localStorage.setItem(sk, JSON.stringify(strategyRecords));
     console.log('Real accounts saved locally:', accounts.length);
   } catch (err) {
     console.warn('No se pudo guardar real lists en localStorage:', err);
@@ -3209,10 +3259,10 @@ let backtestingSettings = {
 let selectedDashboardAccounts = new Set(['ALL']);
 let selectedDashboardStrategies = new Set(['ALL']);
 
-/** @type {string | null} */
-let editingSettingsStrategy = null;
-/** @type {string | null} */
-let editingSettingsAccount = null;
+/** @type {{ client_uuid: string|null, remote_id: string|null, id: string|number|null, originalName: string|null } | null} */
+let accountModalIdentity = null;
+/** @type {{ client_uuid: string|null, remote_id: string|null, id: string|number|null, originalName: string|null } | null} */
+let strategyModalIdentity = null;
 /** @type {number | null} */
 let editingBtMetricId = null;
 let kpiExpandedChartInstance = null;
@@ -3733,6 +3783,144 @@ function showConfirmModal({
   });
 }
 
+/**
+ * Confirmación simple para eliminar cuenta/estrategia (checkbox).
+ * @returns {Promise<boolean>}
+ */
+function showSecureDeleteModal({
+  title = 'Confirmar eliminación',
+  entityName = '',
+  mainText = '',
+  statsLines = [],
+  hasAssociatedData = false,
+  confirmText = 'Eliminar',
+  cancelText = 'Cancelar',
+} = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay app-modal-overlay active';
+    overlay.style.zIndex = '10060';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal app-modal app-confirm-modal';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header app-modal-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close app-modal-close';
+    closeBtn.setAttribute('data-cancel', '');
+    closeBtn.setAttribute('aria-label', 'Cerrar');
+    closeBtn.textContent = '×';
+    header.append(h2, closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body app-modal-body';
+    const intro = document.createElement('p');
+    intro.className = 'confirm-message';
+    intro.textContent = mainText;
+    body.appendChild(intro);
+
+    if (entityName || statsLines.length) {
+      const stats = document.createElement('div');
+      stats.className = 'secure-delete-stats';
+      if (entityName) {
+        const nameLine = document.createElement('div');
+        nameLine.innerHTML = `Nombre: <strong>${escapeHtmlChipText(entityName)}</strong>`;
+        stats.appendChild(nameLine);
+      }
+      statsLines.forEach((line) => {
+        const row = document.createElement('div');
+        row.innerHTML = line;
+        stats.appendChild(row);
+      });
+      body.appendChild(stats);
+    }
+
+    if (hasAssociatedData) {
+      const hint = document.createElement('p');
+      hint.className = 'secure-delete-hint';
+      hint.textContent = t(
+        'confirm_delete_has_data_hint',
+        'Tiene datos asociados. Los trades históricos se conservan.'
+      );
+      body.appendChild(hint);
+    }
+
+    const secureField = document.createElement('div');
+    secureField.className = 'secure-delete-field';
+    const checkLabel = document.createElement('label');
+    checkLabel.className = 'secure-delete-ack';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'secure-delete-ack-input';
+    const checkText = document.createElement('span');
+    checkText.className = 'secure-delete-ack-text';
+    checkText.textContent = t(
+      'confirm_delete_understand_card',
+      'Entiendo que esta acción ocultará este elemento, pero no borrará los trades históricos.'
+    );
+    checkLabel.append(check, checkText);
+    secureField.appendChild(checkLabel);
+    body.appendChild(secureField);
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer app-modal-footer';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.setAttribute('data-cancel', '');
+    cancelBtn.textContent = cancelText;
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn-danger';
+    confirmBtn.setAttribute('data-confirm', '');
+    confirmBtn.textContent = confirmText;
+    confirmBtn.disabled = true;
+    footer.append(cancelBtn, confirmBtn);
+
+    check.addEventListener('change', () => {
+      confirmBtn.disabled = !check.checked;
+    });
+
+    modal.append(header, body, footer);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    overlay.querySelectorAll('[data-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => finish(false));
+    });
+    confirmBtn.addEventListener('click', () => {
+      if (!confirmBtn.disabled) finish(true);
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(false);
+    });
+  });
+}
+
+function showEntityModalOverlay(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  if (!overlay) return;
+  overlay.classList.add('active');
+  overlay.removeAttribute('hidden');
+}
+
+function hideEntityModalOverlay(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  if (!overlay) return;
+  overlay.classList.remove('active');
+}
+
 function refreshLucideIcons() {
   if (window.lucide && typeof window.lucide.createIcons === 'function') {
     window.lucide.createIcons();
@@ -4135,14 +4323,247 @@ function setMode(mode) {
 
 function normalizeAccount(account) {
   if (typeof account === 'string') {
-    return { name: account, capital: 0, commissionPerLot: 0, freeSwap: false };
+    return {
+      name: account,
+      capital: 0,
+      commissionPerLot: 0,
+      freeSwap: false,
+      client_uuid: null,
+      remote_id: null,
+      id: null,
+      previous_names: [],
+    };
   }
   return {
     name: (account?.name || '').trim(),
     capital: Number(account?.capital ?? account?.balance) || 0,
     commissionPerLot: resolveAccountCommissionPerLot(account),
-    freeSwap: Boolean(account?.freeSwap ?? account?.free_swap)
+    freeSwap: Boolean(account?.freeSwap ?? account?.free_swap),
+    client_uuid: account?.client_uuid ? String(account.client_uuid) : null,
+    remote_id: account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id) : null,
+    id: account?.id != null && account.id !== '' ? account.id : null,
+    previous_names: Array.isArray(account?.previous_names) ? account.previous_names.map(String) : [],
   };
+}
+
+function emptyEntityIdentity() {
+  return { client_uuid: null, remote_id: null, id: null, originalName: null };
+}
+
+function identityFromAccount(account) {
+  if (!account) return emptyEntityIdentity();
+  return {
+    client_uuid: account.client_uuid || null,
+    remote_id: account.remote_id || null,
+    id: account.id ?? null,
+    originalName: account.name || null,
+  };
+}
+
+function identityFromStrategy(record) {
+  if (!record) return emptyEntityIdentity();
+  return {
+    client_uuid: record.client_uuid || null,
+    remote_id: record.remote_id || null,
+    id: record.id ?? null,
+    originalName: record.name || null,
+  };
+}
+
+function hasStableIdentity(identity) {
+  return Boolean(
+    identity?.client_uuid || identity?.remote_id || identity?.id != null || identity?.originalName
+  );
+}
+
+function findAccountByIdentity(identity, accounts = getAccounts()) {
+  if (!identity) return null;
+  if (identity.client_uuid) {
+    const hit = accounts.find((a) => a.client_uuid === identity.client_uuid);
+    if (hit) return hit;
+  }
+  if (identity.remote_id) {
+    const hit = accounts.find((a) => a.remote_id === identity.remote_id);
+    if (hit) return hit;
+  }
+  if (identity.id != null) {
+    const hit = accounts.find((a) => a.id == identity.id);
+    if (hit) return hit;
+  }
+  if (identity.originalName) {
+    const hit = accounts.find((a) => a.name === identity.originalName);
+    if (hit) return hit;
+    const aliasHit = accounts.find(
+      (a) => Array.isArray(a.previous_names) && a.previous_names.includes(identity.originalName)
+    );
+    if (aliasHit) return aliasHit;
+  }
+  return null;
+}
+
+function findStrategyByIdentity(identity) {
+  if (!identity) return null;
+  const records = [...realStrategiesByName.values()];
+  if (identity.client_uuid) {
+    const hit = records.find((r) => r?.client_uuid === identity.client_uuid);
+    if (hit) return hit;
+  }
+  if (identity.remote_id) {
+    const hit = records.find((r) => r?.remote_id === identity.remote_id);
+    if (hit) return hit;
+  }
+  if (identity.id != null) {
+    const hit = records.find((r) => r?.id == identity.id);
+    if (hit) return hit;
+  }
+  if (identity.originalName) {
+    const hit = getStrategyRecordByName(identity.originalName);
+    if (hit) return hit;
+    const aliasHit = records.find(
+      (r) => Array.isArray(r?.previous_names) && r.previous_names.includes(identity.originalName)
+    );
+    if (aliasHit) return aliasHit;
+  }
+  return null;
+}
+
+function accountMatchesIdentity(account, identity) {
+  if (!account || !identity) return false;
+  if (identity.client_uuid && account.client_uuid === identity.client_uuid) return true;
+  if (identity.remote_id && account.remote_id === identity.remote_id) return true;
+  if (identity.id != null && account.id == identity.id) return true;
+  if (identity.originalName && account.name === identity.originalName) return true;
+  if (
+    identity.originalName &&
+    Array.isArray(account.previous_names) &&
+    account.previous_names.includes(identity.originalName)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function strategyMatchesIdentity(record, identity) {
+  if (!record || !identity) return false;
+  if (identity.client_uuid && record.client_uuid === identity.client_uuid) return true;
+  if (identity.remote_id && record.remote_id === identity.remote_id) return true;
+  if (identity.id != null && record.id == identity.id) return true;
+  if (identity.originalName && record.name === identity.originalName) return true;
+  if (
+    identity.originalName &&
+    Array.isArray(record.previous_names) &&
+    record.previous_names.includes(identity.originalName)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function identityFromCardDataset(card) {
+  if (!card?.dataset) return emptyEntityIdentity();
+  return {
+    client_uuid: card.dataset.clientUuid || null,
+    remote_id: card.dataset.remoteId || null,
+    id: card.dataset.entityId || null,
+    originalName: card.dataset.entityName || null,
+  };
+}
+
+function entityRegistryNames(entity) {
+  return mergePreviousNames([entity?.name], entity?.previous_names || []);
+}
+
+function entityMatchesDeletedRegistry(entity, registry) {
+  if (!entity || !Array.isArray(registry) || !registry.length) return false;
+  const names = entityRegistryNames(entity).map((n) => String(n).toLowerCase());
+  for (const entry of registry) {
+    if (entry?.client_uuid && entity.client_uuid && entry.client_uuid === entity.client_uuid) {
+      return true;
+    }
+    const entryNames = mergePreviousNames(entry?.names || [], entry?.name ? [entry.name] : []);
+    if (entryNames.some((n) => names.includes(String(n).toLowerCase()))) return true;
+  }
+  return false;
+}
+
+function filterActiveAccounts(accounts, registry) {
+  return (Array.isArray(accounts) ? accounts : []).filter((a) => !entityMatchesDeletedRegistry(a, registry));
+}
+
+function filterActiveStrategies(strategies, registry) {
+  return (Array.isArray(strategies) ? strategies : []).filter((s) => !entityMatchesDeletedRegistry(s, registry));
+}
+
+function filterRecoverySkipDeleted(items, registry) {
+  if (!Array.isArray(registry) || !registry.length) return items;
+  const skipped = [];
+  const filtered = (Array.isArray(items) ? items : []).filter((item) => {
+    if (entityMatchesDeletedRegistry(item, registry)) {
+      skipped.push(item?.name);
+      return false;
+    }
+    return true;
+  });
+  if (skipped.length) {
+    console.log('[recovery] skipped deleted entity names:', skipped);
+  }
+  return filtered;
+}
+
+async function loadDeletedAccountsRegistry() {
+  const key = await getUserScopedStorageKey('deleted_real_accounts');
+  if (!key) return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadDeletedStrategiesRegistry() {
+  const key = await getUserScopedStorageKey('deleted_real_strategies');
+  if (!key) return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function markAccountDeletedInRegistry(account) {
+  const key = await getUserScopedStorageKey('deleted_real_accounts');
+  if (!key || !account) return;
+  const registry = await loadDeletedAccountsRegistry();
+  const names = entityRegistryNames(account);
+  const entry = {
+    client_uuid: account.client_uuid || null,
+    names,
+    deleted_at: new Date().toISOString(),
+  };
+  const next = registry.filter(
+    (e) => !(entry.client_uuid && e.client_uuid === entry.client_uuid) && !names.includes(e.name)
+  );
+  next.push(entry);
+  localStorage.setItem(key, JSON.stringify(next));
+}
+
+async function markStrategyDeletedInRegistry(record) {
+  const key = await getUserScopedStorageKey('deleted_real_strategies');
+  if (!key || !record) return;
+  const registry = await loadDeletedStrategiesRegistry();
+  const names = entityRegistryNames(record);
+  const entry = {
+    client_uuid: record.client_uuid || null,
+    names,
+    deleted_at: new Date().toISOString(),
+  };
+  const next = registry.filter(
+    (e) => !(entry.client_uuid && e.client_uuid === entry.client_uuid) && !names.includes(e.name)
+  );
+  next.push(entry);
+  localStorage.setItem(key, JSON.stringify(next));
 }
 
 function getCommissionPerLotFromAccountUi(account, form = 'create') {
@@ -4199,7 +4620,16 @@ async function saveRealStrategiesList(strategies) {
   const names = (Array.isArray(strategies) ? strategies : [])
     .map((s) => (typeof s === 'string' ? s : String(s?.name || '').trim()))
     .filter(Boolean);
-  const records = names.map((name) => realStrategiesByName.get(name) || { name, description: '', schedule_enabled: false, operating_hours: [] });
+  const records = names.map(
+    (name) =>
+      realStrategiesByName.get(name) || {
+        name,
+        description: '',
+        schedule_enabled: false,
+        operating_hours: [],
+        previous_names: [],
+      }
+  );
   saveStoredList(key, records);
   realStrategiesCache = names;
   realStrategiesByName = buildStrategyByNameMap(records);
@@ -4208,17 +4638,15 @@ async function saveRealStrategiesList(strategies) {
 function getStrategyRecordByName(name) {
   const key = String(name || '').trim();
   if (!key) return null;
-  return realStrategiesByName.get(key) || null;
+  if (realStrategiesByName.has(key)) return realStrategiesByName.get(key);
+  for (const rec of realStrategiesByName.values()) {
+    if (Array.isArray(rec?.previous_names) && rec.previous_names.includes(key)) return rec;
+  }
+  return null;
 }
 
-function syncStrategyHoursSectionVisibility() {
-  const enabled = Boolean(document.getElementById('strategyScheduleEnabled')?.checked);
-  const section = document.getElementById('strategyHoursSection');
-  if (section) section.hidden = !enabled;
-}
-
-function renderStrategyHoursList(hours) {
-  const list = document.getElementById('strategyHoursList');
+function renderStrategyHoursList(hours, listId = 'strategyModalHoursList') {
+  const list = document.getElementById(listId);
   if (!list) return;
   const ranges = parseOperatingHours(hours);
   list.innerHTML = '';
@@ -4237,15 +4665,15 @@ function renderStrategyHoursList(hours) {
   list.querySelectorAll('.strategy-hour-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
       const i = Number(btn.dataset.index);
-      const next = parseOperatingHours(collectStrategyHoursFromDom());
+      const next = parseOperatingHours(collectStrategyHoursFromDom(listId));
       next.splice(i, 1);
-      renderStrategyHoursList(next);
+      renderStrategyHoursList(next, listId);
     });
   });
 }
 
-function collectStrategyHoursFromDom() {
-  const list = document.getElementById('strategyHoursList');
+function collectStrategyHoursFromDom(listId = 'strategyModalHoursList') {
+  const list = document.getElementById(listId);
   if (!list) return [];
   const out = [];
   list.querySelectorAll('.strategy-hour-row').forEach((row) => {
@@ -4256,50 +4684,266 @@ function collectStrategyHoursFromDom() {
   return out;
 }
 
-function collectStrategyFormPayload() {
-  const name = String(document.getElementById('newStrategy')?.value || '').trim();
-  const description = String(document.getElementById('strategyDescription')?.value || '').trim();
-  const schedule_enabled = Boolean(document.getElementById('strategyScheduleEnabled')?.checked);
+function collectStrategyModalPayload() {
+  const name = String(document.getElementById('strategyModalName')?.value || '').trim();
+  const description = String(document.getElementById('strategyModalDescription')?.value || '').trim();
+  const schedule_enabled = Boolean(document.getElementById('strategyModalScheduleEnabled')?.checked);
   let operating_hours = [];
   if (schedule_enabled) {
-    operating_hours = collectStrategyHoursFromDom();
+    operating_hours = collectStrategyHoursFromDom('strategyModalHoursList');
     const validation = validateOperatingHoursList(operating_hours);
     if (!validation.valid) return { error: validation.error };
     operating_hours = validation.hours;
   }
-  const existing = getStrategyRecordByName(name);
+  const existing = findStrategyByIdentity(strategyModalIdentity) || getStrategyRecordByName(name);
   return {
     name,
     description,
     schedule_enabled,
     operating_hours,
-    client_uuid: existing?.client_uuid || null,
+    client_uuid: existing?.client_uuid || strategyModalIdentity?.client_uuid || null,
+    remote_id: existing?.remote_id || strategyModalIdentity?.remote_id || null,
+    id: existing?.id ?? strategyModalIdentity?.id ?? null,
+    previous_names: existing?.previous_names || [],
   };
 }
 
-function loadStrategyFormFromRecord(record) {
-  const desc = document.getElementById('strategyDescription');
-  const sched = document.getElementById('strategyScheduleEnabled');
+function loadStrategyModalFromRecord(record) {
+  const nameEl = document.getElementById('strategyModalName');
+  const desc = document.getElementById('strategyModalDescription');
+  const sched = document.getElementById('strategyModalScheduleEnabled');
+  if (nameEl) nameEl.value = record?.name || '';
   if (desc) desc.value = record?.description || '';
   if (sched) sched.checked = Boolean(record?.schedule_enabled);
-  renderStrategyHoursList(record?.operating_hours || []);
-  syncStrategyHoursSectionVisibility();
+  renderStrategyHoursList(record?.operating_hours || [], 'strategyModalHoursList');
+  syncStrategyModalHoursVisibility();
 }
 
-function clearStrategyExtraFields() {
-  const desc = document.getElementById('strategyDescription');
-  const sched = document.getElementById('strategyScheduleEnabled');
+function clearStrategyModalFields() {
+  const nameEl = document.getElementById('strategyModalName');
+  const desc = document.getElementById('strategyModalDescription');
+  const sched = document.getElementById('strategyModalScheduleEnabled');
+  if (nameEl) nameEl.value = '';
   if (desc) desc.value = '';
   if (sched) sched.checked = false;
-  renderStrategyHoursList([]);
-  syncStrategyHoursSectionVisibility();
+  renderStrategyHoursList([], 'strategyModalHoursList');
+  syncStrategyModalHoursVisibility();
 }
 
-async function persistStrategyRecord(payload) {
+function syncStrategyModalHoursVisibility() {
+  const enabled = Boolean(document.getElementById('strategyModalScheduleEnabled')?.checked);
+  const section = document.getElementById('strategyModalHoursSection');
+  if (section) section.hidden = !enabled;
+}
+
+async function createRealStrategy(payload) {
   const backend = getBackendApi();
-  if (!backend?.addRealStrategyLocal || !payload?.name) return;
-  await backend.addRealStrategyLocal(payload);
-  await refreshRealAccountsAndStrategies();
+  if (!backend?.addRealStrategyLocal || !payload?.name) return { success: false };
+  console.log('[strategies] create requested', payload.name);
+  const res = await backend.addRealStrategyLocal(payload);
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  return res;
+}
+
+async function updateRealStrategy(payload, identity, { oldName = null } = {}) {
+  const backend = getBackendApi();
+  if (!backend?.updateRealStrategyLocal || !payload?.name) return { success: false };
+  const id = identity || strategyModalIdentity;
+  console.log('[strategies] update requested using identity', id);
+  const res = await backend.updateRealStrategyLocal({
+    ...payload,
+    client_uuid: payload.client_uuid || id?.client_uuid || null,
+    remote_id: payload.remote_id || id?.remote_id || null,
+    id: payload.id ?? id?.id ?? null,
+    oldName: oldName || id?.originalName || null,
+    originalName: id?.originalName || oldName || null,
+  });
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  return res;
+}
+
+async function persistStrategyRecord(payload, identity, { isUpdate = false, oldName = null } = {}) {
+  const backend = getBackendApi();
+  if (!payload?.name) return { success: false };
+  const id = identity || strategyModalIdentity;
+  const existing = findStrategyByIdentity(id) || getStrategyRecordByName(oldName || id?.originalName || payload.name);
+  const shouldUpdate = isUpdate || hasStableIdentity(id);
+  const fullPayload = {
+    ...payload,
+    client_uuid: payload.client_uuid || existing?.client_uuid || id?.client_uuid || null,
+    remote_id: payload.remote_id || existing?.remote_id || id?.remote_id || null,
+    id: payload.id ?? existing?.id ?? id?.id ?? null,
+    previous_names: payload.previous_names || existing?.previous_names || [],
+    description: payload.description ?? existing?.description ?? '',
+    schedule_enabled: payload.schedule_enabled ?? existing?.schedule_enabled ?? false,
+    operating_hours: payload.operating_hours ?? existing?.operating_hours ?? [],
+  };
+  if (shouldUpdate && backend?.updateRealStrategyLocal) {
+    return updateRealStrategy(fullPayload, id, { oldName: oldName || id?.originalName });
+  }
+  if (backend?.addRealStrategyLocal) {
+    return createRealStrategy(fullPayload);
+  }
+  return { success: false };
+}
+
+async function createRealAccount(payload) {
+  const backend = getBackendApi();
+  if (!payload?.name) return { success: false };
+  console.log('[accounts] create requested', payload.name);
+  const clientUuid = payload.client_uuid || makeClientUuidLocal();
+  const account = normalizeAccount({ ...payload, client_uuid: clientUuid });
+  const accounts = getAccounts();
+  if (accounts.some((a) => a.name === account.name)) {
+    return { success: false, error: 'DUPLICATE' };
+  }
+  accounts.push(account);
+  await saveAccounts(accounts);
+  if (backend?.addRealAccountLocal) {
+    await backend.addRealAccountLocal({
+      ...account,
+      client_uuid: clientUuid,
+      capital: account.capital,
+      commissionPerLot: account.commissionPerLot,
+      freeSwap: account.freeSwap,
+    });
+  }
+  if (backend?.syncPendingChanges) void backend.syncPendingChanges();
+  return { success: true, client_uuid: clientUuid };
+}
+
+function formatAccountSaveError(res) {
+  const code = res?.error;
+  if (code === 'NOT_FOUND') return 'no encontrada en la base local';
+  if (code === 'NO_USER_ID') return 'sesión no disponible';
+  if (code === 'MISSING_IDENTITY') return 'identidad de cuenta no válida';
+  if (code === 'MISSING_NAME') return 'nombre obligatorio';
+  if (code === 'DUPLICATE') return 'ya existe una cuenta con ese nombre';
+  if (typeof code === 'object' && code?.message) return String(code.message);
+  if (typeof code === 'string' && code) return code;
+  return 'error desconocido';
+}
+
+function parseNumericField(value, fallback = 0) {
+  const raw = String(value ?? '').trim().replace(',', '.');
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function clearAccountModalFeedback() {
+  const err = document.getElementById('accountModalError');
+  const ok = document.getElementById('accountModalSuccess');
+  if (err) {
+    err.hidden = true;
+    err.textContent = '';
+  }
+  if (ok) {
+    ok.hidden = true;
+    ok.textContent = '';
+  }
+}
+
+function setAccountModalError(message) {
+  console.log('[accountModal] save failed', message);
+  const err = document.getElementById('accountModalError');
+  const ok = document.getElementById('accountModalSuccess');
+  if (ok) ok.hidden = true;
+  if (err) {
+    err.hidden = false;
+    err.textContent = `No se pudo guardar la cuenta: ${message}`;
+    err.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function setAccountModalSuccess(message) {
+  console.log('[accountModal] save success', message);
+  const err = document.getElementById('accountModalError');
+  const ok = document.getElementById('accountModalSuccess');
+  if (err) err.hidden = true;
+  if (ok) {
+    ok.hidden = false;
+    ok.textContent = message;
+  }
+}
+
+function clearStrategyModalFeedback() {
+  const err = document.getElementById('strategyModalError');
+  const ok = document.getElementById('strategyModalSuccess');
+  if (err) {
+    err.hidden = true;
+    err.textContent = '';
+  }
+  if (ok) {
+    ok.hidden = true;
+    ok.textContent = '';
+  }
+}
+
+function setStrategyModalError(message) {
+  const err = document.getElementById('strategyModalError');
+  const ok = document.getElementById('strategyModalSuccess');
+  if (ok) ok.hidden = true;
+  if (err) {
+    err.hidden = false;
+    err.textContent = `No se pudo guardar la estrategia: ${message}`;
+    err.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+async function updateRealAccount(payload, identity, { oldName = null } = {}) {
+  const backend = getBackendApi();
+  if (!payload?.name) return { success: false, error: 'MISSING_NAME' };
+  const id = identity || accountModalIdentity;
+  if (!hasStableIdentity(id)) return { success: false, error: 'MISSING_IDENTITY' };
+  console.log('[accounts] update requested using identity', id);
+
+  let resolvedUuid = payload.client_uuid || id.client_uuid || null;
+  let sqliteRes = { success: true };
+
+  if (backend?.updateRealAccountLocal) {
+    sqliteRes = await backend.updateRealAccountLocal({
+      ...payload,
+      client_uuid: resolvedUuid,
+      remote_id: payload.remote_id || id.remote_id,
+      id: payload.id ?? id.id,
+      oldName: oldName || id.originalName,
+      originalName: id.originalName,
+      capital: payload.capital,
+      commissionPerLot: payload.commissionPerLot,
+      freeSwap: payload.freeSwap,
+    });
+
+    if (sqliteRes?.success === false && sqliteRes?.error === 'NOT_FOUND' && backend?.addRealAccountLocal) {
+      resolvedUuid = resolvedUuid || makeClientUuidLocal();
+      sqliteRes = await backend.addRealAccountLocal({
+        ...payload,
+        client_uuid: resolvedUuid,
+        capital: payload.capital,
+        commissionPerLot: payload.commissionPerLot,
+        freeSwap: payload.freeSwap,
+      });
+    }
+
+    if (sqliteRes?.success === false) return sqliteRes;
+    if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  }
+
+  const finalUuid = resolvedUuid || sqliteRes?.client_uuid || null;
+  const accounts = getAccounts().map((a) =>
+    accountMatchesIdentity(a, id)
+      ? normalizeAccount({
+          ...a,
+          ...payload,
+          client_uuid: finalUuid || a.client_uuid || id.client_uuid,
+          remote_id: payload.remote_id || a.remote_id || id.remote_id,
+          id: payload.id ?? a.id ?? id.id,
+          previous_names: payload.previous_names || a.previous_names || [],
+        })
+      : a
+  );
+  await saveAccounts(accounts);
+  return { success: true, client_uuid: finalUuid };
 }
 
 function updateTradeScheduleHints({ strategyId = 'strategy', entryId = 'entryTime', exitId = 'exitTime', noticeId = 'tradeScheduleNotice', warnId = 'tradeScheduleWarning', dateId = 'date' } = {}) {
@@ -4541,9 +5185,9 @@ async function loadStrategies() {
     await syncRealListsFromStorage();
     const strategies = realStrategiesCache;
     fillSelect('strategy', strategies, 'placeholder_select_strategy');
-    fillSelect('settingsStrategy', strategies, 'placeholder_select_strategy');
     fillSelect('editStrategy', strategies, 'placeholder_select_strategy');
     fillSelect('resetStrategySelect', strategies, 'placeholder_select_strategy');
+    renderSettingsStrategiesList();
     if (currentView === 'dashboard') {
       await renderDashboardFilters(cachedTrades);
       renderDashboardWithFilters({ skipCalendar: true });
@@ -4553,183 +5197,6 @@ async function loadStrategies() {
   });
 
   return loadStrategiesPromise;
-}
-
-function resetStrategyForm() {
-  editingSettingsStrategy = null;
-  const input = document.getElementById('newStrategy');
-  if (input) {
-    input.value = '';
-    input.removeAttribute('data-editing');
-    input.placeholder = t('placeholder_new_strategy');
-  }
-  clearStrategyExtraFields();
-  const sel = document.getElementById('settingsStrategy');
-  if (sel) sel.value = '';
-  document.getElementById('settingsStrategyCard')?.classList.remove('is-editing');
-  const cancelBtn = document.getElementById('cancelStrategyEditBtn');
-  if (cancelBtn) cancelBtn.hidden = true;
-  const addBtn = document.getElementById('addStrategyBtn');
-  if (addBtn) addBtn.textContent = t('add_strategy');
-}
-
-function onSettingsStrategyChange() {
-  const strategySelect = document.getElementById('settingsStrategy');
-  const input = document.getElementById('newStrategy');
-  const value = strategySelect?.value;
-  if (!value) {
-    resetStrategyForm();
-    return;
-  }
-  editingSettingsStrategy = value;
-  if (input) {
-    input.value = value;
-    input.setAttribute('data-editing', '1');
-    input.placeholder = t('placeholder_editing_strategy');
-  }
-  loadStrategyFormFromRecord(getStrategyRecordByName(value));
-  document.getElementById('settingsStrategyCard')?.classList.add('is-editing');
-  const cancelBtn = document.getElementById('cancelStrategyEditBtn');
-  if (cancelBtn) cancelBtn.hidden = false;
-  const addBtn = document.getElementById('addStrategyBtn');
-  if (addBtn) addBtn.textContent = t('save_changes');
-}
-
-async function updateStrategyName(oldName, newName) {
-  const o = String(oldName || '').trim();
-  const n = String(newName || '').trim();
-  if (!o || !n) return false;
-  await syncRealListsFromStorage();
-  const strategies = [...realStrategiesCache];
-  if (!strategies.includes(o)) return false;
-  if (n !== o && strategies.includes(n)) {
-    showToast(t('error_duplicate_strategy_name'), 'error');
-    return false;
-  }
-
-  const oldMeta = getStrategyRecordByName(o);
-  const formMeta = collectStrategyFormPayload();
-  if (formMeta.error) {
-    showToast(t('strategy_hours_invalid'), 'error');
-    return false;
-  }
-
-  if (o !== n) {
-    const backend = getBackendApi();
-    if (backend?.updateTradesStrategy) {
-      const res = await backend.updateTradesStrategy(o, n);
-      if (!res?.success && !res?.skipped) {
-        showToast(t('error_rename_trades_remote'), 'error');
-        return false;
-      }
-    }
-  }
-
-  const updated = strategies.map((s) => (s === o ? n : s));
-  await saveRealStrategiesList(updated);
-  try {
-    await persistStrategyRecord({
-      name: n,
-      description: formMeta.description ?? oldMeta?.description ?? '',
-      schedule_enabled: formMeta.schedule_enabled ?? oldMeta?.schedule_enabled ?? false,
-      operating_hours: formMeta.operating_hours ?? oldMeta?.operating_hours ?? [],
-    });
-    if (o !== n) {
-      const backend = getBackendApi();
-      if (backend?.deleteRealStrategyLocal) {
-        await backend.deleteRealStrategyLocal(o);
-      }
-    }
-  } catch (err) {
-    console.warn('No se pudo reflejar estrategia en SQLite:', err);
-  }
-  return true;
-}
-
-async function saveOrUpdateStrategy() {
-  const input = document.getElementById('newStrategy');
-  if (!input) return;
-  const value = input.value.trim();
-  if (!value) return;
-
-  const formMeta = collectStrategyFormPayload();
-  if (formMeta.error) {
-    showToast(t('strategy_hours_invalid'), 'error');
-    return;
-  }
-
-  if (editingSettingsStrategy) {
-    if (value === editingSettingsStrategy) {
-      await persistStrategyRecord(formMeta);
-      showToast(t('saved_changes'), 'success');
-      resetStrategyForm();
-      await loadStrategies();
-      const sel = document.getElementById('settingsStrategy');
-      if (sel) sel.value = value;
-      return;
-    }
-    const ok = await updateStrategyName(editingSettingsStrategy, value);
-    if (!ok) return;
-    resetStrategyForm();
-    await loadStrategies();
-    const sel = document.getElementById('settingsStrategy');
-    if (sel) sel.value = value;
-    await loadTrades();
-    showToast(t('saved_changes'), 'success');
-    await syncRealListsFromStorage();
-    await loadAccounts();
-    await loadStrategies();
-    return;
-  }
-
-  await syncRealListsFromStorage();
-  const strategies = [...realStrategiesCache];
-  if (strategies.includes(value)) {
-    showToast(t('error_duplicate_strategy_name'), 'error');
-    return;
-  }
-  strategies.push(value);
-  await saveRealStrategiesList(strategies);
-  try {
-    await persistStrategyRecord(formMeta);
-  } catch (err) {
-    console.warn('No se pudo persistir estrategia en SQLite:', err);
-  }
-  await syncRealListsFromStorage();
-  resetStrategyForm();
-  await loadStrategies();
-  await loadAccounts();
-  const sel = document.getElementById('settingsStrategy');
-  if (sel) sel.value = value;
-  showToast(t('saved_changes'), 'success');
-}
-
-function addStrategy() {
-  saveOrUpdateStrategy().catch((err) => console.error(err));
-}
-
-function deleteStrategy() {
-  void (async () => {
-    const strategySelect = document.getElementById('settingsStrategy') || document.getElementById('strategy');
-    if (!strategySelect?.value) return;
-    const removed = strategySelect.value;
-    await syncRealListsFromStorage();
-    const strategies = realStrategiesCache.filter((item) => item !== removed);
-    await saveRealStrategiesList(strategies);
-    try {
-      const backend = getBackendApi();
-      if (backend?.deleteRealStrategyLocal) {
-        await backend.deleteRealStrategyLocal(removed);
-      }
-    } catch (err) {
-      console.warn('No se pudo borrar estrategia en SQLite:', err);
-    }
-    await syncRealListsFromStorage();
-    if (editingSettingsStrategy === removed) resetStrategyForm();
-    await loadStrategies();
-    await loadAccounts();
-    showToast(t('saved_changes'));
-  })();
 }
 
 let withdrawalsCache = [];
@@ -4905,32 +5372,6 @@ function renderWithdrawalsTable(list) {
   });
 }
 
-async function updateAccountWithdrawalSummary() {
-  const summaryEl = document.getElementById('accountWithdrawalSummary');
-  if (!summaryEl) return;
-  const accountName = document.getElementById('settingsAccount')?.value || '';
-  if (!accountName) {
-    summaryEl.hidden = true;
-    return;
-  }
-  const list = withdrawalsCache.filter((w) => String(w.account_name || w.accountName) === accountName);
-  const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
-  const count = list.length;
-  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  const account = getAccounts().find((a) => a.name === accountName);
-  const capital = Number(account?.capital ?? 0) || 0;
-  const operationalNet = cachedTrades
-    .filter((t) => String(t.account || '') === accountName)
-    .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
-  const estimatedBalance = capital + operationalNet - withdrawn;
-  summaryEl.hidden = false;
-  summaryEl.innerHTML = `
-    <div><strong>Retiros de esta cuenta</strong></div>
-    <div>Total retirado: <strong>${formatWithdrawalEuro(withdrawn)}</strong> · Nº retiros: <strong>${count}</strong></div>
-    <div>Último retiro: <strong>${last ? `${formatWithdrawalEuro(last.amount)} (${last.date})` : '—'}</strong></div>
-    <div>Balance estimado: <strong>${formatWithdrawalEuro(estimatedBalance)}</strong> (capital + PnL operativo − retiros)</div>`;
-}
-
 async function refreshWithdrawalsUI() {
   if (!document.getElementById('withdrawalsView')) return;
   await loadWithdrawalsCache();
@@ -4949,7 +5390,6 @@ async function refreshWithdrawalsUI() {
   if (hasAnyWithdrawals) {
     renderWithdrawalsAnalytics(filtered, filteredMetrics);
   }
-  await updateAccountWithdrawalSummary();
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -5107,193 +5547,603 @@ function initWithdrawalsUI() {
   resetWithdrawalForm();
 }
 
+function getAccountTradeNames(account) {
+  const names = new Set([account?.name].filter(Boolean));
+  if (Array.isArray(account?.previous_names)) {
+    account.previous_names.forEach((n) => names.add(n));
+  }
+  return names;
+}
+
+function countTradesForAccount(account) {
+  const names = getAccountTradeNames(account);
+  return cachedTrades.filter((t) => names.has(String(t.account || ''))).length;
+}
+
+function getAccountWithdrawalStats(accountName) {
+  const list = withdrawalsCache.filter((w) => String(w.account_name || w.accountName) === accountName);
+  const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const count = list.length;
+  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  return { withdrawn, count, last };
+}
+
+function getAccountEstimatedBalance(account) {
+  const names = getAccountTradeNames(account);
+  const stats = getAccountWithdrawalStats(account.name);
+  const operationalNet = cachedTrades
+    .filter((t) => names.has(String(t.account || '')))
+    .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
+  return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn;
+}
+
+function countTradesForStrategy(record) {
+  const names = new Set([record?.name].filter(Boolean));
+  if (Array.isArray(record?.previous_names)) {
+    record.previous_names.forEach((n) => names.add(n));
+  }
+  return cachedTrades.filter((t) => names.has(String(t.strategy || ''))).length;
+}
+
+function getStrategyTradeStats(record) {
+  const names = new Set([record?.name].filter(Boolean));
+  if (Array.isArray(record?.previous_names)) {
+    record.previous_names.forEach((n) => names.add(n));
+  }
+  const trades = cachedTrades.filter((t) => names.has(String(t.strategy || '')));
+  const pnl = trades.reduce((sum, t) => sum + tradeOperationalNet(t), 0);
+  const wins = trades.filter((t) => tradeOperationalNet(t) > 0).length;
+  const winrate = trades.length ? (wins / trades.length) * 100 : 0;
+  return { count: trades.length, pnl, winrate };
+}
+
 async function loadAccounts() {
   await syncRealListsFromStorage();
   const accountNames = getAccounts().map((account) => account.name);
   fillSelect('account', accountNames, 'placeholder_select_account');
-  fillSelect('settingsAccount', accountNames, 'placeholder_select_account');
   fillSelect('editAccount', accountNames, 'placeholder_select_account');
   fillSelect('resetAccountSelect', accountNames, 'placeholder_select_account');
   fillWithdrawalAccountSelects();
   refreshPnlPresetButtons();
+  renderSettingsAccountsList();
   if (currentView === 'dashboard') {
     await renderDashboardFilters(cachedTrades);
     renderDashboardWithFilters({ skipCalendar: true });
   }
-  await updateAccountWithdrawalSummary();
 }
 
-function resetAccountForm() {
-  editingSettingsAccount = null;
-  const nameInput = document.getElementById('newAccount');
-  const capitalInput = document.getElementById('newAccountCapital');
-  const commissionInput = document.getElementById('newAccountCommission');
-  const freeSwapInput = document.getElementById('newAccountFreeSwap');
-  if (nameInput) {
-    nameInput.value = '';
-    nameInput.removeAttribute('data-editing');
-    nameInput.placeholder = t('placeholder_account_name');
-  }
-  if (capitalInput) capitalInput.value = '';
-  if (commissionInput) commissionInput.value = '';
-  if (freeSwapInput) freeSwapInput.checked = false;
-  const accountSelect = document.getElementById('settingsAccount');
-  if (accountSelect) accountSelect.value = '';
-  document.getElementById('settingsAccountCard')?.classList.remove('is-editing');
-  const cancelBtn = document.getElementById('cancelAccountEditBtn');
-  if (cancelBtn) cancelBtn.hidden = true;
-  const addBtn = document.getElementById('addAccountBtn');
-  if (addBtn) addBtn.textContent = t('add_account');
+function buildAccountCardDataAttrs(account) {
+  return [
+    `data-entity-type="account"`,
+    account.client_uuid ? `data-client-uuid="${escapeAttrChip(account.client_uuid)}"` : '',
+    account.remote_id ? `data-remote-id="${escapeAttrChip(account.remote_id)}"` : '',
+    account.id != null && account.id !== '' ? `data-entity-id="${escapeAttrChip(account.id)}"` : '',
+    `data-entity-name="${escapeAttrChip(account.name)}"`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
-function onSettingsAccountChange() {
-  const accountSelect = document.getElementById('settingsAccount');
-  const name = accountSelect?.value;
-  if (!name) {
-    resetAccountForm();
+function buildStrategyCardDataAttrs(record) {
+  return [
+    `data-entity-type="strategy"`,
+    record.client_uuid ? `data-client-uuid="${escapeAttrChip(record.client_uuid)}"` : '',
+    record.remote_id ? `data-remote-id="${escapeAttrChip(record.remote_id)}"` : '',
+    record.id != null && record.id !== '' ? `data-entity-id="${escapeAttrChip(record.id)}"` : '',
+    `data-entity-name="${escapeAttrChip(record.name)}"`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function renderSettingsAccountsList() {
+  const listEl = document.getElementById('settingsAccountsList');
+  if (!listEl) return;
+  const accounts = getAccounts();
+  if (!accounts.length) {
+    listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_account', 'No hay cuentas todavía')}</div>`;
     return;
   }
-  const account = getAccounts().find((a) => a.name === name);
-  if (!account) return;
-  editingSettingsAccount = account.name;
-  const nameInput = document.getElementById('newAccount');
-  const capitalInput = document.getElementById('newAccountCapital');
-  const commissionInput = document.getElementById('newAccountCommission');
-  const freeSwapInput = document.getElementById('newAccountFreeSwap');
-  if (nameInput) {
-    nameInput.value = account.name;
-    nameInput.setAttribute('data-editing', '1');
-    nameInput.placeholder = t('placeholder_editing_account');
-  }
-  if (capitalInput) capitalInput.value = String(account.capital ?? '');
-  if (commissionInput) commissionInput.value = String(account.commissionPerLot ?? '');
-  if (freeSwapInput) freeSwapInput.checked = Boolean(account.freeSwap);
-  document.getElementById('settingsAccountCard')?.classList.add('is-editing');
-  const cancelBtn = document.getElementById('cancelAccountEditBtn');
-  if (cancelBtn) cancelBtn.hidden = false;
-  const addBtn = document.getElementById('addAccountBtn');
-  if (addBtn) addBtn.textContent = t('save_changes');
-  void updateAccountWithdrawalSummary();
+  listEl.innerHTML = accounts
+    .map((account) => {
+      const stats = getAccountWithdrawalStats(account.name);
+      const balance = getAccountEstimatedBalance(account);
+      const tradeCount = countTradesForAccount(account);
+      const badges = [];
+      if (account.freeSwap) badges.push(`<span class="settings-entity-badge">Free Swap</span>`);
+      return `
+        <article class="settings-entity-card" role="listitem" ${buildAccountCardDataAttrs(account)}>
+          <div class="settings-entity-card-main">
+            <div class="settings-entity-card-title">${escapeHtmlChipText(account.name)}</div>
+            <div class="settings-entity-stats">
+              <div class="settings-entity-stat">Capital<strong>${formatWithdrawalEuro(account.capital)}</strong></div>
+              <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
+              <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
+              <div class="settings-entity-stat">Retirado<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
+              <div class="settings-entity-stat">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
+            </div>
+            ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}
+          </div>
+          <div class="settings-entity-card-actions">
+            <button type="button" class="button button-edit-entity" data-account-action="edit">${t('edit', 'Editar')}</button>
+            <button type="button" class="button button-delete" data-account-action="delete">${t('delete', 'Eliminar')}</button>
+          </div>
+        </article>`;
+    })
+    .join('');
 }
 
-async function saveOrUpdateAccount() {
-  const nameInput = document.getElementById('newAccount');
-  const capitalInput = document.getElementById('newAccountCapital');
-  const commissionInput = document.getElementById('newAccountCommission');
-  const freeSwapInput = document.getElementById('newAccountFreeSwap');
-  if (!nameInput) return;
-  const name = nameInput.value.trim();
-  if (!name) return;
+function renderSettingsStrategiesList() {
+  const listEl = document.getElementById('settingsStrategiesList');
+  if (!listEl) return;
+  const records = [...realStrategiesByName.values()].sort((a, b) =>
+    String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' })
+  );
+  if (!records.length) {
+    listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_strategy', 'No hay estrategias todavía')}</div>`;
+    return;
+  }
+  listEl.innerHTML = records
+    .map((record) => {
+      const tradeStats = getStrategyTradeStats(record);
+      const hours = parseOperatingHours(record.operating_hours);
+      const badges = [];
+      if (record.schedule_enabled) badges.push(`<span class="settings-entity-badge">Horarios activos</span>`);
+      if (hours.length) badges.push(`<span class="settings-entity-badge muted">${hours.length} rangos</span>`);
+      const desc = String(record.description || '').trim();
+      const shortDesc = desc.length > 100 ? `${desc.slice(0, 100)}…` : desc;
+      return `
+        <article class="settings-entity-card" role="listitem" ${buildStrategyCardDataAttrs(record)}>
+          <div class="settings-entity-card-main">
+            <div class="settings-entity-card-title">${escapeHtmlChipText(record.name)}</div>
+            <div class="settings-entity-card-desc">${escapeHtmlChipText(shortDesc || t('strategy_description', 'Sin descripción'))}</div>
+            <div class="settings-entity-stats">
+              <div class="settings-entity-stat">Trades<strong>${tradeStats.count}</strong></div>
+              <div class="settings-entity-stat">PnL<strong>${formatWithdrawalEuro(tradeStats.pnl)}</strong></div>
+              <div class="settings-entity-stat">Win rate<strong>${tradeStats.count ? tradeStats.winrate.toFixed(1) : '0.0'}%</strong></div>
+            </div>
+            ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}
+          </div>
+          <div class="settings-entity-card-actions">
+            <button type="button" class="button button-edit-entity" data-strategy-action="edit">${t('edit', 'Editar')}</button>
+            <button type="button" class="button button-delete" data-strategy-action="delete">${t('delete', 'Eliminar')}</button>
+          </div>
+        </article>`;
+    })
+    .join('');
+}
 
-  const payload = {
-    name,
-    capital: Number(capitalInput?.value) || 0,
-    commissionPerLot: Number(commissionInput?.value) || 0,
-    freeSwap: Boolean(freeSwapInput?.checked)
-  };
+function updateAccountModalSummary(account) {
+  const summaryEl = document.getElementById('accountModalSummary');
+  if (!summaryEl || !account) {
+    if (summaryEl) summaryEl.hidden = true;
+    return;
+  }
+  const stats = getAccountWithdrawalStats(account.name);
+  const balance = getAccountEstimatedBalance(account);
+  const tradeCount = countTradesForAccount(account);
+  summaryEl.hidden = false;
+  summaryEl.innerHTML = `
+    <div><strong>Resumen</strong></div>
+    <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
+    <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${stats.last.date})` : '—'}</strong></div>
+    <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
+    <div>Trades asociados: <strong>${tradeCount}</strong></div>`;
+}
 
-  if (editingSettingsAccount) {
-    const accounts = getAccounts();
-    const taken = accounts.some(
-      (a) => a.name === name && a.name !== editingSettingsAccount
+function updateStrategyModalSummary(record) {
+  const summaryEl = document.getElementById('strategyModalSummary');
+  if (!summaryEl || !record) {
+    if (summaryEl) summaryEl.hidden = true;
+    return;
+  }
+  const stats = getStrategyTradeStats(record);
+  summaryEl.hidden = false;
+  summaryEl.innerHTML = `
+    <div><strong>Resumen</strong></div>
+    <div>Trades asociados: <strong>${stats.count}</strong></div>
+    <div>PnL asociado: <strong>${formatWithdrawalEuro(stats.pnl)}</strong></div>
+    <div>Win rate: <strong>${stats.count ? stats.winrate.toFixed(1) : '0.0'}%</strong></div>`;
+}
+
+function openAccountDetailModal(account = null) {
+  accountModalIdentity = account ? identityFromAccount(account) : emptyEntityIdentity();
+  console.log('[accounts] open detail modal identity', accountModalIdentity);
+  clearAccountModalFeedback();
+  const title = document.getElementById('accountDetailModalTitle');
+  const saveBtn = document.getElementById('saveAccountDetailModalBtn');
+  const deleteBtn = document.getElementById('deleteAccountModalBtn');
+  const isEdit = hasStableIdentity(accountModalIdentity);
+  if (title) title.textContent = isEdit ? t('account_detail_title', 'Detalle de cuenta') : t('add_account', 'Nueva cuenta');
+  if (saveBtn) saveBtn.textContent = isEdit ? t('save_changes') : t('add_account');
+  if (deleteBtn) deleteBtn.hidden = !isEdit;
+  if (account) {
+    document.getElementById('accountModalName').value = account.name || '';
+    document.getElementById('accountModalCapital').value = String(account.capital ?? '');
+    document.getElementById('accountModalCommission').value = String(account.commissionPerLot ?? '');
+    document.getElementById('accountModalFreeSwap').checked = Boolean(account.freeSwap);
+    updateAccountModalSummary(account);
+  } else {
+    document.getElementById('accountModalName').value = '';
+    document.getElementById('accountModalCapital').value = '';
+    document.getElementById('accountModalCommission').value = '';
+    document.getElementById('accountModalFreeSwap').checked = false;
+    const summaryEl = document.getElementById('accountModalSummary');
+    if (summaryEl) summaryEl.hidden = true;
+  }
+  showEntityModalOverlay('accountDetailModalOverlay');
+}
+
+function closeAccountDetailModal() {
+  hideEntityModalOverlay('accountDetailModalOverlay');
+  accountModalIdentity = null;
+}
+
+function openStrategyDetailModal(record = null) {
+  strategyModalIdentity = record ? identityFromStrategy(record) : emptyEntityIdentity();
+  console.log('[strategies] open detail modal identity', strategyModalIdentity);
+  clearStrategyModalFeedback();
+  const title = document.getElementById('strategyDetailModalTitle');
+  const saveBtn = document.getElementById('saveStrategyDetailModalBtn');
+  const deleteBtn = document.getElementById('deleteStrategyModalBtn');
+  const isEdit = hasStableIdentity(strategyModalIdentity);
+  if (title) title.textContent = isEdit ? t('strategy_detail_title', 'Detalle de estrategia') : t('add_strategy', 'Nueva estrategia');
+  if (saveBtn) saveBtn.textContent = isEdit ? t('save_changes') : t('add_strategy');
+  if (deleteBtn) deleteBtn.hidden = !isEdit;
+  if (record) {
+    loadStrategyModalFromRecord(record);
+    updateStrategyModalSummary(record);
+  } else {
+    clearStrategyModalFields();
+    const summaryEl = document.getElementById('strategyModalSummary');
+    if (summaryEl) summaryEl.hidden = true;
+  }
+  showEntityModalOverlay('strategyDetailModalOverlay');
+}
+
+function closeStrategyDetailModal() {
+  hideEntityModalOverlay('strategyDetailModalOverlay');
+  strategyModalIdentity = null;
+}
+
+async function saveAccountFromModal() {
+  console.log('[accountModal] save clicked');
+  clearAccountModalFeedback();
+
+  const name = String(document.getElementById('accountModalName')?.value || '').trim();
+  const capital = parseNumericField(document.getElementById('accountModalCapital')?.value, 0);
+  const commissionPerLot = parseNumericField(document.getElementById('accountModalCommission')?.value, 0);
+  const freeSwap = Boolean(document.getElementById('accountModalFreeSwap')?.checked);
+
+  if (!name) {
+    setAccountModalError('el nombre es obligatorio');
+    return;
+  }
+  if (Number.isNaN(capital)) {
+    setAccountModalError('capital debe ser un número válido');
+    return;
+  }
+  if (Number.isNaN(commissionPerLot)) {
+    setAccountModalError('comisión por lote debe ser un número válido');
+    return;
+  }
+
+  const payload = { name, capital, commissionPerLot, freeSwap };
+  const isEdit = hasStableIdentity(accountModalIdentity);
+  const existing = isEdit ? findAccountByIdentity(accountModalIdentity) : null;
+  const originalName = accountModalIdentity?.originalName || existing?.name || null;
+
+  console.log('[accountModal] payload', payload);
+  console.log('[accountModal] identity', accountModalIdentity);
+
+  if (isEdit) {
+    const taken = getAccounts().some(
+      (a) => a.name === name && !accountMatchesIdentity(a, accountModalIdentity)
     );
     if (taken) {
-      showToast(t('error_duplicate_account_name'), 'error');
+      setAccountModalError('ya existe una cuenta con ese nombre');
       return;
     }
-
-    if (name !== editingSettingsAccount) {
+    let previous_names = existing?.previous_names || [];
+    if (originalName && name !== originalName) {
+      console.log('[accounts] rename from -> to', originalName, '->', name);
       const backend = getBackendApi();
       if (backend?.updateTradesAccount) {
-        const res = await backend.updateTradesAccount(editingSettingsAccount, name);
-        if (!res?.success && !res?.skipped) {
-          showToast(t('error_rename_trades_remote'), 'error');
+        const renameRes = await backend.updateTradesAccount(originalName, name);
+        if (!renameRes?.success && !renameRes?.skipped) {
+          if (Number(renameRes?.localChanges) > 0) {
+            console.warn('[accountModal] trades renombrados localmente; remoto pendiente');
+          } else {
+            setAccountModalError('no se pudieron actualizar los trades asociados');
+            return;
+          }
+        }
+      }
+      previous_names = mergePreviousNames(previous_names, [originalName]);
+    }
+    const res = await updateRealAccount(
+      {
+        ...payload,
+        client_uuid: existing?.client_uuid || accountModalIdentity.client_uuid,
+        remote_id: existing?.remote_id || accountModalIdentity.remote_id,
+        id: existing?.id ?? accountModalIdentity.id,
+        previous_names,
+      },
+      accountModalIdentity,
+      { oldName: originalName }
+    );
+    if (res?.success === false) {
+      setAccountModalError(formatAccountSaveError(res));
+      return;
+    }
+  } else {
+    if (getAccounts().some((a) => a.name === name)) {
+      setAccountModalError('ya existe una cuenta con ese nombre');
+      return;
+    }
+    console.log('[accounts] create requested', name);
+    const res = await createRealAccount(payload);
+    if (res?.success === false || res?.error === 'DUPLICATE') {
+      setAccountModalError(formatAccountSaveError(res));
+      return;
+    }
+  }
+
+  await syncRealListsFromStorage();
+  setAccountModalSuccess(t('account_saved_ok', 'Cuenta actualizada correctamente'));
+  await loadAccounts();
+  await loadStrategies();
+  updateCreateDerivedFields();
+  if (isEdit && originalName && name !== originalName) await loadTrades();
+  showToast(t('saved_changes'), 'success');
+  setTimeout(() => closeAccountDetailModal(), 450);
+}
+
+async function deleteAccountWithConfirmation(account, identity) {
+  if (!account) return false;
+  const id = identity || identityFromAccount(account);
+  const tradeCount = countTradesForAccount(account);
+  const withdrawalCount = getAccountWithdrawalStats(account.name).count;
+  const statsLines = [`Trades asociados: <strong>${tradeCount}</strong>`];
+  if (withdrawalCount > 0) {
+    statsLines.push(`Retiros asociados: <strong>${withdrawalCount}</strong>`);
+  }
+  const ok = await showSecureDeleteModal({
+    title: t('delete_account', 'Eliminar cuenta'),
+    entityName: account.name,
+    mainText: t(
+      'confirm_delete_account_main',
+      'Esta acción ocultará la cuenta de tus formularios, pero no borrará tus trades históricos.'
+    ),
+    statsLines,
+    hasAssociatedData: tradeCount > 0 || withdrawalCount > 0,
+    confirmText: t('delete', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+  });
+  if (!ok) return false;
+  await markAccountDeletedInRegistry(account);
+  await saveAccounts(getAccounts().filter((a) => !accountMatchesIdentity(a, id)));
+  try {
+    const backend = getBackendApi();
+    if (backend?.deleteRealAccountLocal) {
+      await backend.deleteRealAccountLocal(account.client_uuid || account.name);
+    }
+  } catch (err) {
+    console.warn('No se pudo borrar cuenta en SQLite:', err);
+  }
+  await syncRealListsFromStorage();
+  closeAccountDetailModal();
+  await loadAccounts();
+  await loadStrategies();
+  updateCreateDerivedFields();
+  showToast(t('saved_changes'));
+  return true;
+}
+
+async function deleteAccountFromModal() {
+  if (!hasStableIdentity(accountModalIdentity)) return;
+  const account = findAccountByIdentity(accountModalIdentity);
+  if (!account) return;
+  await deleteAccountWithConfirmation(account, accountModalIdentity);
+}
+
+async function saveStrategyFromModal() {
+  clearStrategyModalFeedback();
+  const formMeta = collectStrategyModalPayload();
+  if (formMeta.error) {
+    setStrategyModalError(t('strategy_hours_invalid', 'Horarios no válidos'));
+    return;
+  }
+  if (!formMeta.name) {
+    setStrategyModalError('el nombre es obligatorio');
+    return;
+  }
+  const isEdit = hasStableIdentity(strategyModalIdentity);
+  const existing = isEdit ? findStrategyByIdentity(strategyModalIdentity) : null;
+  const originalName = strategyModalIdentity?.originalName || existing?.name || null;
+
+  if (isEdit) {
+    const taken = [...realStrategiesByName.values()].some(
+      (r) => r.name === formMeta.name && !strategyMatchesIdentity(r, strategyModalIdentity)
+    );
+    if (taken) {
+      setStrategyModalError('ya existe una estrategia con ese nombre');
+      return;
+    }
+    let previous_names = existing?.previous_names || [];
+    if (originalName && formMeta.name !== originalName) {
+      console.log('[strategies] rename from -> to', originalName, '->', formMeta.name);
+      const backend = getBackendApi();
+      if (backend?.updateTradesStrategy) {
+        const res = await backend.updateTradesStrategy(originalName, formMeta.name);
+        if (!res?.success && !res?.skipped && !(Number(res?.localChanges) > 0)) {
+          setStrategyModalError('no se pudieron actualizar los trades asociados');
           return;
         }
       }
+      previous_names = mergePreviousNames(previous_names, [originalName]);
+      if (existing) realStrategiesByName.delete(originalName);
     }
-
-    const updatedList = accounts.map((a) =>
-      a.name === editingSettingsAccount ? normalizeAccount(payload) : a
-    );
-    await saveAccounts(updatedList);
-    try {
-      const backend = getBackendApi();
-      if (backend?.addRealAccountLocal) {
-        await backend.addRealAccountLocal({ name, capital: payload.capital, commissionPerLot: payload.commissionPerLot, freeSwap: payload.freeSwap });
-      }
-    } catch (err) {
-      console.warn('No se pudo persistir cuenta en SQLite:', err);
+    const nextRecord = {
+      ...formMeta,
+      client_uuid: existing?.client_uuid || strategyModalIdentity.client_uuid,
+      remote_id: existing?.remote_id || strategyModalIdentity.remote_id,
+      id: existing?.id ?? strategyModalIdentity.id,
+      previous_names,
+    };
+    realStrategiesByName.set(formMeta.name, nextRecord);
+    const names = [...realStrategiesByName.keys()];
+    await saveRealStrategiesList(names);
+    await persistStrategyRecord(nextRecord, strategyModalIdentity, { isUpdate: true, oldName: originalName });
+  } else {
+    if (realStrategiesCache.includes(formMeta.name)) {
+      setStrategyModalError('ya existe una estrategia con ese nombre');
+      return;
     }
-    await syncRealListsFromStorage();
-    resetAccountForm();
-    await loadAccounts();
-    await loadStrategies();
-    const sel = document.getElementById('settingsAccount');
-    if (sel) sel.value = name;
-    updateCreateDerivedFields();
-    await loadTrades();
-    showToast(t('saved_changes'), 'success');
-    return;
-  }
-
-  const accounts = getAccounts();
-  if (accounts.some((a) => a.name === name)) {
-    showToast(t('error_duplicate_account_name'), 'error');
-    return;
-  }
-  accounts.push(
-    normalizeAccount({
-      name: payload.name,
-      capital: payload.capital,
-      commissionPerLot: payload.commissionPerLot,
-      freeSwap: payload.freeSwap
-    })
-  );
-  await saveAccounts(accounts);
-  try {
-    const backend = getBackendApi();
-    if (backend?.addRealAccountLocal) {
-      await backend.addRealAccountLocal({ name, capital: payload.capital, commissionPerLot: payload.commissionPerLot, freeSwap: payload.freeSwap });
-    }
-  } catch (err) {
-    console.warn('No se pudo persistir cuenta en SQLite:', err);
+    console.log('[strategies] create requested', formMeta.name);
+    const names = [...realStrategiesCache, formMeta.name];
+    realStrategiesByName.set(formMeta.name, formMeta);
+    await saveRealStrategiesList(names);
+    await persistStrategyRecord(formMeta, null, { isUpdate: false });
   }
   await syncRealListsFromStorage();
-  resetAccountForm();
-  await loadAccounts();
+  closeStrategyDetailModal();
   await loadStrategies();
-  const sel = document.getElementById('settingsAccount');
-  if (sel) sel.value = name;
-  updateCreateDerivedFields();
+  await loadAccounts();
+  if (isEdit && originalName && formMeta.name !== originalName) await loadTrades();
   showToast(t('saved_changes'), 'success');
 }
 
-function addAccount() {
-  saveOrUpdateAccount().catch((err) => console.error(err));
+async function deleteStrategyWithConfirmation(record, identity) {
+  if (!record) return false;
+  const id = identity || identityFromStrategy(record);
+  const tradeCount = getStrategyTradeStats(record).count;
+  const ok = await showSecureDeleteModal({
+    title: t('delete_strategy', 'Eliminar estrategia'),
+    entityName: record.name,
+    mainText: t(
+      'confirm_delete_strategy_main',
+      'Esta acción ocultará la estrategia de tus formularios, pero no borrará tus trades históricos.'
+    ),
+    statsLines: [`Trades asociados: <strong>${tradeCount}</strong>`],
+    hasAssociatedData: tradeCount > 0,
+    confirmText: t('delete', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+  });
+  if (!ok) return false;
+  await markStrategyDeletedInRegistry(record);
+  const removed = record.name;
+  const strategies = realStrategiesCache.filter((item) => item !== removed);
+  await saveRealStrategiesList(strategies);
+  try {
+    const backend = getBackendApi();
+    if (backend?.deleteRealStrategyLocal) {
+      await backend.deleteRealStrategyLocal(record.client_uuid || removed);
+    }
+  } catch (err) {
+    console.warn('No se pudo borrar estrategia en SQLite:', err);
+  }
+  await syncRealListsFromStorage();
+  closeStrategyDetailModal();
+  await loadStrategies();
+  await loadAccounts();
+  showToast(t('saved_changes'));
+  return true;
 }
 
-function deleteAccount() {
-  void (async () => {
-    const selected =
-      document.getElementById('settingsAccount')?.value || document.getElementById('account')?.value;
-    if (!selected) return;
-    if (editingSettingsAccount === selected) resetAccountForm();
-    await saveAccounts(getAccounts().filter((account) => account.name !== selected));
-    try {
-      const backend = getBackendApi();
-      if (backend?.deleteRealAccountLocal) {
-        await backend.deleteRealAccountLocal(selected);
+async function deleteStrategyFromModal() {
+  if (!hasStableIdentity(strategyModalIdentity)) return;
+  const record = findStrategyByIdentity(strategyModalIdentity);
+  if (!record) return;
+  await deleteStrategyWithConfirmation(record, strategyModalIdentity);
+}
+
+function initSettingsEntityListDelegation() {
+  const accountsList = document.getElementById('settingsAccountsList');
+  if (accountsList && !accountsList.dataset.delegationBound) {
+    accountsList.dataset.delegationBound = '1';
+    accountsList.addEventListener('click', (event) => {
+      const editBtn = event.target.closest('[data-account-action="edit"]');
+      const deleteBtn = event.target.closest('[data-account-action="delete"]');
+      if (!editBtn && !deleteBtn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const card = event.target.closest('.settings-entity-card[data-entity-type="account"]');
+      if (!card) return;
+      const identity = identityFromCardDataset(card);
+      const account = findAccountByIdentity(identity);
+      if (!account) return;
+      if (editBtn) {
+        console.log('[accounts] edit button clicked', identity);
+        openAccountDetailModal(account);
+        return;
       }
-    } catch (err) {
-      console.warn('No se pudo borrar cuenta en SQLite:', err);
-    }
-    await syncRealListsFromStorage();
-    await loadAccounts();
-    await loadStrategies();
-    updateCreateDerivedFields();
-    showToast(t('saved_changes'));
-  })();
+      if (deleteBtn) {
+        console.log('[accounts] delete button clicked', identity);
+        void deleteAccountWithConfirmation(account, identity);
+      }
+    });
+  }
+
+  const strategiesList = document.getElementById('settingsStrategiesList');
+  if (strategiesList && !strategiesList.dataset.delegationBound) {
+    strategiesList.dataset.delegationBound = '1';
+    strategiesList.addEventListener('click', (event) => {
+      const editBtn = event.target.closest('[data-strategy-action="edit"]');
+      const deleteBtn = event.target.closest('[data-strategy-action="delete"]');
+      if (!editBtn && !deleteBtn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const card = event.target.closest('.settings-entity-card[data-entity-type="strategy"]');
+      if (!card) return;
+      const identity = identityFromCardDataset(card);
+      const record = findStrategyByIdentity(identity);
+      if (!record) return;
+      if (editBtn) {
+        console.log('[strategies] edit button clicked', identity);
+        openStrategyDetailModal(record);
+        return;
+      }
+      if (deleteBtn) {
+        console.log('[strategies] delete button clicked', identity);
+        void deleteStrategyWithConfirmation(record, identity);
+      }
+    });
+  }
+}
+
+function initAccountStrategyModals() {
+  initSettingsEntityListDelegation();
+  document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
+  document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());
+  document.getElementById('saveAccountDetailModalBtn')?.addEventListener('click', () => {
+    saveAccountFromModal().catch(console.error);
+  });
+  document.getElementById('saveStrategyDetailModalBtn')?.addEventListener('click', () => {
+    saveStrategyFromModal().catch(console.error);
+  });
+  document.getElementById('deleteAccountModalBtn')?.addEventListener('click', () => {
+    deleteAccountFromModal().catch(console.error);
+  });
+  document.getElementById('deleteStrategyModalBtn')?.addEventListener('click', () => {
+    deleteStrategyFromModal().catch(console.error);
+  });
+  document.getElementById('closeAccountDetailModalBtn')?.addEventListener('click', closeAccountDetailModal);
+  document.getElementById('cancelAccountDetailModalBtn')?.addEventListener('click', closeAccountDetailModal);
+  document.getElementById('closeStrategyDetailModalBtn')?.addEventListener('click', closeStrategyDetailModal);
+  document.getElementById('cancelStrategyDetailModalBtn')?.addEventListener('click', closeStrategyDetailModal);
+  document.getElementById('accountDetailModalOverlay')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'accountDetailModalOverlay') closeAccountDetailModal();
+  });
+  document.getElementById('strategyDetailModalOverlay')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'strategyDetailModalOverlay') closeStrategyDetailModal();
+  });
+  document.getElementById('strategyModalScheduleEnabled')?.addEventListener('change', syncStrategyModalHoursVisibility);
+  document.getElementById('strategyModalAddHourBtn')?.addEventListener('click', () => {
+    const next = collectStrategyHoursFromDom('strategyModalHoursList');
+    next.push({ start: '08:00', end: '10:30' });
+    renderStrategyHoursList(next, 'strategyModalHoursList');
+  });
 }
 
 async function requireDangerConfirmation(actionLabel) {
@@ -5449,6 +6299,10 @@ function showView(viewId) {
     const presetDate = sessionStorage.getItem(NEW_TRADE_DATE_KEY);
     void resetNewTradeForm(presetDate || null).catch(console.error);
     applyPresetTradeDateIfAny();
+  }
+  if (currentView === 'config') {
+    void loadAccounts().catch(console.error);
+    void loadStrategies().catch(console.error);
   }
   if (currentView === 'withdrawals') {
     void refreshWithdrawalsUI().catch(console.error);
@@ -11527,10 +12381,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     await window.electronAPI.setUserId(uid);
   }
 
-  const addStrategyBtn = document.getElementById('addStrategyBtn');
-  const deleteStrategyBtn = document.getElementById('deleteStrategyBtn');
-  const addAccountBtn = document.getElementById('addAccountBtn');
-  const deleteAccountBtn = document.getElementById('deleteAccountBtn');
   const resetStrategyBtn = document.getElementById('resetStrategyBtn');
   const resetAccountBtn = document.getElementById('resetAccountBtn');
   const addTradeBtn = document.getElementById('addTradeBtn');
@@ -11705,21 +12555,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     onLogout: handleLogout
   });
 
-  if (addStrategyBtn) addStrategyBtn.onclick = addStrategy;
-  if (deleteStrategyBtn) deleteStrategyBtn.onclick = deleteStrategy;
-  if (addAccountBtn) addAccountBtn.onclick = addAccount;
+  initAccountStrategyModals();
   initWithdrawalsUI();
-  if (deleteAccountBtn) deleteAccountBtn.onclick = deleteAccount;
-  document.getElementById('settingsStrategy')?.addEventListener('change', onSettingsStrategyChange);
-  document.getElementById('settingsAccount')?.addEventListener('change', onSettingsAccountChange);
-  document.getElementById('cancelStrategyEditBtn')?.addEventListener('click', resetStrategyForm);
-  document.getElementById('cancelAccountEditBtn')?.addEventListener('click', resetAccountForm);
-  document.getElementById('strategyScheduleEnabled')?.addEventListener('change', syncStrategyHoursSectionVisibility);
-  document.getElementById('addStrategyHourBtn')?.addEventListener('click', () => {
-    const next = collectStrategyHoursFromDom();
-    next.push({ start: '08:00', end: '10:30' });
-    renderStrategyHoursList(next);
-  });
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
