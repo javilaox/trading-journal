@@ -569,6 +569,18 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
     : stableClientUuidFromText(`real_account:${userId}`, name);
   const ts = nowIso();
 
+  const existingBefore = db
+    .prepare(
+      `SELECT sync_status, remote_id FROM real_accounts WHERE user_id = ? AND client_uuid = ? LIMIT 1`
+    )
+    .get(String(userId), clientUuid);
+
+  const syncAction =
+    existingBefore &&
+    (existingBefore.remote_id || String(existingBefore.sync_status || '') !== 'pending_create')
+      ? 'update'
+      : 'create';
+
   db.prepare(`
     INSERT INTO real_accounts
     (user_id, client_uuid, remote_id, name, balance, commission_per_lot, free_swap, is_active, created_at, updated_at, sync_status, deleted_at)
@@ -599,7 +611,8 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
     userId,
     entityType: 'real_account',
     entityLocalId: clientUuid,
-    action: 'create',
+    entityRemoteId: existingBefore?.remote_id ? String(existingBefore.remote_id) : null,
+    action: syncAction,
     payload: {
       user_id: String(userId),
       client_uuid: clientUuid,
@@ -678,6 +691,204 @@ ipcMain.handle('add-real-strategy-local', async (_event, strategy) => {
   });
 
   return { success: true, client_uuid: clientUuid };
+});
+
+ipcMain.handle('update-real-account-local', async (_event, account) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const clientUuid = account?.client_uuid ? String(account.client_uuid).trim() : '';
+  const remoteId = account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id).trim() : '';
+  const rowId = account?.id != null && account.id !== '' ? account.id : null;
+  const oldName = String(account?.oldName ?? account?.old_name ?? account?.originalName ?? '').trim();
+  const name = String(account?.name || '').trim();
+  if (!name) return { success: false, error: 'MISSING_NAME' };
+  if (!clientUuid && !remoteId && rowId == null && !oldName) {
+    return { success: false, error: 'MISSING_IDENTITY' };
+  }
+
+  const row =
+    (clientUuid
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name FROM real_accounts
+             WHERE user_id = ? AND client_uuid = ? LIMIT 1`
+          )
+          .get(String(userId), clientUuid)
+      : null) ||
+    (remoteId
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name FROM real_accounts
+             WHERE user_id = ? AND remote_id = ? LIMIT 1`
+          )
+          .get(String(userId), remoteId)
+      : null) ||
+    (rowId != null
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name FROM real_accounts
+             WHERE user_id = ? AND id = ? LIMIT 1`
+          )
+          .get(String(userId), rowId)
+      : null) ||
+    (oldName
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name FROM real_accounts
+             WHERE user_id = ? AND name = ? AND (deleted_at IS NULL OR deleted_at = '')
+             LIMIT 1`
+          )
+          .get(String(userId), oldName)
+      : null);
+
+  if (!row?.client_uuid) {
+    return { success: false, error: 'NOT_FOUND' };
+  }
+
+  const finalUuid = String(row.client_uuid);
+  const ts = nowIso();
+  const balance = Number(account?.capital ?? account?.balance ?? 0) || 0;
+  const commission = Number(account?.commissionPerLot ?? account?.commission_per_lot ?? 0) || 0;
+  const freeSwap = normalizeBoolInt(Boolean(account?.freeSwap ?? account?.free_swap));
+
+  const syncAction =
+    String(row.sync_status || '') === 'pending_create' && !row.remote_id ? 'create' : 'update';
+
+  db.prepare(
+    `UPDATE real_accounts SET
+      name = ?,
+      balance = ?,
+      commission_per_lot = ?,
+      free_swap = ?,
+      updated_at = ?,
+      sync_status = CASE
+        WHEN sync_status = 'pending_create' THEN 'pending_create'
+        ELSE 'pending_update'
+      END,
+      deleted_at = NULL
+     WHERE user_id = ? AND client_uuid = ?`
+  ).run(name, balance, commission, freeSwap, ts, String(userId), finalUuid);
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account',
+    entityLocalId: finalUuid,
+    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+    action: syncAction,
+    payload: {
+      user_id: String(userId),
+      client_uuid: finalUuid,
+      name,
+      balance,
+      commission_per_lot: commission,
+      free_swap: freeSwap,
+    },
+  });
+
+  return { success: true, client_uuid: finalUuid };
+});
+
+ipcMain.handle('update-real-strategy-local', async (_event, strategy) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const clientUuid = strategy?.client_uuid ? String(strategy.client_uuid).trim() : '';
+  const remoteId = strategy?.remote_id != null && strategy.remote_id !== '' ? String(strategy.remote_id).trim() : '';
+  const rowId = strategy?.id != null && strategy.id !== '' ? strategy.id : null;
+  const oldName = String(strategy?.oldName ?? strategy?.old_name ?? strategy?.originalName ?? '').trim();
+  const name = String(strategy?.name || strategy || '').trim();
+  if (!name) return { success: false, error: 'MISSING_NAME' };
+  if (!clientUuid && !remoteId && rowId == null && !oldName) {
+    return { success: false, error: 'MISSING_IDENTITY' };
+  }
+
+  const row =
+    (clientUuid
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name, description, schedule_enabled, operating_hours
+             FROM real_strategies WHERE user_id = ? AND client_uuid = ? LIMIT 1`
+          )
+          .get(String(userId), clientUuid)
+      : null) ||
+    (remoteId
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name, description, schedule_enabled, operating_hours
+             FROM real_strategies WHERE user_id = ? AND remote_id = ? LIMIT 1`
+          )
+          .get(String(userId), remoteId)
+      : null) ||
+    (rowId != null
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name, description, schedule_enabled, operating_hours
+             FROM real_strategies WHERE user_id = ? AND id = ? LIMIT 1`
+          )
+          .get(String(userId), rowId)
+      : null) ||
+    (oldName
+      ? db
+          .prepare(
+            `SELECT client_uuid, remote_id, sync_status, name, description, schedule_enabled, operating_hours
+             FROM real_strategies
+             WHERE user_id = ? AND name = ? AND (deleted_at IS NULL OR deleted_at = '')
+             LIMIT 1`
+          )
+          .get(String(userId), oldName)
+      : null);
+
+  if (!row?.client_uuid) {
+    return { success: false, error: 'NOT_FOUND' };
+  }
+
+  const finalUuid = String(row.client_uuid);
+  const ts = nowIso();
+  const meta = strategyFieldsFromPayload({ ...strategy, name });
+  const syncAction =
+    String(row.sync_status || '') === 'pending_create' && !row.remote_id ? 'create' : 'update';
+
+  db.prepare(
+    `UPDATE real_strategies SET
+      name = ?,
+      description = ?,
+      schedule_enabled = ?,
+      operating_hours = ?,
+      updated_at = ?,
+      sync_status = CASE
+        WHEN sync_status = 'pending_create' THEN 'pending_create'
+        ELSE 'pending_update'
+      END,
+      deleted_at = NULL
+     WHERE user_id = ? AND client_uuid = ?`
+  ).run(
+    name,
+    meta.description,
+    meta.schedule_enabled,
+    meta.operating_hours,
+    ts,
+    String(userId),
+    finalUuid
+  );
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_strategy',
+    entityLocalId: finalUuid,
+    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+    action: syncAction,
+    payload: {
+      user_id: String(userId),
+      client_uuid: finalUuid,
+      name,
+      description: meta.description,
+      schedule_enabled: Boolean(meta.schedule_enabled),
+      operating_hours: parseOperatingHours(meta.operating_hours),
+    },
+  });
+
+  return { success: true, client_uuid: finalUuid };
 });
 
 ipcMain.handle('delete-real-account-local', async (_event, clientUuidOrName) => {
@@ -1382,6 +1593,39 @@ async function syncPendingChanges(userId) {
             WHERE user_id = ? AND client_uuid = ?
           `).run(String(ins.data.id), nowIso(), String(userId), payloadUuid);
           db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(String(ins.data.id), Number(item.id));
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (action === 'update') {
+          const patch = {
+            name: payloadName || undefined,
+            balance: payloadBalance,
+          };
+          if (remoteId) {
+            const upd = await supabase
+              .from('real_accounts')
+              .update(patch)
+              .eq('id', String(remoteId))
+              .eq('user_id', String(userId));
+            if (upd.error) throw upd.error;
+          } else {
+            const upd = await supabase
+              .from('real_accounts')
+              .update(patch)
+              .eq('user_id', String(userId))
+              .eq('client_uuid', payloadUuid);
+            if (upd.error) throw upd.error;
+          }
+          db.prepare(
+            `UPDATE real_accounts
+             SET name = COALESCE(?, name),
+                 balance = ?,
+                 sync_status = 'synced',
+                 updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(payloadName || null, payloadBalance, nowIso(), String(userId), payloadUuid);
           markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
           ok += 1;
           continue;
@@ -2619,6 +2863,9 @@ async function renameTradesField(column, oldName, newName) {
 
   if (error) {
     console.error(`❌ Supabase rename ${col}:`, error);
+    if (localChanges > 0) {
+      return { success: true, localChanges, remotePending: true };
+    }
     return { success: false, error, localChanges };
   }
 

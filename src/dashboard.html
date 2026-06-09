@@ -1746,6 +1746,237 @@
         color: var(--text-muted);
         margin-bottom: 4px;
       }
+      .settings-list-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 12px;
+      }
+      .settings-entity-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .settings-entity-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 12px 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.35));
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      body.light .settings-entity-card {
+        background: var(--surface-2);
+      }
+      .settings-entity-card:hover {
+        border-color: rgba(96, 165, 250, 0.35);
+        box-shadow: 0 4px 18px rgba(2, 6, 23, 0.22);
+      }
+      .settings-entity-card-main {
+        min-width: 0;
+      }
+      .settings-entity-card-title {
+        font-weight: 650;
+        font-size: 0.95rem;
+        color: var(--text);
+        margin-bottom: 8px;
+        line-height: 1.25;
+      }
+      .settings-entity-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 6px 12px;
+        margin-bottom: 8px;
+      }
+      .settings-entity-stat {
+        font-size: 0.76rem;
+        color: var(--text-muted);
+        line-height: 1.35;
+      }
+      .settings-entity-stat strong {
+        display: block;
+        color: var(--text);
+        font-size: 0.82rem;
+        font-weight: 600;
+        margin-top: 1px;
+      }
+      .settings-entity-card-desc {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        line-height: 1.45;
+        margin-bottom: 8px;
+      }
+      .settings-entity-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .settings-entity-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        background: rgba(96, 165, 250, 0.12);
+        color: #93c5fd;
+        border: 1px solid rgba(96, 165, 250, 0.25);
+      }
+      .settings-entity-badge.muted {
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-muted);
+        border-color: rgba(148, 163, 184, 0.2);
+      }
+      .settings-entity-card-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        min-width: 96px;
+      }
+      .settings-entity-card-actions .button {
+        padding: 7px 12px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+      }
+      .settings-entity-card-actions .button-edit-entity {
+        border: 1px solid rgba(96, 165, 250, 0.35);
+        background: rgba(96, 165, 250, 0.1);
+        color: #bfdbfe;
+      }
+      .settings-entity-card-actions .button-edit-entity:hover {
+        background: rgba(96, 165, 250, 0.18);
+      }
+      @media (max-width: 640px) {
+        .settings-entity-card {
+          grid-template-columns: 1fr;
+        }
+        .settings-entity-card-actions {
+          flex-direction: row;
+          min-width: 0;
+        }
+        .settings-entity-card-actions .button {
+          flex: 1;
+        }
+      }
+      .secure-delete-field {
+        margin-top: 16px;
+      }
+      .secure-delete-ack {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 14px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.55);
+        cursor: pointer;
+        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        user-select: none;
+      }
+      body.light .secure-delete-ack {
+        background: rgba(30, 41, 59, 0.06);
+        border-color: rgba(100, 116, 139, 0.28);
+      }
+      .secure-delete-ack:hover {
+        border-color: rgba(148, 163, 184, 0.38);
+      }
+      .secure-delete-ack:has(.secure-delete-ack-input:checked) {
+        border-color: rgba(34, 197, 94, 0.5);
+        background: rgba(20, 83, 45, 0.22);
+        box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.12);
+      }
+      body.light .secure-delete-ack:has(.secure-delete-ack-input:checked) {
+        background: rgba(34, 197, 94, 0.08);
+      }
+      .secure-delete-ack-input {
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        margin: 2px 0 0;
+        flex-shrink: 0;
+        accent-color: #22c55e;
+        cursor: pointer;
+      }
+      .secure-delete-ack-text {
+        flex: 1;
+        font-size: 0.86rem;
+        line-height: 1.45;
+        color: var(--text-muted);
+      }
+      .secure-delete-ack:has(.secure-delete-ack-input:checked) .secure-delete-ack-text {
+        color: var(--text);
+      }
+      .secure-delete-stats {
+        margin: 10px 0 0;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+      .secure-delete-stats strong { color: var(--text); }
+      .secure-delete-hint {
+        margin: 8px 0 0;
+        font-size: 0.8rem;
+        color: #fbbf24;
+      }
+      .entity-modal-feedback {
+        margin: 0 18px 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 0.84rem;
+        line-height: 1.4;
+      }
+      .entity-modal-feedback[hidden] { display: none !important; }
+      .entity-modal-feedback.is-error {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.28);
+        color: #fca5a5;
+      }
+      .entity-modal-feedback.is-success {
+        background: rgba(34, 197, 94, 0.1);
+        border: 1px solid rgba(34, 197, 94, 0.28);
+        color: #86efac;
+      }
+      .settings-entity-empty {
+        padding: 20px 14px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+      }
+      #accountDetailModalOverlay .modal,
+      #strategyDetailModalOverlay .modal {
+        width: min(520px, 100%);
+        max-height: min(90vh, 680px);
+      }
+      .entity-detail-summary {
+        margin: 12px 0 0;
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+      .entity-detail-summary strong { color: var(--text); }
+      .entity-detail-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 18px;
+      }
+      .entity-detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+        padding: 0 18px 16px;
+      }
+      .entity-detail-actions .button-delete { margin-right: auto; }
       .settings-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
       .mode-toggle { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
       .mode-btn { border:1px solid var(--border); background:var(--surface-2); color:var(--text); border-radius:10px; padding:10px 12px; cursor:pointer; font-weight:600; }
@@ -5847,39 +6078,10 @@
                   <h3 class="title-with-icon"><i data-lucide="brain"></i><span data-i18n="strategies_section">Estrategias</span></h3>
                   <p data-i18n="strategies_section_desc">Crea y gestiona tus setups de trading</p>
                 </div>
-                <div class="settings-row">
-                  <label for="settingsStrategy" class="settings-field-label" data-i18n="label_select_strategy_settings">Seleccionar estrategia</label>
-                  <select id="settingsStrategy" class="input">
-                    <option value="" data-i18n="placeholder_select_strategy">Selecciona estrategia</option>
-                  </select>
+                <div class="settings-list-toolbar">
+                  <button id="openNewStrategyModalBtn" class="button button-add" type="button" data-i18n="add_strategy">Nueva estrategia</button>
                 </div>
-                <div class="settings-row">
-                  <label for="newStrategy" class="settings-field-label" data-i18n="label_new_or_edit_strategy">Nombre</label>
-                  <input id="newStrategy" class="input" data-i18n-placeholder="placeholder_new_strategy" placeholder="Escribe una nueva estrategia" />
-                </div>
-                <div class="settings-row">
-                  <label for="strategyDescription" class="settings-field-label" data-i18n="label_strategy_description">Comentario / descripción</label>
-                  <textarea id="strategyDescription" class="input" rows="3" data-i18n-placeholder="placeholder_strategy_description" placeholder="Describe las reglas principales de esta estrategia..."></textarea>
-                </div>
-                <div class="settings-row">
-                  <div class="toggle-row">
-                    <label class="switch" for="strategyScheduleEnabled">
-                      <input id="strategyScheduleEnabled" type="checkbox" />
-                      <span class="slider"></span>
-                    </label>
-                    <span data-i18n="strategy_schedule_enabled">Activar horarios operativos</span>
-                  </div>
-                </div>
-                <div id="strategyHoursSection" class="settings-row strategy-hours-section" hidden>
-                  <label class="settings-field-label" data-i18n="strategy_operating_hours">Horarios operativos</label>
-                  <div id="strategyHoursList" class="strategy-hours-list"></div>
-                  <button id="addStrategyHourBtn" class="button button-add" type="button" data-i18n="strategy_add_hour">Añadir horario</button>
-                </div>
-                <div class="settings-actions settings-actions-three">
-                  <button id="addStrategyBtn" class="button button-add" type="button" data-i18n="add_strategy">Añadir estrategia</button>
-                  <button id="cancelStrategyEditBtn" class="button button-cancel" type="button" hidden data-i18n="cancel">Cancelar</button>
-                  <button id="deleteStrategyBtn" class="button button-delete" type="button" data-i18n="delete_strategy">Eliminar estrategia</button>
-                </div>
+                <div id="settingsStrategiesList" class="settings-entity-list" role="list"></div>
               </article>
 
               <article class="settings-card" id="settingsAccountCard">
@@ -5887,39 +6089,10 @@
                   <h3 class="title-with-icon"><i data-lucide="wallet"></i><span data-i18n="accounts_section">Cuentas</span></h3>
                   <p data-i18n="accounts_section_desc">Organiza y administra tus cuentas de trading</p>
                 </div>
-                <div class="settings-row">
-                  <label for="settingsAccount" class="settings-field-label" data-i18n="label_select_account_settings">Seleccionar cuenta</label>
-                  <select id="settingsAccount" class="input">
-                    <option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option>
-                  </select>
+                <div class="settings-list-toolbar">
+                  <button id="openNewAccountModalBtn" class="button button-add" type="button" data-i18n="add_account">Nueva cuenta</button>
                 </div>
-                <div class="settings-row">
-                  <label for="newAccount" class="settings-field-label" data-i18n="label_account_name_settings">Nombre de cuenta</label>
-                  <input id="newAccount" class="input" data-i18n-placeholder="placeholder_account_name" placeholder="Nombre de cuenta" />
-                </div>
-                <div class="settings-row">
-                  <label for="newAccountCapital" class="settings-field-label" data-i18n="label_capital_info">Capital</label>
-                  <input id="newAccountCapital" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_capital" placeholder="Capital (ej: 10000)" />
-                </div>
-                <div class="settings-row">
-                  <label for="newAccountCommission" class="settings-field-label" data-i18n="label_commission_per_lot">Comisión por lote</label>
-                  <input id="newAccountCommission" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_commission_lot" placeholder="Comisión por lote (ej: 7)" />
-                </div>
-                <div class="settings-row">
-                  <div class="toggle-row">
-                    <label class="switch" for="newAccountFreeSwap">
-                      <input id="newAccountFreeSwap" type="checkbox" />
-                      <span class="slider"></span>
-                    </label>
-                    <span data-i18n="free_swap">Free Swap</span>
-                  </div>
-                </div>
-                <div id="accountWithdrawalSummary" class="account-withdrawal-summary" hidden></div>
-                <div class="settings-actions settings-actions-three">
-                  <button id="addAccountBtn" class="button button-add" type="button" data-i18n="add_account">Añadir cuenta</button>
-                  <button id="cancelAccountEditBtn" class="button button-cancel" type="button" hidden data-i18n="cancel">Cancelar</button>
-                  <button id="deleteAccountBtn" class="button button-delete" type="button" data-i18n="delete_account">Eliminar cuenta</button>
-                </div>
+                <div id="settingsAccountsList" class="settings-entity-list" role="list"></div>
               </article>
 
               <article class="settings-card" id="configWithdrawalsLinkCard">
@@ -7304,6 +7477,83 @@
     </div>
 
     <div id="toastContainer"></div>
+
+    <div id="accountDetailModalOverlay" class="modal-overlay app-modal-overlay" role="presentation">
+      <div class="modal app-modal entity-detail-modal" role="dialog" aria-modal="true" aria-labelledby="accountDetailModalTitle">
+        <div class="modal-header app-modal-header">
+          <h3 id="accountDetailModalTitle">Detalle de cuenta</h3>
+          <button id="closeAccountDetailModalBtn" class="modal-close app-modal-close" type="button" data-i18n="close">Cerrar</button>
+        </div>
+        <div class="entity-detail-form">
+          <div class="field">
+            <label for="accountModalName" data-i18n="label_account_name_settings">Nombre de cuenta</label>
+            <input id="accountModalName" class="input" data-i18n-placeholder="placeholder_account_name" placeholder="Nombre de cuenta" />
+          </div>
+          <div class="field">
+            <label for="accountModalCapital" data-i18n="label_capital_info">Capital</label>
+            <input id="accountModalCapital" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_capital" placeholder="Capital (ej: 10000)" />
+          </div>
+          <div class="field">
+            <label for="accountModalCommission" data-i18n="label_commission_per_lot">Comisión por lote</label>
+            <input id="accountModalCommission" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_commission_lot" placeholder="Comisión por lote (ej: 7)" />
+          </div>
+          <div class="toggle-row">
+            <label class="switch" for="accountModalFreeSwap">
+              <input id="accountModalFreeSwap" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <span data-i18n="free_swap">Free Swap</span>
+          </div>
+          <div id="accountModalSummary" class="entity-detail-summary" hidden></div>
+          <div id="accountModalError" class="entity-modal-feedback is-error" hidden role="alert"></div>
+          <div id="accountModalSuccess" class="entity-modal-feedback is-success" hidden role="status"></div>
+        </div>
+        <div class="entity-detail-actions">
+          <button id="deleteAccountModalBtn" class="button button-delete" type="button" data-i18n="delete_account">Eliminar cuenta</button>
+          <button id="cancelAccountDetailModalBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>
+          <button id="saveAccountDetailModalBtn" class="button button-add" type="button" data-i18n="save_changes">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="strategyDetailModalOverlay" class="modal-overlay app-modal-overlay" role="presentation">
+      <div class="modal app-modal entity-detail-modal" role="dialog" aria-modal="true" aria-labelledby="strategyDetailModalTitle">
+        <div class="modal-header app-modal-header">
+          <h3 id="strategyDetailModalTitle">Detalle de estrategia</h3>
+          <button id="closeStrategyDetailModalBtn" class="modal-close app-modal-close" type="button" data-i18n="close">Cerrar</button>
+        </div>
+        <div class="entity-detail-form">
+          <div class="field">
+            <label for="strategyModalName" data-i18n="label_new_or_edit_strategy">Nombre</label>
+            <input id="strategyModalName" class="input" data-i18n-placeholder="placeholder_new_strategy" placeholder="Escribe una nueva estrategia" />
+          </div>
+          <div class="field">
+            <label for="strategyModalDescription" data-i18n="label_strategy_description">Comentario / descripción</label>
+            <textarea id="strategyModalDescription" class="input" rows="3" data-i18n-placeholder="placeholder_strategy_description" placeholder="Describe las reglas principales de esta estrategia..."></textarea>
+          </div>
+          <div class="toggle-row">
+            <label class="switch" for="strategyModalScheduleEnabled">
+              <input id="strategyModalScheduleEnabled" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <span data-i18n="strategy_schedule_enabled">Activar horarios operativos</span>
+          </div>
+          <div id="strategyModalHoursSection" class="strategy-hours-section" hidden>
+            <label class="settings-field-label" data-i18n="strategy_operating_hours">Horarios operativos</label>
+            <div id="strategyModalHoursList" class="strategy-hours-list"></div>
+            <button id="strategyModalAddHourBtn" class="button button-add" type="button" data-i18n="strategy_add_hour">Añadir horario</button>
+          </div>
+          <div id="strategyModalSummary" class="entity-detail-summary" hidden></div>
+          <div id="strategyModalError" class="entity-modal-feedback is-error" hidden role="alert"></div>
+          <div id="strategyModalSuccess" class="entity-modal-feedback is-success" hidden role="status"></div>
+        </div>
+        <div class="entity-detail-actions">
+          <button id="deleteStrategyModalBtn" class="button button-delete" type="button" data-i18n="delete_strategy">Eliminar estrategia</button>
+          <button id="cancelStrategyDetailModalBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>
+          <button id="saveStrategyDetailModalBtn" class="button button-add" type="button" data-i18n="save_changes">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
 
     <div id="withdrawalModalOverlay" class="modal-overlay app-modal-overlay" role="presentation">
       <div class="modal app-modal withdrawal-modal" role="dialog" aria-modal="true" aria-labelledby="withdrawalModalTitle">
