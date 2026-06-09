@@ -2,11 +2,14 @@
  * Squirrel.Windows: --squirrel-install | --squirrel-updated | --squirrel-uninstall | --squirrel-obsolete
  * Debe ejecutarse antes que el resto de la app (accesos directos, desinstalación, salida rápida).
  */
-if (require('electron-squirrel-startup')) {
-  return;
-}
+const { app, BrowserWindow, ipcMain, session, dialog, Menu } = require('electron');
 
-const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const isDev = !app.isPackaged;
+const started = require('electron-squirrel-startup');
+
+if (started) {
+  app.quit();
+}
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -35,6 +38,13 @@ const {
   upsertTradesIntoLocal,
   loadTradesOfflineFirst
 } = require('./services/offlineFirstTrades');
+const {
+  normalizeWithdrawalInput,
+  mapWithdrawalRowToResponse,
+  getWithdrawalsFromLocal,
+  supabaseRowFromPayload,
+  upsertWithdrawalsIntoLocal,
+} = require('./services/realAccountWithdrawals');
 
 let mainWindow = null;
 let currentUserId = null;
@@ -343,13 +353,18 @@ function createWindow() {
   }
   mainWindow = new BrowserWindow(windowOptions);
 
+  if (!isDev) {
+    Menu.setApplicationMenu(null);
+    mainWindow.removeMenu();
+  }
+
   if (hasWebpackEntries) {
     mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dashboard.html'));
   }
 
-  if (!app.isPackaged) {
+  if (isDev) {
     mainWindow.webContents.openDevTools();
   }
 }
@@ -411,8 +426,9 @@ function strategyFieldsForSupabase(strategy = {}) {
 }
 
 function normalizeTrade(trade = {}) {
-  const composite = isCompositePositionFlag(trade.is_composite_position ?? trade.isCompositePosition);
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
+  const composite =
+    isCompositePositionFlag(trade.is_composite_position ?? trade.isCompositePosition) || legs.length > 0;
   const applied = applyCompositeToTradeFields({
     ...trade,
     is_composite_position: composite,
@@ -698,6 +714,220 @@ ipcMain.handle('delete-real-account-local', async (_event, clientUuidOrName) => 
   return { success: true };
 });
 
+function resolveRealAccountMetaForWithdrawal(userId, accountName) {
+  const name = String(accountName || '').trim();
+  if (!name) return { account_id: null, account_client_uuid: null };
+  const row = db
+    .prepare(
+      `SELECT remote_id, client_uuid FROM real_accounts
+       WHERE user_id = ? AND name = ? AND (deleted_at IS NULL OR deleted_at = '')
+       LIMIT 1`
+    )
+    .get(String(userId), name);
+  return {
+    account_id: row?.remote_id ? String(row.remote_id) : null,
+    account_client_uuid: row?.client_uuid ? String(row.client_uuid) : null,
+  };
+}
+
+ipcMain.handle('get-withdrawals-local', async () => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return [];
+  return getWithdrawalsFromLocal(db, userId);
+});
+
+ipcMain.handle('add-withdrawal-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : makeClientUuid();
+  const normalized = normalizeWithdrawalInput({ ...raw, client_uuid: clientUuid }, userId);
+  if (normalized.error) return { success: false, error: normalized.error };
+
+  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, normalized.account_name);
+  const ts = nowIso();
+
+  const info = db
+    .prepare(
+      `INSERT INTO real_account_withdrawals
+       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, amount, date, note, created_at, updated_at, sync_status, deleted_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
+    )
+    .run(
+      String(userId),
+      clientUuid,
+      accountMeta.account_id,
+      accountMeta.account_client_uuid,
+      normalized.account_name,
+      normalized.amount,
+      normalized.date,
+      normalized.note,
+      ts,
+      ts
+    );
+
+  const payload = {
+    user_id: String(userId),
+    client_uuid: clientUuid,
+    account_id: accountMeta.account_id,
+    account_name: normalized.account_name,
+    amount: normalized.amount,
+    date: normalized.date,
+    note: normalized.note,
+  };
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_withdrawal',
+    entityLocalId: clientUuid,
+    action: 'create',
+    payload,
+  });
+
+  return {
+    success: true,
+    client_uuid: clientUuid,
+    id: Number(info.lastInsertRowid),
+    withdrawal: mapWithdrawalRowToResponse(
+      db.prepare(`SELECT * FROM real_account_withdrawals WHERE id = ?`).get(Number(info.lastInsertRowid))
+    ),
+  };
+});
+
+ipcMain.handle('update-withdrawal-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const localId = Number(raw?.id ?? raw?.localId);
+  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : '';
+  const existing = clientUuid
+    ? db
+        .prepare(`SELECT * FROM real_account_withdrawals WHERE user_id = ? AND client_uuid = ? LIMIT 1`)
+        .get(String(userId), clientUuid)
+    : Number.isFinite(localId)
+      ? db.prepare(`SELECT * FROM real_account_withdrawals WHERE user_id = ? AND id = ? LIMIT 1`).get(String(userId), localId)
+      : null;
+
+  if (!existing) return { success: false, error: 'NOT_FOUND' };
+
+  const normalized = normalizeWithdrawalInput(
+    {
+      ...raw,
+      client_uuid: existing.client_uuid,
+      account_name: raw?.account_name ?? raw?.accountName ?? existing.account_name,
+      amount: raw?.amount ?? existing.amount,
+      date: raw?.date ?? existing.date,
+      note: raw?.note !== undefined ? raw.note : existing.note,
+    },
+    userId
+  );
+  if (normalized.error) return { success: false, error: normalized.error };
+
+  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, normalized.account_name);
+  const ts = nowIso();
+
+  db.prepare(
+    `UPDATE real_account_withdrawals SET
+      account_id = ?,
+      account_client_uuid = ?,
+      account_name = ?,
+      amount = ?,
+      date = ?,
+      note = ?,
+      updated_at = ?,
+      sync_status = CASE
+        WHEN sync_status = 'pending_create' THEN 'pending_create'
+        ELSE 'pending_update'
+      END
+     WHERE user_id = ? AND id = ?`
+  ).run(
+    accountMeta.account_id,
+    accountMeta.account_client_uuid,
+    normalized.account_name,
+    normalized.amount,
+    normalized.date,
+    normalized.note,
+    ts,
+    String(userId),
+    Number(existing.id)
+  );
+
+  const payload = {
+    user_id: String(userId),
+    client_uuid: String(existing.client_uuid),
+    remote_id: existing.remote_id ? String(existing.remote_id) : null,
+    account_id: accountMeta.account_id,
+    account_name: normalized.account_name,
+    amount: normalized.amount,
+    date: normalized.date,
+    note: normalized.note,
+  };
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_withdrawal',
+    entityLocalId: String(existing.client_uuid),
+    entityRemoteId: existing.remote_id ? String(existing.remote_id) : null,
+    action: String(existing.sync_status) === 'pending_create' ? 'create' : 'update',
+    payload,
+  });
+
+  return {
+    success: true,
+    withdrawal: mapWithdrawalRowToResponse(
+      db.prepare(`SELECT * FROM real_account_withdrawals WHERE id = ?`).get(Number(existing.id))
+    ),
+  };
+});
+
+ipcMain.handle('delete-withdrawal-local', async (_event, idOrClientUuid) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+  const needle = String(idOrClientUuid || '').trim();
+  if (!needle) return { success: false, error: 'MISSING_ID' };
+  const ts = nowIso();
+
+  let row = db
+    .prepare(
+      `SELECT id, client_uuid, remote_id, sync_status FROM real_account_withdrawals
+       WHERE user_id = ? AND client_uuid = ?
+       LIMIT 1`
+    )
+    .get(String(userId), needle);
+  if (!row && /^\d+$/.test(needle)) {
+    row = db
+      .prepare(
+        `SELECT id, client_uuid, remote_id, sync_status FROM real_account_withdrawals
+         WHERE user_id = ? AND id = ?
+         LIMIT 1`
+      )
+      .get(String(userId), Number(needle));
+  }
+
+  if (!row) return { success: true, skipped: true };
+
+  db.prepare(
+    `UPDATE real_account_withdrawals
+     SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+     WHERE user_id = ? AND id = ?`
+  ).run(ts, ts, String(userId), Number(row.id));
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_withdrawal',
+    entityLocalId: String(row.client_uuid),
+    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+    action: 'delete',
+    payload: {
+      user_id: String(userId),
+      client_uuid: String(row.client_uuid),
+      remote_id: row.remote_id ? String(row.remote_id) : null,
+    },
+  });
+
+  return { success: true };
+});
+
 ipcMain.handle('delete-real-strategy-local', async (_event, clientUuidOrName) => {
   const userId = await resolveUserIdForLocalCache();
   if (!userId) return { success: false, error: 'NO_USER_ID' };
@@ -960,6 +1190,9 @@ async function upsertTradeRemote({ userId, payload }) {
 async function updateTradeRemote({ userId, payload, remoteId }) {
   const id = Number(remoteId);
   const client_uuid = payload?.client_uuid ? String(payload.client_uuid) : null;
+  const legs = parsePositionLegs(payload.position_legs ?? payload.positionLegs ?? []);
+  const composite =
+    isCompositePositionFlag(payload.is_composite_position ?? payload.isCompositePosition) || legs.length > 0;
   const patch = {
     client_uuid,
     date: payload.date || '',
@@ -976,10 +1209,12 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
     image_after: payload.image_after ?? null,
     entry_time: normalizeTimeField(payload.entry_time) ?? null,
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
-    is_composite_position: Boolean(payload.is_composite_position),
-    position_legs: payload.is_composite_position ? payload.position_legs || [] : [],
+    is_composite_position: composite,
+    position_legs: composite ? legs : [],
     updated_at: nowIso(),
   };
+
+  console.log('[updateTrade] payload position_legs', composite ? legs.length : 0, composite ? legs : []);
 
   if (Number.isFinite(id) && id > 0) {
     const { data, error } = await supabase
@@ -987,10 +1222,10 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
       .update(patch)
       .eq('id', id)
       .eq('user_id', String(userId))
-      .select('id, client_uuid')
+      .select('*')
       .single();
     if (error) throw error;
-    return { id: data?.id, client_uuid: data?.client_uuid || client_uuid };
+    return { row: data, id: data?.id, client_uuid: data?.client_uuid || client_uuid };
   }
 
   if (client_uuid) {
@@ -999,10 +1234,10 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
       .update(patch)
       .eq('user_id', String(userId))
       .eq('client_uuid', client_uuid)
-      .select('id, client_uuid')
+      .select('*')
       .maybeSingle();
     if (error) throw error;
-    if (data?.id) return { id: data.id, client_uuid };
+    if (data?.id) return { row: data, id: data.id, client_uuid: data.client_uuid || client_uuid };
   }
 
   throw new Error('REMOTE_ID_NOT_FOUND');
@@ -1065,14 +1300,21 @@ async function syncPendingChanges(userId) {
         }
 
         if (action === 'update') {
-          const res = await updateTradeRemote({ userId, payload: { ...payload, client_uuid: clientUuid }, remoteId });
+          const syncPayload = normalizeTrade({ ...payload, client_uuid: clientUuid });
+          console.log('[sync_queue] pending_update position_legs', parsePositionLegs(syncPayload.position_legs).length);
+          const res = await updateTradeRemote({ userId, payload: syncPayload, remoteId });
+          const ts = nowIso();
+          writeTradeUpdateToSqlite(userId, Number(localId), syncPayload, 'synced', ts);
+          if (res?.row) {
+            upsertTradesIntoLocal(db, [res.row], userId, '📥 sync-update');
+          }
           db.prepare(`
             UPDATE trades
             SET remote_id = COALESCE(?, remote_id), client_uuid = COALESCE(?, client_uuid), sync_status = 'synced', updated_at = ?
             WHERE user_id = ? AND id = ?
-          `).run(Number(res.id), res.client_uuid, nowIso(), String(userId), Number(localId));
+          `).run(Number(res.id), res.client_uuid, ts, String(userId), Number(localId));
           db.prepare(`UPDATE sync_queue SET entity_remote_id = COALESCE(entity_remote_id, ?) WHERE id = ?`).run(String(res.id), Number(item.id));
-          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          markQueueStatus(item.id, 'synced', { syncedAt: ts });
           ok += 1;
           continue;
         }
@@ -1322,6 +1564,148 @@ async function syncPendingChanges(userId) {
             SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ?
             WHERE user_id = ? AND client_uuid = ?
           `).run(nowIso(), nowIso(), String(userId), payloadUuid);
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+      }
+
+      if (entityType === 'real_account_withdrawal') {
+        const clientUuid = String(item.entity_local_id || '');
+        const remoteId = item.entity_remote_id || payload?.remote_id || null;
+        const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
+        const rowBody = supabaseRowFromPayload({ ...payload, user_id: String(userId), client_uuid: payloadUuid });
+
+        if (action === 'create') {
+          const ins = await supabase
+            .from('real_account_withdrawals')
+            .insert(rowBody)
+            .select('id, client_uuid')
+            .single();
+          if (ins.error) {
+            const msg = String(ins.error?.message || '').toLowerCase();
+            const isConflict = msg.includes('duplicate key') || msg.includes('unique') || ins.error?.code === '23505';
+            if (isConflict) {
+              const lookup = await supabase
+                .from('real_account_withdrawals')
+                .select('id, client_uuid')
+                .eq('user_id', String(userId))
+                .eq('client_uuid', payloadUuid)
+                .maybeSingle();
+              if (lookup.error || !lookup.data?.id) throw ins.error;
+              db.prepare(
+                `UPDATE real_account_withdrawals
+                 SET remote_id = ?, sync_status = 'synced', updated_at = ?
+                 WHERE user_id = ? AND client_uuid = ?`
+              ).run(String(lookup.data.id), nowIso(), String(userId), payloadUuid);
+              db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(
+                String(lookup.data.id),
+                Number(item.id)
+              );
+              markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+              ok += 1;
+              continue;
+            }
+            throw ins.error;
+          }
+          db.prepare(
+            `UPDATE real_account_withdrawals
+             SET remote_id = ?, sync_status = 'synced', updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(String(ins.data.id), nowIso(), String(userId), payloadUuid);
+          db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(
+            String(ins.data.id),
+            Number(item.id)
+          );
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (action === 'update') {
+          const patch = { ...rowBody };
+          delete patch.user_id;
+          if (remoteId) {
+            const upd = await supabase
+              .from('real_account_withdrawals')
+              .update(patch)
+              .eq('id', String(remoteId))
+              .eq('user_id', String(userId));
+            if (upd.error) throw upd.error;
+          } else {
+            const upd = await supabase
+              .from('real_account_withdrawals')
+              .update(patch)
+              .eq('user_id', String(userId))
+              .eq('client_uuid', payloadUuid);
+            if (upd.error) throw upd.error;
+          }
+          db.prepare(
+            `UPDATE real_account_withdrawals
+             SET account_id = COALESCE(?, account_id),
+                 account_name = ?,
+                 amount = ?,
+                 date = ?,
+                 note = ?,
+                 sync_status = 'synced',
+                 updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(
+            rowBody.account_id,
+            rowBody.account_name,
+            rowBody.amount,
+            rowBody.date,
+            rowBody.note,
+            nowIso(),
+            String(userId),
+            payloadUuid
+          );
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (action === 'delete') {
+          const local = db
+            .prepare(
+              `SELECT remote_id, sync_status FROM real_account_withdrawals WHERE user_id = ? AND client_uuid = ?`
+            )
+            .get(String(userId), payloadUuid);
+
+          if (!local?.remote_id && String(local?.sync_status || '').startsWith('pending_')) {
+            db.prepare(
+              `UPDATE real_account_withdrawals
+               SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+               WHERE user_id = ? AND client_uuid = ?`
+            ).run(nowIso(), nowIso(), String(userId), payloadUuid);
+            markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+            ok += 1;
+            continue;
+          }
+
+          const tsDelete = nowIso();
+          if (remoteId || local?.remote_id) {
+            const rid = String(remoteId || local.remote_id);
+            const upd = await supabase
+              .from('real_account_withdrawals')
+              .update({ deleted_at: tsDelete, updated_at: tsDelete })
+              .eq('id', rid)
+              .eq('user_id', String(userId));
+            if (upd.error) throw upd.error;
+          } else {
+            const upd = await supabase
+              .from('real_account_withdrawals')
+              .update({ deleted_at: tsDelete, updated_at: tsDelete })
+              .eq('user_id', String(userId))
+              .eq('client_uuid', payloadUuid);
+            if (upd.error) throw upd.error;
+          }
+
+          db.prepare(
+            `UPDATE real_account_withdrawals
+             SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(tsDelete, tsDelete, String(userId), payloadUuid);
           markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
           ok += 1;
           continue;
@@ -1616,11 +2000,24 @@ async function pullRemoteData(userId) {
     tx();
   }
 
+  const withdrawalsRes = await supabase
+    .from('real_account_withdrawals')
+    .select(
+      'id, user_id, account_id, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
+    )
+    .eq('user_id', String(userId))
+    .is('deleted_at', null);
+
+  if (!withdrawalsRes.error) {
+    upsertWithdrawalsIntoLocal(db, withdrawalsRes.data || [], userId, '[pullRemoteData]');
+  }
+
   return {
     pulled: true,
     trades: Array.isArray(tradesRes?.data) ? tradesRes.data.length : 0,
     real_accounts: Array.isArray(accountsRes?.data) ? accountsRes.data.length : 0,
     real_strategies: Array.isArray(strategiesRes?.data) ? strategiesRes.data.length : 0,
+    real_account_withdrawals: Array.isArray(withdrawalsRes?.data) ? withdrawalsRes.data.length : 0,
   };
 }
 
@@ -1716,163 +2113,216 @@ ipcMain.handle('get-stats', async () => {
 
 ipcMain.handle('get-trade', async (event, id) => {
   const tradeId = Number(id);
-  if (!Number.isFinite(tradeId) || tradeId <= 0) return null;
+  if (!Number.isFinite(tradeId)) return null;
 
-  const row = db.prepare('SELECT * FROM trades WHERE id = ?').get(tradeId);
+  const userId = await resolveUserIdForLocalCache();
+  const row = userId
+    ? db.prepare('SELECT * FROM trades WHERE user_id = ? AND id = ?').get(String(userId), tradeId)
+    : db.prepare('SELECT * FROM trades WHERE id = ?').get(tradeId);
   const localMapped = row ? mapRowToTradeResponse(row) : null;
   const localLegs = parsePositionLegs(localMapped?.position_legs ?? []);
-  if (
-    localMapped &&
-    (localLegs.length > 0 || isCompositePositionFlag(localMapped.is_composite_position))
-  ) {
-    return localMapped;
+  if (localMapped && (localLegs.length > 0 || isCompositePositionFlag(localMapped.is_composite_position))) {
+    return hydrateTradeCompositeFields(localMapped);
   }
 
-  const userId = await getCurrentUserId();
-  if (!userId) return localMapped;
+  const authUserId = (await getCurrentUserId()) || userId;
+  if (!authUserId) return localMapped ? hydrateTradeCompositeFields(localMapped) : null;
 
   try {
     const { data, error } = await supabase
       .from('trades')
       .select('*')
       .eq('id', tradeId)
-      .eq('user_id', userId)
+      .eq('user_id', authUserId)
       .maybeSingle();
-    if (error || !data) return localMapped;
-    upsertTradesIntoLocal(db, [data], userId, '📥 get-trade');
-    return mapRowToTradeResponse(data);
+    if (error || !data) return localMapped ? hydrateTradeCompositeFields(localMapped) : null;
+    upsertTradesIntoLocal(db, [data], authUserId, '📥 get-trade');
+    return hydrateTradeCompositeFields(mapRowToTradeResponse(data));
   } catch (err) {
     console.warn('⚠️ get-trade fallback Supabase:', err);
-    return localMapped;
+    return localMapped ? hydrateTradeCompositeFields(localMapped) : null;
   }
 });
 
+function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
+  const legsJson = serializePositionLegsForStorage(mapped.position_legs);
+  console.log('[updateTrade] sqlite saved position_legs', legsJson);
+  return db.prepare(`
+    UPDATE trades
+    SET date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
+        lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
+        entry_time = ?, exit_time = ?, is_composite_position = ?, position_legs = ?,
+        updated_at = ?, sync_status = ?
+    WHERE user_id = ? AND id = ?
+  `).run(
+    mapped.date,
+    mapped.asset,
+    mapped.result,
+    mapped.be_after_result ?? null,
+    Number(mapped.pnl ?? 0) || 0,
+    mapped.strategy || '',
+    mapped.account || '',
+    Number(mapped.lotaje ?? 0) || 0,
+    Number(mapped.commission ?? 0) || 0,
+    Number(mapped.pnl_net ?? 0) || 0,
+    mapped.image_before || '',
+    mapped.image_after || '',
+    mapped.entry_time ?? null,
+    mapped.exit_time ?? null,
+    mapped.is_composite_position ? 1 : 0,
+    legsJson,
+    now,
+    syncStatus,
+    String(userId),
+    Number(localId)
+  );
+}
+
+function clearPendingUpdateQueueForTrade(userId, localId) {
+  db.prepare(`
+    DELETE FROM sync_queue
+    WHERE user_id = ? AND entity_type = 'trade' AND entity_local_id = ? AND action = 'update' AND status = 'pending'
+  `).run(String(userId), String(localId));
+}
+
 ipcMain.handle('update-trade', async (event, trade) => {
-  console.log('✏️ UPDATE-TRADE EJECUTADO');
+  console.log('[updateTrade] requested', { id: trade?.id, strategy: trade?.strategy });
 
-  const tradeId = Number(trade?.id);
-
-  if (!Number.isFinite(tradeId) || tradeId <= 0) {
-    console.error('❌ ID inválido update-trade:', trade?.id);
-    return { success: false, error: 'INVALID_ID' };
-  }
-
-  const authUserId = await getCurrentUserId();
-  if (!authUserId) {
-    console.error('❌ update-trade sin usuario autenticado');
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) {
+    console.error('[updateTrade] NO_USER_ID');
     return { success: false, error: 'NO_USER_ID' };
   }
 
-  const safeTrade = normalizeTrade(trade);
+  const mapped = normalizeTrade(trade);
+  const now = nowIso();
+  const resolved = resolveLocalTradeForDelete(userId, trade?.id);
 
-  const supabaseTrade = {
-    date: safeTrade.date,
-    asset: safeTrade.asset,
-    result: safeTrade.result,
-    be_after_result:
-      String(safeTrade.result || '').toUpperCase() === 'BE'
-        ? (safeTrade.be_after_result ?? trade.be_after_result ?? null)
-        : null,
-    pnl: Number(safeTrade.pnl ?? 0) || 0,
-    strategy: safeTrade.strategy,
-    account: safeTrade.account || null,
-    lotaje: Number(safeTrade.lotaje ?? trade.lotaje ?? trade.lotSize ?? 0) || 0,
-    commission: Number(safeTrade.commission ?? trade.commission ?? 0) || 0,
-    pnl_net: Number(safeTrade.pnl_net ?? safeTrade.pnl ?? 0) || 0,
-    image_before: safeTrade.image_before || trade.image_before || trade.beforeImage || null,
-    image_after: safeTrade.image_after || trade.image_after || trade.afterImage || null,
-    entry_time: safeTrade.entry_time ?? null,
-    exit_time: safeTrade.exit_time ?? null,
-    is_composite_position: Boolean(safeTrade.is_composite_position),
-    position_legs: safeTrade.is_composite_position ? safeTrade.position_legs || [] : [],
+  if (!resolved?.row) {
+    const remoteId = Number(trade?.id);
+    if (!Number.isFinite(remoteId) || remoteId <= 0) {
+      console.error('[updateTrade] NOT_FOUND local row', trade?.id);
+      return { success: false, error: 'NOT_FOUND' };
+    }
+    const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
+    if (!online) {
+      console.warn('[updateTrade] offline without local row', remoteId);
+      return { success: false, error: 'OFFLINE_NO_LOCAL' };
+    }
+    try {
+      const payload = { ...mapped, client_uuid: trade?.client_uuid || null };
+      await updateTradeRemote({ userId, payload, remoteId });
+      console.log('[updateTrade] remote-only success', remoteId);
+      return { success: true, data: mapRowToTradeResponse({ ...mapped, id: remoteId }) };
+    } catch (err) {
+      console.error('[updateTrade] remote-only failed', err);
+      return { success: false, error: err };
+    }
+  }
+
+  const { row, localId } = resolved;
+  const clientUuid = row.client_uuid || trade?.client_uuid || null;
+  const remoteId =
+    row.remote_id != null && row.remote_id !== ''
+      ? Number(row.remote_id)
+      : localId > 0
+        ? localId
+        : null;
+  const queuePayload = {
+    ...mapped,
+    position_legs: parsePositionLegs(mapped.position_legs),
+    client_uuid: clientUuid,
+    user_id: String(userId),
   };
-
-  console.log('📤 UPDATE FINAL A SUPABASE:', {
-    id: tradeId,
-    user_id: authUserId,
-    supabaseTrade
-  });
-  console.log('UPDATE TRADE be_after_result:', trade?.be_after_result ?? null);
+  console.log('[updateTrade] payload position_legs', queuePayload.position_legs?.length ?? 0);
+  const isPendingCreate = String(row.sync_status || '') === 'pending_create' && !row.remote_id;
+  const nextSyncStatus = isPendingCreate ? 'pending_create' : 'pending_update';
 
   try {
-    const { data, error } = await supabase
-      .from('trades')
-      .update(supabaseTrade)
-      .eq('id', tradeId)
-      .eq('user_id', authUserId)
-      .select();
+    writeTradeUpdateToSqlite(userId, localId, mapped, nextSyncStatus, now);
+    console.log('[updateTrade] local SQLite updated', {
+      localId,
+      strategy: mapped.strategy,
+      syncStatus: nextSyncStatus,
+      composite: mapped.is_composite_position,
+      legs: parsePositionLegs(mapped.position_legs).length,
+    });
+  } catch (sqliteErr) {
+    console.error('[updateTrade] SQLite update failed', sqliteErr);
+    return { success: false, error: sqliteErr };
+  }
 
-    console.log('📥 RESPUESTA UPDATE SUPABASE:', { data, error });
-    console.log('UPDATED TRADE RESULT:', data);
+  if (isPendingCreate) {
+    enqueueSyncItem({
+      userId,
+      entityType: 'trade',
+      entityLocalId: String(localId),
+      entityRemoteId: null,
+      action: 'create',
+      payload: queuePayload,
+    });
+    const fresh = getLocalTradeById(userId, localId);
+    console.log('[updateTrade] updated pending_create before sync', localId);
+    return { success: true, data: mapRowToTradeResponse(fresh || { ...mapped, id: localId }), pendingCreate: true };
+  }
 
-    if (error) {
-      console.error('❌ Error Supabase update:', error);
-      return { success: false, error };
+  const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
+
+  if (!online) {
+    enqueueSyncItem({
+      userId,
+      entityType: 'trade',
+      entityLocalId: String(localId),
+      entityRemoteId: remoteId != null && Number.isFinite(remoteId) ? String(remoteId) : null,
+      action: 'update',
+      payload: queuePayload,
+    });
+    console.log('[sync_queue] pending_update position_legs', queuePayload.position_legs?.length ?? 0);
+    console.log('[updateTrade] queued pending_update (offline)', localId);
+    const fresh = getLocalTradeById(userId, localId);
+    return { success: true, data: mapRowToTradeResponse(fresh || { ...mapped, id: localId }), offline: true };
+  }
+
+  try {
+    const res = await updateTradeRemote({
+      userId,
+      payload: queuePayload,
+      remoteId: remoteId != null && Number.isFinite(remoteId) && remoteId > 0 ? remoteId : null,
+    });
+    if (res?.row) {
+      upsertTradesIntoLocal(db, [res.row], userId, '📥 update-trade');
+    } else {
+      writeTradeUpdateToSqlite(userId, localId, mapped, 'synced', now);
     }
-
-    const updatedRow = Array.isArray(data) && data.length > 0 ? data[0] : null;
-
-    if (!updatedRow) {
-      console.warn('⚠️ Supabase update sin filas actualizadas:', tradeId);
-      return { success: false, error: 'NOT_FOUND_OR_RLS' };
+    if (res?.id) {
+      db.prepare(`
+        UPDATE trades
+        SET remote_id = COALESCE(?, remote_id), client_uuid = COALESCE(?, client_uuid)
+        WHERE user_id = ? AND id = ?
+      `).run(Number(res.id), res.client_uuid || clientUuid, String(userId), localId);
     }
-
-    try {
-      upsertTradesIntoLocal(db, [updatedRow], authUserId, '📥 update-trade');
-    } catch (upsertErr) {
-      console.warn('⚠️ upsert tras update-trade:', upsertErr);
-    }
-
-    try {
-      const nowIso = new Date().toISOString();
-
-      const info = db
-        .prepare(`
-          UPDATE trades
-          SET date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
-              lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
-              entry_time = ?, exit_time = ?, is_composite_position = ?, position_legs = ?,
-              updated_at = ?, user_id = ?
-          WHERE id = ?
-        `)
-        .run(
-          updatedRow.date ?? supabaseTrade.date,
-          updatedRow.asset ?? supabaseTrade.asset,
-          updatedRow.result ?? supabaseTrade.result,
-          updatedRow.be_after_result ?? supabaseTrade.be_after_result ?? null,
-          Number(updatedRow.pnl ?? supabaseTrade.pnl ?? 0) || 0,
-          updatedRow.strategy ?? supabaseTrade.strategy,
-          updatedRow.account ?? supabaseTrade.account ?? '',
-          Number(updatedRow.lotaje ?? supabaseTrade.lotaje ?? 0) || 0,
-          Number(updatedRow.commission ?? supabaseTrade.commission ?? 0) || 0,
-          Number(updatedRow.pnl_net ?? supabaseTrade.pnl_net ?? 0) || 0,
-          updatedRow.image_before ?? supabaseTrade.image_before ?? '',
-          updatedRow.image_after ?? supabaseTrade.image_after ?? '',
-          updatedRow.entry_time ?? supabaseTrade.entry_time ?? null,
-          updatedRow.exit_time ?? supabaseTrade.exit_time ?? null,
-          isCompositePositionFlag(updatedRow.is_composite_position ?? supabaseTrade.is_composite_position)
-            ? 1
-            : 0,
-          serializePositionLegsForStorage(
-            updatedRow.position_legs ?? supabaseTrade.position_legs ?? []
-          ),
-          nowIso,
-          authUserId,
-          tradeId
-        );
-
-      console.log('📦 SQLite cache update:', info.changes);
-    } catch (cacheErr) {
-      console.warn('⚠️ No se pudo actualizar cache SQLite, pero Supabase sí:', cacheErr);
-    }
-
+    clearPendingUpdateQueueForTrade(userId, localId);
+    console.log('[updateTrade] remote success', { localId, remoteId: res?.id ?? remoteId, strategy: mapped.strategy });
+    const fresh = getLocalTradeById(userId, localId);
+    return { success: true, data: mapRowToTradeResponse(fresh || { ...mapped, id: localId, remote_id: res?.id }) };
+  } catch (err) {
+    console.warn('[updateTrade] remote failed, keeping local + queue', err);
+    enqueueSyncItem({
+      userId,
+      entityType: 'trade',
+      entityLocalId: String(localId),
+      entityRemoteId: remoteId != null && Number.isFinite(remoteId) ? String(remoteId) : null,
+      action: 'update',
+      payload: queuePayload,
+    });
+    console.log('[sync_queue] pending_update position_legs', queuePayload.position_legs?.length ?? 0);
+    const fresh = getLocalTradeById(userId, localId);
     return {
       success: true,
-      data: mapRowToTradeResponse({ ...updatedRow, id: tradeId }),
+      data: mapRowToTradeResponse(fresh || { ...mapped, id: localId }),
+      pendingUpdate: true,
+      remoteError: String(err?.message || err),
     };
-  } catch (err) {
-    console.error('❌ Excepción update-trade:', err);
-    return { success: false, error: err };
   }
 });
 

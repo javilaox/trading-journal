@@ -28,6 +28,7 @@ const {
 const { navigateTo } = require('./navigation.js');
 const { logout } = require('./auth.js');
 const { getLastOfflineUser } = require('./services/offlineAuth.js');
+const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawals');
 
 const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
 let statsEventsBound = false;
@@ -1610,6 +1611,105 @@ function loadIncludeBeState() {
   if (saved !== null) includeBE.checked = saved === 'true';
 }
 
+function formatWithdrawalEuro(value) {
+  const n = Number(value) || 0;
+  return `${n >= 0 ? '' : ''}${n.toFixed(2)}€`;
+}
+
+async function getUserScopedRealAccountObjects() {
+  const userId = await getCurrentUserIdForFilters();
+  const api = getBackendApi();
+  if (api?.getRealAccountsLocal && userId) {
+    try {
+      const rows = await api.getRealAccountsLocal();
+      return (Array.isArray(rows) ? rows : []).map((r) => ({
+        name: String(r?.name || '').trim(),
+        capital: Number(r?.balance ?? 0) || 0,
+      }));
+    } catch (err) {
+      console.warn('Stats account objects SQLite failed:', err);
+    }
+  }
+  const raw = readScopedList('real_accounts', userId);
+  return raw.map((a) =>
+    typeof a === 'string'
+      ? { name: a, capital: 0 }
+      : { name: String(a?.name || '').trim(), capital: Number(a?.capital ?? 0) || 0 }
+  );
+}
+
+function filterWithdrawalsForStats(withdrawals) {
+  const selectedAccount =
+    document.getElementById('filterCuenta')?.value ||
+    document.getElementById('filterAccount')?.value ||
+    '';
+  const start = datePickerStart ? String(datePickerStart).slice(0, 10) : '';
+  const end = datePickerEnd ? String(datePickerEnd).slice(0, 10) : '';
+
+  return (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
+    const account = String(w.account_name || w.accountName || '').trim();
+    const date = String(w.date || '').slice(0, 10);
+    if (selectedAccount && account !== selectedAccount) return false;
+    if (start && date && date < start) return false;
+    if (end && date && date > end) return false;
+    return true;
+  });
+}
+
+async function renderWithdrawalStats(trades) {
+  const backend = getBackendApi();
+  let withdrawals = [];
+  if (backend?.getWithdrawalsLocal) {
+    try {
+      withdrawals = await backend.getWithdrawalsLocal();
+    } catch (err) {
+      console.warn('No se pudieron cargar retiros para stats:', err);
+    }
+  }
+
+  const filteredWithdrawals = filterWithdrawalsForStats(withdrawals);
+  const accounts = await getUserScopedRealAccountObjects();
+  const metrics = calculateWithdrawalMetrics(filteredWithdrawals, trades, accounts);
+
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  set('withdrawalStatTotal', formatWithdrawalEuro(metrics.total));
+  set('withdrawalStatCount', String(metrics.count));
+  set('withdrawalStatAvg', formatWithdrawalEuro(metrics.average));
+  set(
+    'withdrawalStatLast',
+    metrics.last ? `${formatWithdrawalEuro(metrics.last.amount)} · ${metrics.last.date}` : '—'
+  );
+  set('withdrawalStatOperationalPnl', formatWithdrawalEuro(metrics.operationalNet));
+  set('withdrawalStatEstimatedBalance', formatWithdrawalEuro(metrics.estimatedBalanceGlobal));
+
+  const byAccountEl = document.getElementById('withdrawalStatByAccount');
+  if (byAccountEl) {
+    const entries = Object.entries(metrics.byAccount || {}).sort((a, b) => b[1].total - a[1].total);
+    byAccountEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([name, data]) =>
+              `<li><span>${name} (${data.count})</span><strong>${formatWithdrawalEuro(data.total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
+  const byMonthEl = document.getElementById('withdrawalStatByMonth');
+  if (byMonthEl) {
+    const entries = Object.entries(metrics.byMonth || {}).sort((a, b) => b[0].localeCompare(a[0]));
+    byMonthEl.innerHTML = entries.length
+      ? entries
+          .map(([month, total]) => `<li><span>${month}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`)
+          .join('')
+      : '<li>—</li>';
+  }
+}
+
 async function renderScheduleStats(trades) {
   const strategyByName = await getStrategyMetaByName();
   const sched = calculateScheduleAndDurationStats(trades, strategyByName);
@@ -1651,6 +1751,7 @@ function renderAllCharts(trades, compareEnabled = compareMode) {
   console.log('Trades para gráfica:', trades);
   // Disciplina por horario: siempre sobre el listado completo (switch OFF no oculta trades aquí).
   void renderScheduleStats(getFilteredTrades());
+  void renderWithdrawalStats(trades);
   const sortedTrades = sortTradesByDate(trades);
   const dailyData = groupTradesByDay(sortedTrades);
   const daily = getDailyPnL(dailyData);
@@ -2073,6 +2174,7 @@ async function applyFilters() {
     resetSummary();
     renderStrategyWinrateList([]);
     void renderScheduleStats(getFilteredTrades());
+    void renderWithdrawalStats([]);
     return;
   }
 

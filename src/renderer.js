@@ -27,6 +27,7 @@ import {
 } from './sidebar.js';
 
 const { mountStatsView, unmountStatsView, applyFilters: applyStatsFilters } = require('./stats.js');
+const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawals');
 const {
   getCurrentUserSafe,
   clearAuthUserCache,
@@ -2613,6 +2614,7 @@ const {
   parseTimeToMinutes,
   buildStrategyByNameMap,
   formatOperatingHoursSummary,
+  getTradeScheduleStatus,
 } = require('./services/scheduleUtils');
 const {
   parsePositionLegs,
@@ -2852,6 +2854,7 @@ function appendCompositeFieldsToTradePayload(trade, form = 'create') {
     return { ...trade, is_composite_position: false, position_legs: [] };
   }
   const legs = collectTradePositionLegsFromDom(form);
+  console.log('[composite] collected legs', form, legs);
   const validation = validatePositionLegs(legs, { requireAtLeastOne: true });
   if (!validation.valid) return { error: validation.error, trade: null };
   const totalLot = validation.totalLot > 0 ? validation.totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
@@ -2860,6 +2863,14 @@ function appendCompositeFieldsToTradePayload(trade, form = 'create') {
     grossPnl: validation.totalPnl,
     trade,
     form,
+  });
+  console.log('[composite] totals before save', {
+    form,
+    legs: validation.legs.length,
+    totalLot,
+    grossPnl: validation.totalPnl,
+    commission: fee.commission,
+    netPnl: fee.netPnl,
   });
   return applyCompositeToTradeFields({
     ...trade,
@@ -4721,6 +4732,381 @@ function deleteStrategy() {
   })();
 }
 
+let withdrawalsCache = [];
+let editingWithdrawalId = null;
+
+function formatWithdrawalEuro(value) {
+  const n = Number(value) || 0;
+  return `${n.toFixed(2)}€`;
+}
+
+function tradeOperationalNet(trade) {
+  const net = Number(trade?.pnl_net ?? trade?.pnlNet);
+  if (Number.isFinite(net)) return net;
+  return (Number(trade?.pnl ?? 0) || 0) - (Number(trade?.commission ?? 0) || 0);
+}
+
+async function loadWithdrawalsCache() {
+  const backend = getBackendApi();
+  if (!backend?.getWithdrawalsLocal) {
+    withdrawalsCache = [];
+    return;
+  }
+  try {
+    withdrawalsCache = await backend.getWithdrawalsLocal();
+  } catch (err) {
+    console.warn('No se pudieron cargar retiros locales:', err);
+    withdrawalsCache = [];
+  }
+}
+
+function fillWithdrawalAccountSelects() {
+  const names = getAccounts().map((account) => account.name);
+  const filterPlaceholder = t('all_accounts', 'Todas las cuentas');
+  const formPlaceholder = t('placeholder_select_account', 'Selecciona cuenta');
+  ['withdrawalFilterAccount', 'withdrawalFormAccount'].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value;
+    const isFilter = id === 'withdrawalFilterAccount';
+    sel.innerHTML = '';
+    const base = document.createElement('option');
+    base.value = '';
+    base.textContent = isFilter ? filterPlaceholder : formPlaceholder;
+    sel.appendChild(base);
+    names.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (prev && names.includes(prev)) sel.value = prev;
+  });
+}
+
+function getFilteredWithdrawalsList() {
+  const account = document.getElementById('withdrawalFilterAccount')?.value || '';
+  const from = document.getElementById('withdrawalFilterFrom')?.value || '';
+  const to = document.getElementById('withdrawalFilterTo')?.value || '';
+  return withdrawalsCache.filter((w) => {
+    if (account && String(w.account_name || w.accountName) !== account) return false;
+    if (from && String(w.date) < from) return false;
+    if (to && String(w.date) > to) return false;
+    return true;
+  });
+}
+
+function getWithdrawalTradeScope() {
+  const account = document.getElementById('withdrawalFilterAccount')?.value || '';
+  if (!account) return cachedTrades;
+  return cachedTrades.filter((trade) => String(trade.account || '') === account);
+}
+
+function renderWithdrawalsSummary(list, globalMetrics) {
+  const total = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const count = list.length;
+  const avg = count > 0 ? total / count : 0;
+  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set('withdrawalSummaryTotal', formatWithdrawalEuro(total));
+  set('withdrawalSummaryCount', String(count));
+  set('withdrawalSummaryAvg', formatWithdrawalEuro(avg));
+  set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${last.date}` : '—');
+  set(
+    'withdrawalSummaryEstimatedBalance',
+    formatWithdrawalEuro(globalMetrics?.estimatedBalanceGlobal ?? 0)
+  );
+}
+
+function renderWithdrawalsAnalytics(filteredList, metrics) {
+  const byAccountEl = document.getElementById('withdrawalAnalyticsByAccount');
+  if (byAccountEl) {
+    const entries = Object.entries(metrics?.byAccount || {}).sort((a, b) => b[1].total - a[1].total);
+    byAccountEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([name, data]) =>
+              `<li><span>${escapeHtmlChipText(name)} (${data.count})</span><strong>${formatWithdrawalEuro(data.total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
+  const byMonthEl = document.getElementById('withdrawalAnalyticsByMonth');
+  if (byMonthEl) {
+    const entries = Object.entries(metrics?.byMonth || {}).sort((a, b) => b[0].localeCompare(a[0]));
+    byMonthEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([month, total]) =>
+              `<li><span>${escapeHtmlChipText(month)}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
+  const topAccountEl = document.getElementById('withdrawalAnalyticsTopAccount');
+  if (topAccountEl) {
+    const entries = Object.entries(metrics?.byAccount || {}).sort((a, b) => b[1].total - a[1].total);
+    const top = entries[0];
+    topAccountEl.textContent = top
+      ? `${top[0]} · ${formatWithdrawalEuro(top[1].total)}`
+      : '—';
+  }
+
+  const operationalEl = document.getElementById('withdrawalAnalyticsOperationalPnl');
+  const withdrawnEl = document.getElementById('withdrawalAnalyticsWithdrawnTotal');
+  if (operationalEl) operationalEl.textContent = formatWithdrawalEuro(metrics?.operationalNet ?? 0);
+  if (withdrawnEl) withdrawnEl.textContent = formatWithdrawalEuro(metrics?.total ?? 0);
+}
+
+function updateWithdrawalsLayoutState(hasAnyWithdrawals) {
+  const emptyEl = document.getElementById('withdrawalsEmptyState');
+  const bodyGrid = document.getElementById('withdrawalsBodyGrid');
+  const filterBar = document.querySelector('#withdrawalsView .wd-filter-bar');
+  if (emptyEl) emptyEl.hidden = Boolean(hasAnyWithdrawals);
+  if (bodyGrid) bodyGrid.hidden = !hasAnyWithdrawals;
+  if (filterBar) filterBar.hidden = !hasAnyWithdrawals;
+}
+
+function renderWithdrawalsTable(list) {
+  const tbody = document.getElementById('withdrawalsTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!list.length) {
+    const msg =
+      withdrawalsCache.length > 0
+        ? t('withdrawals_no_filter_results', 'No hay retiros con estos filtros')
+        : t('withdrawals_empty', 'Sin retiros');
+    tbody.innerHTML = `<tr><td colspan="5" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
+    return;
+  }
+  list.forEach((w) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtmlChipText(w.date || '')}</td>
+      <td>${escapeHtmlChipText(w.account_name || w.accountName || '')}</td>
+      <td class="wd-amount">${formatWithdrawalEuro(w.amount)}</td>
+      <td>${escapeHtmlChipText(w.note || '—')}</td>
+      <td class="withdrawals-actions">
+        <button type="button" class="withdrawals-action-btn" data-withdrawal-edit="${w.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
+        <button type="button" class="withdrawals-action-btn danger" data-withdrawal-delete="${w.id}">${escapeHtmlChipText(t('withdrawals_delete_btn', 'Eliminar'))}</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-withdrawal-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => startEditWithdrawal(Number(btn.dataset.withdrawalEdit)));
+  });
+  tbody.querySelectorAll('[data-withdrawal-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => deleteWithdrawalAction(Number(btn.dataset.withdrawalDelete)));
+  });
+}
+
+async function updateAccountWithdrawalSummary() {
+  const summaryEl = document.getElementById('accountWithdrawalSummary');
+  if (!summaryEl) return;
+  const accountName = document.getElementById('settingsAccount')?.value || '';
+  if (!accountName) {
+    summaryEl.hidden = true;
+    return;
+  }
+  const list = withdrawalsCache.filter((w) => String(w.account_name || w.accountName) === accountName);
+  const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const count = list.length;
+  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const account = getAccounts().find((a) => a.name === accountName);
+  const capital = Number(account?.capital ?? 0) || 0;
+  const operationalNet = cachedTrades
+    .filter((t) => String(t.account || '') === accountName)
+    .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
+  const estimatedBalance = capital + operationalNet - withdrawn;
+  summaryEl.hidden = false;
+  summaryEl.innerHTML = `
+    <div><strong>Retiros de esta cuenta</strong></div>
+    <div>Total retirado: <strong>${formatWithdrawalEuro(withdrawn)}</strong> · Nº retiros: <strong>${count}</strong></div>
+    <div>Último retiro: <strong>${last ? `${formatWithdrawalEuro(last.amount)} (${last.date})` : '—'}</strong></div>
+    <div>Balance estimado: <strong>${formatWithdrawalEuro(estimatedBalance)}</strong> (capital + PnL operativo − retiros)</div>`;
+}
+
+async function refreshWithdrawalsUI() {
+  if (!document.getElementById('withdrawalsView')) return;
+  await loadWithdrawalsCache();
+  fillWithdrawalAccountSelects();
+  const filtered = getFilteredWithdrawalsList();
+  const accounts = getAccounts().map((account) => ({
+    name: account.name,
+    capital: Number(account.capital ?? 0) || 0,
+  }));
+  const globalMetrics = calculateWithdrawalMetrics(withdrawalsCache, cachedTrades, accounts);
+  const filteredMetrics = calculateWithdrawalMetrics(filtered, getWithdrawalTradeScope(), accounts);
+  const hasAnyWithdrawals = withdrawalsCache.length > 0;
+  updateWithdrawalsLayoutState(hasAnyWithdrawals);
+  renderWithdrawalsSummary(filtered, globalMetrics);
+  renderWithdrawalsTable(filtered);
+  if (hasAnyWithdrawals) {
+    renderWithdrawalsAnalytics(filtered, filteredMetrics);
+  }
+  await updateAccountWithdrawalSummary();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function clearWithdrawalFilters() {
+  const account = document.getElementById('withdrawalFilterAccount');
+  const from = document.getElementById('withdrawalFilterFrom');
+  const to = document.getElementById('withdrawalFilterTo');
+  if (account) account.value = '';
+  if (from) from.value = '';
+  if (to) to.value = '';
+}
+
+function setWithdrawalModalTitle(isEdit) {
+  const titleEl = document.getElementById('withdrawalModalTitle');
+  if (!titleEl) return;
+  titleEl.textContent = isEdit
+    ? t('withdrawals_modal_title_edit', 'Editar retiro')
+    : t('withdrawals_modal_title_new', 'Nuevo retiro');
+}
+
+function openWithdrawalModal({ editId = null } = {}) {
+  const overlay = document.getElementById('withdrawalModalOverlay');
+  if (!overlay) return;
+  fillWithdrawalAccountSelects();
+  resetWithdrawalForm({ keepEditingId: false });
+  if (editId != null) {
+    const w = withdrawalsCache.find((row) => row.id === editId);
+    if (!w) return;
+    editingWithdrawalId = editId;
+    const accountInput = document.getElementById('withdrawalFormAccount');
+    const dateInput = document.getElementById('withdrawalFormDate');
+    const amountInput = document.getElementById('withdrawalFormAmount');
+    const noteInput = document.getElementById('withdrawalFormNote');
+    if (accountInput) accountInput.value = w.account_name || w.accountName || '';
+    if (dateInput) dateInput.value = w.date || '';
+    if (amountInput) amountInput.value = String(w.amount ?? '');
+    if (noteInput) noteInput.value = w.note || '';
+    const saveBtn = document.getElementById('saveWithdrawalBtn');
+    if (saveBtn) saveBtn.textContent = t('withdrawals_save_btn', 'Guardar cambios');
+    setWithdrawalModalTitle(true);
+  } else {
+    setWithdrawalModalTitle(false);
+    const saveBtn = document.getElementById('saveWithdrawalBtn');
+    if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
+  }
+  overlay.classList.add('active');
+  document.getElementById('withdrawalFormAccount')?.focus();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeWithdrawalModal() {
+  const overlay = document.getElementById('withdrawalModalOverlay');
+  if (overlay) overlay.classList.remove('active');
+  resetWithdrawalForm();
+}
+
+function resetWithdrawalForm({ keepEditingId = false } = {}) {
+  if (!keepEditingId) editingWithdrawalId = null;
+  const dateInput = document.getElementById('withdrawalFormDate');
+  if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+  const amountInput = document.getElementById('withdrawalFormAmount');
+  if (amountInput) amountInput.value = '';
+  const noteInput = document.getElementById('withdrawalFormNote');
+  if (noteInput) noteInput.value = '';
+  const accountInput = document.getElementById('withdrawalFormAccount');
+  if (accountInput) accountInput.value = '';
+  const saveBtn = document.getElementById('saveWithdrawalBtn');
+  if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
+  setWithdrawalModalTitle(false);
+}
+
+function startEditWithdrawal(id) {
+  openWithdrawalModal({ editId: id });
+}
+
+async function saveWithdrawalAction() {
+  const account = document.getElementById('withdrawalFormAccount')?.value?.trim();
+  const date = document.getElementById('withdrawalFormDate')?.value;
+  const amount = Number(document.getElementById('withdrawalFormAmount')?.value);
+  const note = document.getElementById('withdrawalFormNote')?.value?.trim() || '';
+  if (!account || !date || !Number.isFinite(amount) || amount <= 0) {
+    showToast(t('withdrawals_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
+    return;
+  }
+  const backend = getBackendApi();
+  if (!backend) return;
+  const payload = { account_name: account, date, amount, note };
+  let res;
+  if (editingWithdrawalId) {
+    const existing = withdrawalsCache.find((w) => w.id === editingWithdrawalId);
+    res = await backend.updateWithdrawalLocal({
+      id: editingWithdrawalId,
+      client_uuid: existing?.client_uuid,
+      ...payload,
+    });
+  } else {
+    res = await backend.addWithdrawalLocal(payload);
+  }
+  if (!res?.success) {
+    showToast(res?.error || 'Error al guardar retiro', 'error');
+    return;
+  }
+  closeWithdrawalModal();
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await refreshWithdrawalsUI();
+  showToast(t('withdrawals_saved', 'Retiro guardado'), 'success');
+}
+
+async function deleteWithdrawalAction(id) {
+  const w = withdrawalsCache.find((row) => row.id === id);
+  if (!w) return;
+  const ok = await showConfirmModal({
+    title: t('withdrawals_delete_title', 'Eliminar retiro'),
+    message: t('withdrawals_delete_confirm', '¿Eliminar este retiro?'),
+    confirmText: t('withdrawals_delete_btn', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+    danger: true,
+  });
+  if (!ok) return;
+  const backend = getBackendApi();
+  if (!backend?.deleteWithdrawalLocal) return;
+  await backend.deleteWithdrawalLocal(w.client_uuid || String(w.id));
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  if (editingWithdrawalId === id) closeWithdrawalModal();
+  await refreshWithdrawalsUI();
+  showToast(t('withdrawals_deleted', 'Retiro eliminado'));
+}
+
+function initWithdrawalsUI() {
+  if (!document.getElementById('withdrawalsView')) return;
+  const openModal = () => openWithdrawalModal();
+  document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
+  document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
+  document.getElementById('saveWithdrawalBtn')?.addEventListener('click', () => {
+    saveWithdrawalAction().catch(console.error);
+  });
+  document.getElementById('cancelWithdrawalEditBtn')?.addEventListener('click', closeWithdrawalModal);
+  document.getElementById('closeWithdrawalModalBtn')?.addEventListener('click', closeWithdrawalModal);
+  document.getElementById('withdrawalModalOverlay')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'withdrawalModalOverlay') closeWithdrawalModal();
+  });
+  document.getElementById('withdrawalClearFiltersBtn')?.addEventListener('click', () => {
+    clearWithdrawalFilters();
+    refreshWithdrawalsUI().catch(console.error);
+  });
+  document.getElementById('goToWithdrawalsBtn')?.addEventListener('click', () => {
+    showView('withdrawals');
+  });
+  ['withdrawalFilterAccount', 'withdrawalFilterFrom', 'withdrawalFilterTo'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      refreshWithdrawalsUI().catch(console.error);
+    });
+  });
+  updateWithdrawalsLayoutState(false);
+  resetWithdrawalForm();
+}
+
 async function loadAccounts() {
   await syncRealListsFromStorage();
   const accountNames = getAccounts().map((account) => account.name);
@@ -4728,11 +5114,13 @@ async function loadAccounts() {
   fillSelect('settingsAccount', accountNames, 'placeholder_select_account');
   fillSelect('editAccount', accountNames, 'placeholder_select_account');
   fillSelect('resetAccountSelect', accountNames, 'placeholder_select_account');
+  fillWithdrawalAccountSelects();
   refreshPnlPresetButtons();
   if (currentView === 'dashboard') {
     await renderDashboardFilters(cachedTrades);
     renderDashboardWithFilters({ skipCalendar: true });
   }
+  await updateAccountWithdrawalSummary();
 }
 
 function resetAccountForm() {
@@ -4785,6 +5173,7 @@ function onSettingsAccountChange() {
   if (cancelBtn) cancelBtn.hidden = false;
   const addBtn = document.getElementById('addAccountBtn');
   if (addBtn) addBtn.textContent = t('save_changes');
+  void updateAccountWithdrawalSummary();
 }
 
 async function saveOrUpdateAccount() {
@@ -5019,6 +5408,7 @@ function getViewFromHash() {
   if (
     hash === 'trade' ||
     hash === 'config' ||
+    hash === 'withdrawals' ||
     hash === 'dashboard' ||
     hash === 'backtesting' ||
     hash === 'stats'
@@ -5029,7 +5419,7 @@ function getViewFromHash() {
 }
 
 function showView(viewId) {
-  const views = ['dashboard', 'trade', 'config', 'stats', 'backtesting', 'backtestingConfig'];
+  const views = ['dashboard', 'trade', 'config', 'stats', 'withdrawals', 'backtesting', 'backtestingConfig'];
   const previousView = currentView;
   currentView = views.includes(viewId) ? viewId : 'dashboard';
 
@@ -5041,7 +5431,7 @@ function showView(viewId) {
   setSidebarActiveView(currentView);
   if (currentView !== 'dashboard') closeTradePanel();
 
-  ['dashboard', 'trade', 'config', 'stats', 'backtesting', 'backtestingConfig'].forEach((v) => {
+  ['dashboard', 'trade', 'config', 'stats', 'withdrawals', 'backtesting', 'backtestingConfig'].forEach((v) => {
     const el = document.getElementById(`${v}View`);
     if (el) el.style.display = v === currentView ? 'block' : 'none';
   });
@@ -5054,9 +5444,14 @@ function showView(viewId) {
 
   if (currentView === 'dashboard') renderDashboard();
   if (currentView === 'trade') {
+    cleanupStrayAssetCustomSelects();
+    if (typeof assetComboboxState?.refresh === 'function') assetComboboxState.refresh();
     const presetDate = sessionStorage.getItem(NEW_TRADE_DATE_KEY);
     void resetNewTradeForm(presetDate || null).catch(console.error);
     applyPresetTradeDateIfAny();
+  }
+  if (currentView === 'withdrawals') {
+    void refreshWithdrawalsUI().catch(console.error);
   }
   if (currentView === 'backtesting') {
     void refreshBacktestingView().catch(console.error);
@@ -5782,14 +6177,26 @@ function refreshAssetComboboxAfterI18n() {
   assetComboboxState?.refresh?.();
 }
 
-function initAssetCombobox() {
+function cleanupStrayAssetCustomSelects() {
+  const wrap = document.querySelector('#tradeView .custom-asset-wrap');
+  if (wrap) {
+    wrap.querySelectorAll('.custom-select').forEach((el) => el.remove());
+  }
   const assetSelect = document.getElementById('asset');
   if (assetSelect) {
-    const existingCustom = assetSelect.nextElementSibling;
-    if (existingCustom && existingCustom.classList.contains('custom-select')) {
-      existingCustom.remove();
+    assetSelect.classList.add('native-select-hidden');
+    let sibling = assetSelect.nextElementSibling;
+    while (sibling && sibling.classList?.contains('custom-select')) {
+      const rm = sibling;
+      sibling = sibling.nextElementSibling;
+      rm.remove();
     }
   }
+}
+
+function initAssetCombobox() {
+  cleanupStrayAssetCustomSelects();
+  const assetSelect = document.getElementById('asset');
   if (assetSelect?.dataset.comboboxInit === '1') {
     assetComboboxState?.refresh?.();
     return;
@@ -6991,6 +7398,33 @@ function closeTradePanel() {
   }, 250);
 }
 
+function formatTradePanelTime(time) {
+  if (time == null || String(time).trim() === '') return '';
+  const s = String(time).trim();
+  return s.length >= 5 ? s.slice(0, 5) : s;
+}
+
+function formatPositionLegsPanelSummary(legs) {
+  const list = parsePositionLegs(legs);
+  if (!list.length) return '';
+  const totalLot = sumLegsLotSize(list);
+  const lotTxt = totalLot > 0 ? Number(totalLot).toFixed(2).replace(/\.?0+$/, '') : '0';
+  return `${list.length} entradas · Lotes ${lotTxt}`;
+}
+
+function getTradePanelScheduleBadge(trade) {
+  const strategy = getStrategyRecordByName(trade.strategy);
+  const status = getTradeScheduleStatus(trade, strategy);
+  const labels = {
+    inside: { cls: 'schedule-inside', text: 'Dentro de horario' },
+    outside: { cls: 'schedule-outside', text: 'Fuera de horario' },
+    missing_time: { cls: 'schedule-missing', text: 'Sin hora' },
+  };
+  const item = labels[status];
+  if (!item) return '';
+  return `<span class="trade-schedule-badge ${item.cls}">${item.text}</span>`;
+}
+
 function renderTradePanel(trades) {
   const container = document.getElementById('tradePanelList');
   if (!container) return;
@@ -7002,31 +7436,59 @@ function renderTradePanel(trades) {
   }
 
   container.innerHTML = safeTrades.map((trade) => {
-    console.log('🧾 Render trade row:', trade.id, trade.asset);
-    const pnl = getTradeRealPnl(trade);
-    const valueClass = pnl >= 0 ? 'green' : 'red';
-    const compositeHtml = isCompositePositionFlag(trade.is_composite_position)
-      ? `<span class="trade-composite-badge">Posición</span>`
+    const hydrated = hydrateTradeCompositeFields(trade);
+    const netPnl = getTradeRealPnl(hydrated);
+    const grossPnl = Number(hydrated.pnl ?? 0) || 0;
+    const commission = Number(hydrated.commission ?? 0) || 0;
+    const lotaje = Number(hydrated.lotaje ?? hydrated.lotSize ?? 0) || 0;
+    const valueClass = netPnl >= 0 ? 'green' : 'red';
+    const result = String(hydrated.result || 'BE').toUpperCase();
+    const resultCls = result === 'TP' ? 'tp' : result === 'SL' ? 'sl' : 'be';
+    const entry = formatTradePanelTime(hydrated.entry_time);
+    const exit = formatTradePanelTime(hydrated.exit_time);
+    const timeLine = exit
+      ? `Entrada ${entry || '—'} · Salida ${exit}`
+      : entry
+        ? `Entrada ${entry}`
+        : 'Sin hora registrada';
+    const composite = isCompositePositionFlag(hydrated.is_composite_position);
+    const compositeBadge = composite ? '<span class="trade-composite-badge">Posición</span>' : '';
+    const legsSummary = composite
+      ? `<div class="trade-panel-legs">${escapeHtmlChipText(formatPositionLegsPanelSummary(hydrated.position_legs))}</div>`
       : '';
-    const legsSummary = isCompositePositionFlag(trade.is_composite_position)
-      ? `<span class="trade-meta">${formatPositionLegsSummary(trade.position_legs)}</span>`
-      : '';
+    const scheduleBadge = getTradePanelScheduleBadge(hydrated);
+    const lotLine = composite ? '' : `<span>Lotes ${lotaje > 0 ? lotaje.toFixed(2) : '0'}</span>`;
+
     return `
-      <div class="trade-row" data-id="${trade.id}">
-        <div class="trade-info">
-          <strong>${trade.asset || '-'} ${compositeHtml}</strong>
-          <span class="trade-meta">${trade.strategy || '-'} · ${trade.result || 'BE'}</span>
-          ${legsSummary}
-          <span class="trade-value ${valueClass}">${pnl > 0 ? '+' : ''}${pnl.toFixed(2)}€</span>
+      <article class="trade-panel-card" data-id="${hydrated.id}">
+        <div class="trade-panel-card-top">
+          <div class="trade-panel-head">
+            <div class="trade-panel-asset-line">
+              <strong class="trade-panel-asset">${escapeHtmlChipText(hydrated.asset || '-')}</strong>
+              <span class="trade-result-badge ${resultCls}">${result}</span>
+              ${compositeBadge}
+            </div>
+            <div class="trade-panel-badges">${scheduleBadge}</div>
+          </div>
+          <div class="trade-panel-pnl ${valueClass}">${netPnl > 0 ? '+' : ''}${netPnl.toFixed(2)}€</div>
         </div>
-        <button class="delete-btn icon-btn danger" type="button" data-id="${trade.id}" aria-label="${t('delete_trade')}">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"></path>
-          </svg>
-        </button>
-      </div>
+        <div class="trade-panel-meta">${escapeHtmlChipText(hydrated.strategy || '-')} · ${escapeHtmlChipText(hydrated.account || '-')}</div>
+        <div class="trade-panel-times">${escapeHtmlChipText(timeLine)}</div>
+        <div class="trade-panel-finance">
+          <span>Bruto ${grossPnl >= 0 ? '+' : ''}${grossPnl.toFixed(2)}€</span>
+          <span class="trade-panel-commission">Com. ${commission.toFixed(2)}€</span>
+          ${lotLine}
+        </div>
+        ${legsSummary}
+        <div class="trade-panel-actions">
+          <button type="button" class="trade-panel-btn trade-panel-edit" data-id="${hydrated.id}">Editar</button>
+          <button type="button" class="trade-panel-btn trade-panel-delete danger" data-id="${hydrated.id}">Eliminar</button>
+        </div>
+      </article>
     `;
   }).join('');
+
+  console.log('[renderTrades] trade panel visible count:', safeTrades.length);
 }
 
 function openTradePanel(date) {
@@ -10574,7 +11036,7 @@ async function openTradeForEdit(tradeId) {
   if (!(await ensureUserReady())) return;
 
   const id = Number(tradeId);
-  if (!Number.isFinite(id) || id <= 0) {
+  if (!Number.isFinite(id)) {
     console.warn('⚠️ ID de trade inválido para editar:', tradeId);
     return;
   }
@@ -10637,8 +11099,8 @@ async function openTradeForEdit(tradeId) {
   await updateImagePreview('editBeforeImagePreview', 'openBeforeImageBtn', editBeforeImagePath);
   await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
 
-  const composite = Boolean(trade.is_composite_position);
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
+  const composite = isCompositePositionFlag(trade.is_composite_position) || legs.length > 0;
   const enabledEl = document.getElementById('editTradeCompositeEnabled');
   if (enabledEl) enabledEl.checked = composite;
   renderTradePositionLegsList('edit', legs);
@@ -10902,7 +11364,7 @@ async function saveEditedTrade() {
   if (!(await ensureUserReady())) return;
 
   const id = Number(document.getElementById('editTradeId')?.value);
-  if (!Number.isFinite(id) || id <= 0) {
+  if (!Number.isFinite(id)) {
     showToast('ID de trade inválido', 'error');
     return;
   }
@@ -10937,6 +11399,7 @@ async function saveEditedTrade() {
 
   const payload = {
     id,
+    client_uuid: existingTrade?.client_uuid || null,
     date: document.getElementById('editDate')?.value || '',
     asset: document.getElementById('editAsset')?.value || '',
     strategy: document.getElementById('editStrategy')?.value || '',
@@ -10981,23 +11444,30 @@ async function saveEditedTrade() {
   pnlNet = feeEdit.netPnl;
   payload.commission = commission;
   payload.pnl_net = pnlNet;
+  payload.is_composite_position = Boolean(payload.is_composite_position);
+  payload.position_legs = parsePositionLegs(payload.position_legs ?? []);
 
   console.log('✏️ Payload updateTrade:', payload);
+  console.log('[updateTrade] payload position_legs (UI)', payload.position_legs?.length ?? 0);
 
   const result = await backend.updateTrade(payload);
 
   console.log('📥 Resultado updateTrade:', result);
 
   if (!result?.success) {
-    console.error('❌ No se pudo actualizar trade:', result);
-
-    if (result?.error) {
-      console.error('❌ Error updateTrade RAW:', result.error);
-      console.error('❌ Error updateTrade STRING:', JSON.stringify(result.error, null, 2));
-    }
-
-    showToast('No se pudo guardar el cambio', 'error');
+    const errObj = result?.error;
+    const errMsg =
+      typeof errObj === 'string'
+        ? errObj
+        : errObj?.message || errObj?.code || errObj?.details || 'No se pudo guardar el cambio';
+    console.error('[updateTrade] failed', { id, strategy: payload.strategy, error: errObj });
+    console.error('[updateTrade] error detail:', JSON.stringify(errObj, null, 2));
+    showToast(`No se pudo guardar: ${errMsg}`, 'error');
     return;
+  }
+
+  if (result?.pendingUpdate || result?.offline) {
+    console.log('[updateTrade] saved locally, sync pending', { id, pendingUpdate: result.pendingUpdate, offline: result.offline });
   }
 
   const updatedTrade = result.data || payload;
@@ -11033,7 +11503,11 @@ async function saveEditedTrade() {
 
   closeEditTradeModal();
 
-  await loadTrades();
+  const freshList =
+    typeof backend.getTradesLocal === 'function'
+      ? await backend.getTradesLocal()
+      : replaceInCache(Array.isArray(window.cachedTrades) ? window.cachedTrades : cachedTrades);
+  await loadTrades(Array.isArray(freshList) ? freshList : replaceInCache(cachedTrades));
 
   renderDashboardWithFilters?.();
 
@@ -11234,6 +11708,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (addStrategyBtn) addStrategyBtn.onclick = addStrategy;
   if (deleteStrategyBtn) deleteStrategyBtn.onclick = deleteStrategy;
   if (addAccountBtn) addAccountBtn.onclick = addAccount;
+  initWithdrawalsUI();
   if (deleteAccountBtn) deleteAccountBtn.onclick = deleteAccount;
   document.getElementById('settingsStrategy')?.addEventListener('change', onSettingsStrategyChange);
   document.getElementById('settingsAccount')?.addEventListener('change', onSettingsAccountChange);
@@ -11717,21 +12192,24 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   tradePanel?.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
-    const deleteBtn = event.target.closest('.delete-btn');
+    const deleteBtn = event.target.closest('.trade-panel-delete, .delete-btn');
     if (deleteBtn) {
       event.stopPropagation();
-      const row = deleteBtn.closest('.trade-row');
-      const id = deleteBtn.getAttribute('data-id') || row?.getAttribute('data-id');
+      const card = deleteBtn.closest('.trade-panel-card, .trade-row');
+      const id = deleteBtn.getAttribute('data-id') || card?.getAttribute('data-id');
       if (!id) return;
-      openDeleteModal(id, row);
+      openDeleteModal(id, card);
       return;
     }
-    const row = event.target.closest('.trade-row');
-    if (!row) return;
-    const tradeId = row.getAttribute('data-id');
-    if (!tradeId) return;
-    closeTradePanel();
-    openTradeForEdit(Number(tradeId));
+    const editBtn = event.target.closest('.trade-panel-edit');
+    if (editBtn) {
+      event.stopPropagation();
+      const tradeId = editBtn.getAttribute('data-id');
+      if (!tradeId) return;
+      closeTradePanel();
+      openTradeForEdit(Number(tradeId));
+      return;
+    }
   });
   dayModal?.addEventListener('click', (event) => {
     if (event.target === dayModal) closeDayModal();

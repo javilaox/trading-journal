@@ -5,6 +5,7 @@
 const {
   serializePositionLegsForStorage,
   isCompositePositionFlag,
+  parsePositionLegs,
 } = require('./positionLegsUtils');
 
 function parseTs(iso) {
@@ -189,6 +190,21 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
         ]);
       } else if (remoteTs > localTs) {
         if (logPrefix) console.log(logPrefix, 'Update por conflicto remoto más reciente:', id);
+        const remoteLegs = parsePositionLegs(row.position_legs);
+        const localLegsRow = db
+          .prepare('SELECT position_legs, is_composite_position FROM trades WHERE id = ?')
+          .get(local.id);
+        const localLegs = parsePositionLegs(localLegsRow?.position_legs);
+        const legsForStore =
+          remoteLegs.length > 0
+            ? remoteLegs
+            : localLegs.length > 0
+              ? localLegs
+              : remoteLegs;
+        const compositeFlag =
+          isCompositePositionFlag(row.is_composite_position) ||
+          legsForStore.length > 0 ||
+          isCompositePositionFlag(localLegsRow?.is_composite_position);
         updateStmt.run(
           clientUuidRaw,
           id,
@@ -206,8 +222,8 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           vals[12],
           vals[13],
           vals[14],
-          vals[15],
-          vals[16],
+          compositeFlag ? 1 : 0,
+          serializePositionLegsForStorage(legsForStore),
           vals[17],
           vals[18],
           id

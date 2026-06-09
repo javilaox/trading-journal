@@ -1,10 +1,17 @@
-const { applyCompositeToTradeFields, isCompositePositionFlag } = require('./positionLegsUtils');
+const {
+  applyCompositeToTradeFields,
+  isCompositePositionFlag,
+  parsePositionLegs,
+} = require('./positionLegsUtils');
 
 /**
  * Normaliza un trade al shape de columnas Supabase (sin renombrar columnas).
  */
 function mapTrade(raw) {
-  const composite = isCompositePositionFlag(raw.is_composite_position ?? raw.isCompositePosition);
+  const legsRaw = raw.position_legs ?? raw.positionLegs ?? [];
+  const composite =
+    isCompositePositionFlag(raw.is_composite_position ?? raw.isCompositePosition) ||
+    parsePositionLegs(legsRaw).length > 0;
   const applied = applyCompositeToTradeFields({
     ...raw,
     is_composite_position: composite,

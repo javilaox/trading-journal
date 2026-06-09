@@ -3,12 +3,13 @@
  */
 const { navigateTo } = require('./navigation.js');
 
-const SPA_VIEWS = new Set(['dashboard', 'trade', 'stats', 'config', 'backtesting', 'backtestingConfig']);
+const SPA_VIEWS = new Set(['dashboard', 'trade', 'stats', 'withdrawals', 'config', 'backtesting', 'backtestingConfig']);
 
 const NAV_ITEMS = [
   { id: 'btnDashboard', view: 'dashboard', icon: 'layout-dashboard', i18n: 'dashboard', label: 'Dashboard' },
   { id: 'btnTrade', view: 'trade', icon: 'plus-circle', i18n: 'new_trade', label: 'Nuevo trade' },
   { id: 'btnStats', view: 'stats', icon: 'bar-chart-3', i18n: 'stats', label: 'Estadísticas' },
+  { id: 'btnWithdrawals', view: 'withdrawals', icon: 'banknote', i18n: 'withdrawals_nav', label: 'Retiros' },
   { id: 'btnConfig', view: 'config', icon: 'settings', i18n: 'settings', label: 'Configuración' },
   { id: 'btnBacktesting', view: 'backtesting', icon: 'flask-conical', i18n: '', label: 'Backtesting' },
   {
@@ -30,8 +31,8 @@ function buildNavButton({ id, view, icon, i18n, label }, activeView) {
 }
 
 function buildSidebarInnerHtml(activeView) {
-  const realButtons = NAV_ITEMS.slice(0, 4).map((item) => buildNavButton(item, activeView)).join('\n');
-  const backtestButtons = NAV_ITEMS.slice(4).map((item) => buildNavButton(item, activeView)).join('\n');
+  const realButtons = NAV_ITEMS.slice(0, 5).map((item) => buildNavButton(item, activeView)).join('\n');
+  const backtestButtons = NAV_ITEMS.slice(5).map((item) => buildNavButton(item, activeView)).join('\n');
 
   return `
     <div class="sidebar-header">
@@ -96,6 +97,7 @@ function getSidebarActionButton(target) {
     dashboard: 'btnDashboard',
     trade: 'btnTrade',
     stats: 'btnStats',
+    withdrawals: 'btnWithdrawals',
     config: 'btnConfig',
     backtesting: 'btnBacktesting',
     backtestingconfig: 'btnBacktestingConfig'
@@ -123,46 +125,41 @@ function normalizeSidebarStructure(activeView = '') {
   const sidebar = getSidebarRoot();
   if (!sidebar) return;
 
-  const btnConfig = getSidebarActionButton('config');
-  const btnStats = getSidebarActionButton('stats');
-  const btnTrade = getSidebarActionButton('trade');
   const realSection = getSidebarSectionByLabel('REAL');
-  const systemSection = getSidebarSectionByLabel('SISTEMA');
+  if (!realSection) return;
 
-  if (!btnConfig) return;
-  if (!btnConfig.id) btnConfig.id = 'btnConfig';
-  if (btnStats && !btnStats.id) btnStats.id = 'btnStats';
-  if (btnTrade && !btnTrade.id) btnTrade.id = 'btnTrade';
-
+  const realOrder = ['dashboard', 'trade', 'stats', 'withdrawals', 'config'];
   const wrapperSelector = 'li, .sidebar-item, .nav-item, .menu-item, .item';
-  const configNode = btnConfig.closest(wrapperSelector) || btnConfig;
-  const targetNode = (btnStats || btnTrade)?.closest(wrapperSelector) || btnStats || btnTrade;
 
-  if (targetNode && configNode && configNode !== targetNode) {
-    targetNode.parentElement?.insertBefore(configNode, targetNode.nextSibling);
-  }
-
-  if (realSection && configNode && configNode.parentElement !== realSection) {
-    if (targetNode && targetNode.parentElement === realSection) {
-      realSection.insertBefore(configNode, targetNode.nextSibling);
-    } else {
-      realSection.appendChild(configNode);
+  realOrder.forEach((view) => {
+    const btn = getSidebarActionButton(view);
+    if (!btn) return;
+    if (!btn.id) {
+      const idMap = {
+        dashboard: 'btnDashboard',
+        trade: 'btnTrade',
+        stats: 'btnStats',
+        withdrawals: 'btnWithdrawals',
+        config: 'btnConfig',
+      };
+      btn.id = idMap[view] || '';
     }
-  }
+    const node = btn.closest(wrapperSelector) || btn;
+    if (node.parentElement !== realSection) {
+      realSection.appendChild(node);
+    } else {
+      realSection.appendChild(node);
+    }
+  });
 
-  if (systemSection && configNode.parentElement === systemSection && realSection) {
+  const systemSection = getSidebarSectionByLabel('SISTEMA');
+  const btnConfig = getSidebarActionButton('config');
+  const configNode = btnConfig?.closest(wrapperSelector) || btnConfig;
+  if (systemSection && configNode && configNode.parentElement === systemSection && realSection) {
     realSection.appendChild(configNode);
   }
 
-  const configParent = configNode.parentElement;
   console.log('Sidebar normalized for view:', activeView || '(none)');
-  console.log('Sidebar active view:', activeView || '(none)');
-  console.log(
-    'Sidebar config section:',
-    configParent?.dataset?.sidebarSection ||
-      configParent?.querySelector('.sidebar-title')?.textContent ||
-      'unknown'
-  );
 }
 
 function setSidebarActiveView(activeView) {

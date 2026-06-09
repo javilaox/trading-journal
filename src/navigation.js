@@ -21,6 +21,10 @@ function navigateTo(page) {
       window.showView('stats');
       return;
     }
+    if (target === 'withdrawals' && typeof window.showView === 'function') {
+      window.showView('withdrawals');
+      return;
+    }
 
     if (typeof MAIN_WINDOW_WEBPACK_ENTRY !== 'undefined') {
       if (target === 'dashboard') {
@@ -29,6 +33,7 @@ function navigateTo(page) {
       }
       if (
         target === 'trade' ||
+        target === 'withdrawals' ||
         target === 'config' ||
         target === 'backtesting' ||
         target === 'backtestingconfig'
@@ -67,6 +72,7 @@ function navigateTo(page) {
   }
   if (
     target === 'trade' ||
+    target === 'withdrawals' ||
     target === 'config' ||
     target === 'backtesting' ||
     target === 'backtestingconfig'

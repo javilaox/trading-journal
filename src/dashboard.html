@@ -881,6 +881,7 @@
       #dashboardView,
       #tradeView,
       #configView,
+      #withdrawalsView,
       #backtestingView,
       #backtestingConfigView {
         width: 100%;
@@ -1483,6 +1484,233 @@
       .schedule-discipline-card { margin: var(--space-md) 0; padding: var(--space-md); }
       .schedule-discipline-title { margin: 0 0 var(--space-sm); font-size: 1.05rem; }
       .schedule-discipline-empty { margin: 0; padding: var(--space-md) 0; }
+      .withdrawals-card { margin-top: var(--space-md); }
+      .withdrawals-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .withdrawals-summary-item {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 12px 14px;
+        min-width: 0;
+      }
+      .withdrawals-summary-item span {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .withdrawals-summary-item strong {
+        font-size: 1rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .withdrawals-table-wrap { overflow-x: auto; }
+      .withdrawals-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+      .withdrawals-table th,
+      .withdrawals-table td {
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .withdrawals-table th {
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .withdrawals-table tbody tr { transition: background 0.15s ease; }
+      .withdrawals-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+      .withdrawals-table .wd-amount { font-weight: 700; color: #f87171; white-space: nowrap; }
+      .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
+      .withdrawals-action-btn {
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+      .withdrawals-action-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+      .withdrawals-action-btn.danger:hover { color: #fecaca; border-color: rgba(239, 68, 68, 0.35); }
+      .withdrawals-empty { text-align: center; color: var(--text-muted); padding: 16px !important; }
+      .account-withdrawal-summary {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: rgba(99, 102, 241, 0.08);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      .account-withdrawal-summary strong { color: var(--text-primary, #fff); }
+      .withdrawal-report-card { margin: var(--space-md) 0; padding: var(--space-md); }
+      .withdrawal-report-metrics { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+      .withdrawal-report-subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: var(--space-md); }
+      .withdrawal-report-block h3 { margin: 0 0 8px; font-size: 0.95rem; }
+      .withdrawal-report-list { margin: 0; padding: 0; list-style: none; font-size: 0.875rem; }
+      .withdrawal-report-list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+      #withdrawalsView .withdrawals-page {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        width: 100%;
+        max-width: 1120px;
+        margin: 0 auto;
+        box-sizing: border-box;
+      }
+      #withdrawalsView .wd-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      #withdrawalsView .wd-header-text { min-width: 0; }
+      #withdrawalsView .wd-header .page-title { margin: 0; font-size: 1.35rem; }
+      #withdrawalsView .wd-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 0.88rem; }
+      #withdrawalsView #openWithdrawalModalBtn {
+        height: 38px;
+        padding: 0 16px;
+        border-radius: 10px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      #withdrawalsView .wd-filter-bar {
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 14px;
+      }
+      #withdrawalsView .wd-filter-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        flex: 1 1 140px;
+      }
+      #withdrawalsView .wd-filter-field label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      #withdrawalsView .wd-filter-field .input {
+        height: 34px;
+        padding: 0 10px;
+        font-size: 0.84rem;
+      }
+      #withdrawalsView #withdrawalClearFiltersBtn {
+        height: 34px;
+        padding: 0 12px;
+        flex-shrink: 0;
+      }
+      #withdrawalsView .wd-body-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+        gap: 16px;
+        align-items: start;
+      }
+      #withdrawalsView .wd-list-card,
+      #withdrawalsView .wd-analytics-card,
+      #withdrawalsView .wd-empty {
+        padding: 14px 16px;
+        margin: 0;
+      }
+      #withdrawalsView .wd-panel-title {
+        margin: 0 0 12px;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+      #withdrawalsView .wd-empty {
+        text-align: center;
+        padding: 48px 24px;
+      }
+      #withdrawalsView .wd-empty-icon {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 12px;
+        color: rgba(148, 163, 184, 0.55);
+      }
+      #withdrawalsView .wd-empty h2 {
+        margin: 0 0 8px;
+        font-size: 1.05rem;
+        font-weight: 600;
+      }
+      #withdrawalsView .wd-empty p {
+        margin: 0 0 16px;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.5;
+        max-width: 360px;
+        margin-inline: auto;
+      }
+      #withdrawalsView .wd-analytics-stack { display: flex; flex-direction: column; gap: 14px; }
+      #withdrawalsView .wd-analytics-block h3 {
+        margin: 0 0 6px;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      #withdrawalsView .wd-analytics-block .withdrawal-report-list { font-size: 0.82rem; }
+      #withdrawalsView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
+      #withdrawalsView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
+      #withdrawalsView .withdrawals-vs-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 0.82rem;
+      }
+      #withdrawalModalOverlay .modal.withdrawal-modal {
+        width: min(440px, 100%);
+        max-height: min(86vh, 560px);
+      }
+      #withdrawalModalOverlay .withdrawal-modal-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 18px 18px;
+      }
+      #withdrawalModalOverlay .withdrawal-modal-form .field label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        font-weight: 600;
+      }
+      #withdrawalModalOverlay .withdrawal-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 0 18px 16px;
+      }
+      @media (max-width: 960px) {
+        .withdrawals-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #withdrawalsView .wd-body-grid { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 520px) {
+        .withdrawals-summary-grid { grid-template-columns: 1fr; }
+        #withdrawalsView .wd-header { align-items: flex-start; }
+        #withdrawalsView #openWithdrawalModalBtn { width: 100%; }
+      }
       .schedule-discipline-metrics {
         display: grid !important;
         margin-top: var(--space-sm);
@@ -1657,7 +1885,7 @@
         font-size: 12px;
         opacity: 0.75;
       }
-      #dashboardView, #tradeView, #configView {
+      #dashboardView, #tradeView, #configView, #withdrawalsView {
         transition: opacity 0.2s ease;
       }
       .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: var(--space-sm); }
@@ -2355,6 +2583,145 @@
         color: var(--text-muted);
         font-size: 13px;
       }
+      .trade-panel-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+      }
+      .trade-panel-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .trade-panel-head {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .trade-panel-asset-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .trade-panel-asset {
+        font-size: 15px;
+        letter-spacing: 0.02em;
+      }
+      .trade-result-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        text-transform: uppercase;
+      }
+      .trade-result-badge.tp {
+        color: var(--green);
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.28);
+      }
+      .trade-result-badge.sl {
+        color: var(--red);
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(239, 68, 68, 0.28);
+      }
+      .trade-result-badge.be {
+        color: var(--text-muted);
+        background: rgba(148, 163, 184, 0.12);
+        border-color: rgba(148, 163, 184, 0.24);
+      }
+      .trade-panel-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .trade-schedule-badge {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+      }
+      .trade-schedule-badge.schedule-inside {
+        color: var(--green);
+        border-color: rgba(34, 197, 94, 0.28);
+        background: rgba(34, 197, 94, 0.08);
+      }
+      .trade-schedule-badge.schedule-outside {
+        color: #f59e0b;
+        border-color: rgba(245, 158, 11, 0.35);
+        background: rgba(245, 158, 11, 0.1);
+      }
+      .trade-schedule-badge.schedule-missing {
+        color: var(--text-muted);
+        background: rgba(148, 163, 184, 0.08);
+      }
+      .trade-panel-pnl {
+        font-size: 20px;
+        font-weight: 800;
+        line-height: 1.1;
+        white-space: nowrap;
+      }
+      .trade-panel-pnl.green { color: var(--green); }
+      .trade-panel-pnl.red { color: var(--red); }
+      .trade-panel-meta,
+      .trade-panel-times {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.35;
+      }
+      .trade-panel-finance {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .trade-panel-commission {
+        opacity: 0.85;
+      }
+      .trade-panel-legs {
+        font-size: 11px;
+        color: var(--text-muted);
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px dashed rgba(148, 163, 184, 0.2);
+      }
+      .trade-panel-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 2px;
+      }
+      .trade-panel-btn {
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .trade-panel-btn:hover {
+        background: var(--hover-soft);
+      }
+      .trade-panel-btn.danger {
+        color: var(--red);
+        border-color: rgba(239, 68, 68, 0.28);
+      }
+      .trade-panel-btn.danger:hover {
+        background: rgba(239, 68, 68, 0.1);
+      }
       #dayModal {
         position: fixed;
         top: 0;
@@ -2983,8 +3350,14 @@
         align-items: start;
       }
       .trade-section-fields .field-full { grid-column: 1 / -1; }
-      #asset {
+      #asset,
+      #tradeView .custom-asset-wrap > select#asset.native-select-hidden {
         display: none !important;
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
       }
       .custom-asset-wrap {
         position: relative;
@@ -5330,7 +5703,7 @@
                   <div class="field field-full">
                     <label for="assetComboBtn" data-i18n="label_asset">Activo</label>
                     <div class="custom-asset-wrap">
-                      <select id="asset" tabindex="-1" aria-hidden="true">
+                      <select id="asset" class="native-select-hidden" tabindex="-1" aria-hidden="true">
                         <option value="" data-i18n="placeholder_select_asset">Selecciona un activo</option>
                         <optgroup label="Forex">
                           <option value="EURUSD">EURUSD</option><option value="GBPUSD">GBPUSD</option><option value="USDJPY">USDJPY</option><option value="USDCHF">USDCHF</option><option value="AUDUSD">AUDUSD</option><option value="USDCAD">USDCAD</option><option value="NZDUSD">NZDUSD</option><option value="EURGBP">EURGBP</option><option value="EURJPY">EURJPY</option><option value="EURCHF">EURCHF</option><option value="EURAUD">EURAUD</option><option value="EURCAD">EURCAD</option><option value="EURNZD">EURNZD</option><option value="GBPJPY">GBPJPY</option><option value="GBPCHF">GBPCHF</option><option value="GBPAUD">GBPAUD</option><option value="GBPCAD">GBPCAD</option><option value="GBPNZD">GBPNZD</option><option value="AUDJPY">AUDJPY</option><option value="AUDCHF">AUDCHF</option><option value="AUDCAD">AUDCAD</option><option value="AUDNZD">AUDNZD</option><option value="CADJPY">CADJPY</option><option value="CADCHF">CADCHF</option><option value="NZDJPY">NZDJPY</option><option value="NZDCHF">NZDCHF</option>
@@ -5541,11 +5914,20 @@
                     <span data-i18n="free_swap">Free Swap</span>
                   </div>
                 </div>
+                <div id="accountWithdrawalSummary" class="account-withdrawal-summary" hidden></div>
                 <div class="settings-actions settings-actions-three">
                   <button id="addAccountBtn" class="button button-add" type="button" data-i18n="add_account">Añadir cuenta</button>
                   <button id="cancelAccountEditBtn" class="button button-cancel" type="button" hidden data-i18n="cancel">Cancelar</button>
                   <button id="deleteAccountBtn" class="button button-delete" type="button" data-i18n="delete_account">Eliminar cuenta</button>
                 </div>
+              </article>
+
+              <article class="settings-card" id="configWithdrawalsLinkCard">
+                <div class="settings-header">
+                  <h3 class="title-with-icon"><i data-lucide="banknote"></i><span data-i18n="withdrawals_nav">Retiros</span></h3>
+                  <p data-i18n="withdrawals_config_link_desc">Gestiona los retiros de capital desde la vista dedicada.</p>
+                </div>
+                <button id="goToWithdrawalsBtn" class="button button-add" type="button" data-i18n="withdrawals_manage_btn">Gestionar retiros</button>
               </article>
 
               <article class="settings-card">
@@ -5576,6 +5958,118 @@
               </article>
             </div>
           </section>
+        </div>
+
+        <div id="withdrawalsView" style="display:none;">
+          <div class="withdrawals-page">
+            <header class="wd-header">
+              <div class="wd-header-text">
+                <h1 class="page-title title-with-icon">
+                  <i data-lucide="banknote"></i>
+                  <span data-i18n="withdrawals_title">Retiros</span>
+                </h1>
+                <p class="wd-subtitle" data-i18n="withdrawals_subtitle_short">Registro financiero por cuenta</p>
+              </div>
+              <button id="openWithdrawalModalBtn" class="button button-add" type="button" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
+            </header>
+
+            <div class="withdrawals-summary-grid">
+              <div class="withdrawals-summary-item">
+                <span data-i18n="withdrawals_total">Total retirado</span>
+                <strong id="withdrawalSummaryTotal">0.00€</strong>
+              </div>
+              <div class="withdrawals-summary-item">
+                <span data-i18n="withdrawals_count">Nº retiros</span>
+                <strong id="withdrawalSummaryCount">0</strong>
+              </div>
+              <div class="withdrawals-summary-item">
+                <span data-i18n="withdrawals_average">Retiro medio</span>
+                <strong id="withdrawalSummaryAvg">0.00€</strong>
+              </div>
+              <div class="withdrawals-summary-item">
+                <span data-i18n="withdrawals_last">Último retiro</span>
+                <strong id="withdrawalSummaryLast">—</strong>
+              </div>
+              <div class="withdrawals-summary-item">
+                <span data-i18n="withdrawals_estimated_balance">Balance estimado global</span>
+                <strong id="withdrawalSummaryEstimatedBalance">0.00€</strong>
+              </div>
+            </div>
+
+            <div class="card wd-filter-bar">
+              <div class="wd-filter-field">
+                <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
+                <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+              </div>
+              <div class="wd-filter-field">
+                <label for="withdrawalFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
+                <input id="withdrawalFilterFrom" class="input" type="date" />
+              </div>
+              <div class="wd-filter-field">
+                <label for="withdrawalFilterTo" data-i18n="withdrawals_filter_to">Hasta</label>
+                <input id="withdrawalFilterTo" class="input" type="date" />
+              </div>
+              <button id="withdrawalClearFiltersBtn" class="button button-cancel" type="button" data-i18n="withdrawals_clear_filters">Limpiar</button>
+            </div>
+
+            <div id="withdrawalsEmptyState" class="card wd-empty">
+              <i data-lucide="wallet" class="wd-empty-icon" aria-hidden="true"></i>
+              <h2 data-i18n="withdrawals_empty_title">No hay retiros registrados</h2>
+              <p data-i18n="withdrawals_empty_desc">Registra tu primer retiro para llevar control financiero de tus cuentas.</p>
+              <button type="button" class="button button-add" id="withdrawalsEmptyCta" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
+            </div>
+
+            <div id="withdrawalsBodyGrid" class="wd-body-grid" hidden>
+              <section class="card wd-list-card" id="withdrawalsListCard">
+                <h2 class="wd-panel-title" data-i18n="withdrawals_list_title">Listado de retiros</h2>
+                <div class="withdrawals-table-wrap">
+                  <table class="withdrawals-table">
+                    <thead>
+                      <tr>
+                        <th data-i18n="withdrawals_col_date">Fecha</th>
+                        <th data-i18n="withdrawals_col_account">Cuenta</th>
+                        <th data-i18n="withdrawals_col_amount">Importe</th>
+                        <th data-i18n="withdrawals_col_note">Nota</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="withdrawalsTableBody"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <aside class="card wd-analytics-card" id="withdrawalsAnalyticsSection">
+                <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
+                <div class="wd-analytics-stack">
+                  <div class="wd-analytics-block">
+                    <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                    <ul id="withdrawalAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
+                  </div>
+                  <div class="wd-analytics-block">
+                    <h3 data-i18n="withdrawals_by_month">Por mes</h3>
+                    <ul id="withdrawalAnalyticsByMonth" class="withdrawal-report-list"><li>—</li></ul>
+                  </div>
+                  <div class="wd-analytics-block">
+                    <h3 data-i18n="withdrawals_top_account">Más retirado</h3>
+                    <p id="withdrawalAnalyticsTopAccount" class="withdrawals-analytics-value">—</p>
+                  </div>
+                  <div class="wd-analytics-block">
+                    <h3 data-i18n="withdrawals_operational_vs_withdrawn">Operativo vs retirado</h3>
+                    <div class="withdrawals-analytics-vs">
+                      <div class="withdrawals-vs-row">
+                        <span data-i18n="withdrawals_operational_pnl">PnL operativo</span>
+                        <strong id="withdrawalAnalyticsOperationalPnl">0.00€</strong>
+                      </div>
+                      <div class="withdrawals-vs-row">
+                        <span data-i18n="withdrawals_total">Retirado</span>
+                        <strong id="withdrawalAnalyticsWithdrawnTotal">0.00€</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
         </div>
 
         <div id="statsView" class="stats-view-root" style="display:none;">
@@ -5680,6 +6174,50 @@
       </div>
 
       <button id="toggleAdvanced" class="advanced-toggle" type="button" data-i18n="insights_advanced_toggle_show">Ver análisis avanzado</button>
+
+      <section id="withdrawalStatsSection" class="withdrawal-report-card card">
+        <h2 class="section-title title-with-icon schedule-discipline-title">
+          <i data-lucide="banknote"></i>
+          <span>Informe de retiros</span>
+        </h2>
+        <p class="stats-schedule-hint">Los retiros no modifican el PnL operativo ni las métricas de trading.</p>
+        <div class="stats-grid withdrawal-report-metrics">
+          <div class="advanced-item">
+            <span>Total retirado</span>
+            <h2 id="withdrawalStatTotal">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Nº retiros</span>
+            <h2 id="withdrawalStatCount">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Retiro medio</span>
+            <h2 id="withdrawalStatAvg">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Último retiro</span>
+            <h2 id="withdrawalStatLast">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span>PnL neto operativo</span>
+            <h2 id="withdrawalStatOperationalPnl">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Balance estimado</span>
+            <h2 id="withdrawalStatEstimatedBalance">0.00€</h2>
+          </div>
+        </div>
+        <div class="withdrawal-report-subgrid">
+          <div class="withdrawal-report-block">
+            <h3>Retiros por cuenta</h3>
+            <ul id="withdrawalStatByAccount" class="withdrawal-report-list"><li>—</li></ul>
+          </div>
+          <div class="withdrawal-report-block">
+            <h3>Retiros por mes</h3>
+            <ul id="withdrawalStatByMonth" class="withdrawal-report-list"><li>—</li></ul>
+          </div>
+        </div>
+      </section>
 
       <section id="scheduleStatsSection" class="schedule-discipline-card card">
         <h2 class="section-title title-with-icon schedule-discipline-title">
@@ -6766,6 +7304,37 @@
     </div>
 
     <div id="toastContainer"></div>
+
+    <div id="withdrawalModalOverlay" class="modal-overlay app-modal-overlay" role="presentation">
+      <div class="modal app-modal withdrawal-modal" role="dialog" aria-modal="true" aria-labelledby="withdrawalModalTitle">
+        <div class="modal-header app-modal-header">
+          <h3 id="withdrawalModalTitle" data-i18n="withdrawals_modal_title_new">Nuevo retiro</h3>
+          <button id="closeWithdrawalModalBtn" class="modal-close app-modal-close" type="button" data-i18n="close">Cerrar</button>
+        </div>
+        <div class="withdrawal-modal-form">
+          <div class="field">
+            <label for="withdrawalFormAccount" data-i18n="label_select_account_settings">Cuenta</label>
+            <select id="withdrawalFormAccount" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
+          </div>
+          <div class="field">
+            <label for="withdrawalFormDate" data-i18n="withdrawals_date">Fecha</label>
+            <input id="withdrawalFormDate" class="input" type="date" required />
+          </div>
+          <div class="field">
+            <label for="withdrawalFormAmount" data-i18n="withdrawals_amount">Importe (€)</label>
+            <input id="withdrawalFormAmount" class="input" type="number" step="0.01" min="0.01" data-i18n-placeholder="withdrawals_amount_placeholder" placeholder="100.00" />
+          </div>
+          <div class="field">
+            <label for="withdrawalFormNote" data-i18n="withdrawals_note">Nota (opcional)</label>
+            <input id="withdrawalFormNote" class="input" type="text" data-i18n-placeholder="withdrawals_note_placeholder" placeholder="Comentario" />
+          </div>
+        </div>
+        <div class="withdrawal-modal-actions">
+          <button id="cancelWithdrawalEditBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>
+          <button id="saveWithdrawalBtn" class="button button-add" type="button" data-i18n="withdrawals_add_btn">Añadir retiro</button>
+        </div>
+      </div>
+    </div>
 
     <div id="confirmModal" class="modal-overlay app-modal-overlay" role="dialog" aria-modal="true">
       <div class="modal app-modal app-confirm-modal">

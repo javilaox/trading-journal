@@ -1011,6 +1011,50 @@
         <div data-i18n-title="insight_max_dd_tip"><span data-i18n="insight_max_dd">Max drawdown:</span> <strong id="statMaxDrawdown" class="negative">-0.00€</strong></div>
       </div>
 
+      <section id="withdrawalStatsSection" class="withdrawal-report-card card">
+        <h2 class="section-title title-with-icon schedule-discipline-title">
+          <i data-lucide="banknote"></i>
+          <span>Informe de retiros</span>
+        </h2>
+        <p class="stats-schedule-hint">Los retiros no modifican el PnL operativo ni las métricas de trading.</p>
+        <div class="stats-grid withdrawal-report-metrics">
+          <div class="advanced-item">
+            <span>Total retirado</span>
+            <h2 id="withdrawalStatTotal">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Nº retiros</span>
+            <h2 id="withdrawalStatCount">0</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Retiro medio</span>
+            <h2 id="withdrawalStatAvg">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Último retiro</span>
+            <h2 id="withdrawalStatLast">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span>PnL neto operativo</span>
+            <h2 id="withdrawalStatOperationalPnl">0.00€</h2>
+          </div>
+          <div class="advanced-item">
+            <span>Balance estimado</span>
+            <h2 id="withdrawalStatEstimatedBalance">0.00€</h2>
+          </div>
+        </div>
+        <div class="withdrawal-report-subgrid">
+          <div class="withdrawal-report-block">
+            <h3>Retiros por cuenta</h3>
+            <ul id="withdrawalStatByAccount" class="withdrawal-report-list"><li>—</li></ul>
+          </div>
+          <div class="withdrawal-report-block">
+            <h3>Retiros por mes</h3>
+            <ul id="withdrawalStatByMonth" class="withdrawal-report-list"><li>—</li></ul>
+          </div>
+        </div>
+      </section>
+
       <section id="scheduleStatsSection" class="schedule-discipline-card card">
         <h2 class="section-title title-with-icon schedule-discipline-title">
           <i data-lucide="clock"></i>
