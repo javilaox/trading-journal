@@ -1,6 +1,6 @@
 const {
   applyCompositeToTradeFields,
-  isCompositePositionFlag,
+  positionLegsForStorage,
   parsePositionLegs,
 } = require('./positionLegsUtils');
 
@@ -9,13 +9,9 @@ const {
  */
 function mapTrade(raw) {
   const legsRaw = raw.position_legs ?? raw.positionLegs ?? [];
-  const composite =
-    isCompositePositionFlag(raw.is_composite_position ?? raw.isCompositePosition) ||
-    parsePositionLegs(legsRaw).length > 0;
   const applied = applyCompositeToTradeFields({
     ...raw,
-    is_composite_position: composite,
-    position_legs: raw.position_legs ?? raw.positionLegs ?? [],
+    position_legs: legsRaw,
   });
   const gross = Number(applied.pnl ?? raw.pnl) || 0;
   const commission = Number(raw.commission) || 0;
@@ -39,7 +35,7 @@ function mapTrade(raw) {
     entry_time: raw.entry_time || null,
     exit_time: raw.exit_time || null,
     is_composite_position: Boolean(applied.is_composite_position),
-    position_legs: applied.is_composite_position ? applied.position_legs : [],
+    position_legs: positionLegsForStorage(applied.position_legs),
     user_id: raw.user_id,
   };
 }

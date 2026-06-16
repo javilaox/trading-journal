@@ -1,6 +1,6 @@
 /**
- * Comisión de trades REAL (normal y posición compuesta).
- * Misma regla: modo pro → comisión = lotaje × comisión por lote de la cuenta.
+ * Comisión de trades REAL (normal y posición construida).
+ * comisión = lotaje × comisión por lote de la cuenta.
  */
 
 function resolveAccountCommissionPerLot(account) {
@@ -47,7 +47,8 @@ function calculateTradeCommission({
       ? Number(commissionPerLot)
       : resolveAccountCommissionPerLot(account);
   const isPro = String(mode || '').toLowerCase() === 'pro';
-  const commission = isPro ? lot * perLot : 0;
+  const hasRate = perLot >= 0 && (Boolean(account && (account.name || account.id)) || commissionPerLot != null);
+  const commission = hasRate ? lot * perLot : 0;
   const safeCommission = Number.isFinite(commission) ? commission : 0;
 
   return {
@@ -58,7 +59,7 @@ function calculateTradeCommission({
     commissionPerLot: perLot,
     isPro,
     hasAccount: Boolean(account && (account.name || account.id)),
-    canCompute: isPro && Boolean(account) && perLot >= 0,
+    canCompute: hasRate && lot >= 0,
   };
 }
 

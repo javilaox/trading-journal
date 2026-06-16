@@ -2672,8 +2672,9 @@ function getTradeCompositeFormConfig(form = 'create') {
 }
 
 function isTradeCompositeEnabled(form = 'create') {
-  const cfg = getTradeCompositeFormConfig(form);
-  return Boolean(document.getElementById(cfg.enabled)?.checked);
+  // El switch "Construir posición" se ha eliminado: la sección de entradas está siempre activa.
+  // La flag is_composite_position se calcula en backend/normalización según el número de legs (2+).
+  return true;
 }
 
 function syncTradeCompositeSectionVisibility(form = 'create') {
@@ -2805,12 +2806,27 @@ function recalculateTradeCompositeTotals(form = 'create') {
   const totalLot = sumLegsLotSize(legs);
   const fee = getTradeCommissionCalc({ lotSize: totalLot, grossPnl: totalPnl, form });
 
+  const badgeId = form === 'create' ? 'tradeCompositeBadge' : 'editTradeCompositeBadge';
+  const badgeEl = document.getElementById(badgeId);
+  if (badgeEl) {
+    if (legs.length >= 2) {
+      badgeEl.textContent = 'Posición construida';
+      badgeEl.hidden = false;
+    } else if (legs.length === 1) {
+      badgeEl.textContent = 'Entrada única';
+      badgeEl.hidden = false;
+    } else {
+      badgeEl.hidden = true;
+      badgeEl.textContent = '';
+    }
+  }
+
   const pnlEl = document.getElementById(cfg.pnl);
   if (pnlEl) pnlEl.value = legs.length ? String(Number(totalPnl.toFixed(2))) : '';
 
   if (form === 'create') {
     const lotEl = document.getElementById('lotSize') || document.getElementById('lotaje');
-    if (totalLot > 0 && lotEl) lotEl.value = String(totalLot);
+    if (lotEl) lotEl.value = String(totalLot);
     const pnlNetInput = document.getElementById('pnlNet');
     const commissionInput = document.getElementById('commissionValue');
     if (pnlNetInput) {
@@ -2824,7 +2840,7 @@ function recalculateTradeCompositeTotals(form = 'create') {
     updateTradeRiskDisplay();
   } else {
     const lotEl = document.getElementById('editLotSize');
-    if (totalLot > 0 && lotEl) lotEl.value = String(totalLot);
+    if (lotEl) lotEl.value = String(totalLot);
     const editCommission = document.getElementById('editCommission');
     const editAccountCapital = document.getElementById('editAccountCapital');
     const account = getSelectedAccount('editAccount');
@@ -2850,14 +2866,8 @@ function updateCompositeSummaryDom(form, totalPnl, totalLot, feePrecomputed = nu
     });
   const lotTxt = totalLot > 0 ? String(totalLot) : '—';
   const grossTxt = `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}€`;
-  const commTxt =
-    !fee.isPro || !fee.hasAccount
-      ? '—'
-      : `${fee.commission.toFixed(2)}€`;
-  const netTxt =
-    fee.isPro && fee.hasAccount
-      ? `${fee.netPnl >= 0 ? '+' : ''}${fee.netPnl.toFixed(2)}€`
-      : grossTxt;
+  const commTxt = `${fee.commission.toFixed(2)}€`;
+  const netTxt = `${fee.netPnl >= 0 ? '+' : ''}${fee.netPnl.toFixed(2)}€`;
   summary.textContent = `Lotaje total: ${lotTxt} · PnL bruto: ${grossTxt} · Comisión: ${commTxt} · PnL neto: ${netTxt}`;
 }
 
@@ -2870,7 +2880,8 @@ function appendCompositeFieldsToTradePayload(trade, form = 'create') {
   console.log('[composite] collected legs', form, legs);
   const validation = validatePositionLegs(legs, { requireAtLeastOne: true });
   if (!validation.valid) return { error: validation.error, trade: null };
-  const totalLot = validation.totalLot > 0 ? validation.totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
+  // La comisión y los totales se calculan SOLO con el lotaje de las entradas.
+  const totalLot = Number(validation.totalLot ?? 0) || 0;
   const fee = getTradeCommissionCalc({
     lotSize: totalLot,
     grossPnl: validation.totalPnl,
@@ -2901,8 +2912,10 @@ function resetTradeCompositeForm(form = 'create') {
   const cfg = getTradeCompositeFormConfig(form);
   const enabledEl = document.getElementById(cfg.enabled);
   if (enabledEl) enabledEl.checked = false;
-  renderTradePositionLegsList(form, []);
+  // Por defecto: crear 1 entrada visual.
+  renderTradePositionLegsList(form, [createEmptyPositionLeg(1)]);
   syncTradeCompositeSectionVisibility(form);
+  recalculateTradeCompositeTotals(form);
 }
 
 function ensureTradeCompositeFormListeners() {
@@ -2948,16 +2961,16 @@ function ensureTradeCompositeFormListeners() {
 }
 
 function renderTradeCompositeDetailHtml(trade) {
-  if (!isCompositePositionFlag(trade?.is_composite_position ?? trade?.isCompositePosition)) return '';
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
   if (!legs.length) return '';
+  const badgeText = legs.length >= 2 ? 'Posición construida' : 'Entrada única';
   const rows = legs
     .map(
       (leg) =>
         `<li><strong>${leg.label}</strong> · Lote: ${leg.lot_size != null ? leg.lot_size : '—'} · PnL: ${leg.pnl >= 0 ? '+' : ''}${Number(leg.pnl).toFixed(2)}€${leg.comment ? ` · ${leg.comment}` : ''}</li>`
     )
     .join('');
-  return `<div class="trade-composite-detail"><span class="trade-composite-badge">Posición construida</span><ul class="trade-composite-legs-detail">${rows}</ul><p class="trade-composite-summary">${formatPositionLegsSummary(legs)}</p></div>`;
+  return `<div class="trade-composite-detail"><span class="trade-composite-badge">${badgeText}</span><ul class="trade-composite-legs-detail">${rows}</ul><p class="trade-composite-summary">${formatPositionLegsSummary(legs)}</p></div>`;
 }
 const {
   calculateBacktestingScheduleDiscipline,
@@ -3536,7 +3549,7 @@ function renderTradeList(trades) {
     if (isCompositePositionFlag(trade.is_composite_position)) {
       const badge = document.createElement('span');
       badge.className = 'trade-composite-badge';
-      badge.textContent = 'Posición';
+      badge.textContent = 'Posición construida';
       li.appendChild(badge);
     }
 
@@ -5836,6 +5849,8 @@ async function saveAccountFromModal() {
   console.log('[accountModal] payload', payload);
   console.log('[accountModal] identity', accountModalIdentity);
 
+  let didRecalculateTrades = false;
+
   if (isEdit) {
     const taken = getAccounts().some(
       (a) => a.name === name && !accountMatchesIdentity(a, accountModalIdentity)
@@ -5876,6 +5891,39 @@ async function saveAccountFromModal() {
       setAccountModalError(formatAccountSaveError(res));
       return;
     }
+
+    const oldCommissionPerLot = Number(existing?.commissionPerLot ?? 0) || 0;
+    const commissionChanged = Number(oldCommissionPerLot) !== Number(commissionPerLot);
+    if (commissionChanged) {
+      const ok = await showConfirmModal({
+        title: 'Comisión por lote',
+        message:
+          'Has cambiado la comisión por lote. ¿Quieres recalcular las comisiones de todos los trades de esta cuenta?',
+        confirmText: 'Recalcular ahora',
+        cancelText: 'Solo guardar cuenta',
+      });
+
+      if (ok) {
+        const backend = getBackendApi();
+        if (!backend?.recalculateTradesCommissionForAccount) {
+          setAccountModalError('No se pudo recalcular las comisiones (backend no disponible)');
+          return;
+        }
+
+        const recalcRes = await backend.recalculateTradesCommissionForAccount({
+          accountName: name,
+          newCommissionPerLot: commissionPerLot,
+          oldCommissionPerLot,
+        });
+
+        if (!recalcRes?.success) {
+          setAccountModalError(recalcRes?.error ? String(recalcRes.error) : 'Error al recalcular trades');
+          return;
+        }
+        didRecalculateTrades = true;
+        showToast('Comisiones recalculadas', 'success');
+      }
+    }
   } else {
     if (getAccounts().some((a) => a.name === name)) {
       setAccountModalError('ya existe una cuenta con ese nombre');
@@ -5894,7 +5942,7 @@ async function saveAccountFromModal() {
   await loadAccounts();
   await loadStrategies();
   updateCreateDerivedFields();
-  if (isEdit && originalName && name !== originalName) await loadTrades();
+  if (isEdit && (didRecalculateTrades || (originalName && name !== originalName))) await loadTrades();
   showToast(t('saved_changes'), 'success');
   setTimeout(() => closeAccountDetailModal(), 450);
 }
@@ -11954,19 +12002,25 @@ async function openTradeForEdit(tradeId) {
   await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
 
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
-  const composite = isCompositePositionFlag(trade.is_composite_position) || legs.length > 0;
-  const enabledEl = document.getElementById('editTradeCompositeEnabled');
-  if (enabledEl) enabledEl.checked = composite;
-  renderTradePositionLegsList('edit', legs);
-  syncTradeCompositeSectionVisibility('edit');
-  if (composite) {
-    recalculateTradeCompositeTotals('edit');
+  let legsToRender = legs;
+  // Compatibilidad: trades legacy sin position_legs => crear una entrada visual inicial.
+  if (!legsToRender.length) {
+    const lotValue = Number(trade.lotSize ?? trade.lotaje ?? 0) || 0;
+    const pnlValue = Number(trade.pnl ?? 0) || 0;
+    const legacyLeg = createEmptyPositionLeg(1);
+    legacyLeg.lot_size = lotValue > 0 ? lotValue : null;
+    legacyLeg.pnl = pnlValue;
+    legsToRender = [legacyLeg];
   }
+
+  renderTradePositionLegsList('edit', legsToRender);
+  syncTradeCompositeSectionVisibility('edit');
+  recalculateTradeCompositeTotals('edit');
 
   const detailHost = document.getElementById('editTradeCompositeDetail');
   if (detailHost) {
-    detailHost.innerHTML = composite ? renderTradeCompositeDetailHtml(trade) : '';
-    detailHost.hidden = !composite;
+    detailHost.innerHTML = renderTradeCompositeDetailHtml({ ...trade, position_legs: legsToRender });
+    detailHost.hidden = !legsToRender.length;
   }
 
   if (typeof recalculateEditNetPnl === 'function') {
@@ -12120,7 +12174,7 @@ async function saveTrade() {
   const compositeMerge = appendCompositeFieldsToTradePayload(trade, 'create');
   if (compositeMerge.error) {
     if (compositeMerge.error === 'NO_LEGS') {
-      showToast('Añade al menos una entrada o desactiva Construir posición', 'error');
+      showToast('Añade al menos una entrada', 'error');
     } else {
       showToast('Revisa los PnL de las entradas parciales', 'error');
     }
@@ -12284,7 +12338,7 @@ async function saveEditedTrade() {
   const compositeMerge = appendCompositeFieldsToTradePayload(payload, 'edit');
   if (compositeMerge.error) {
     if (compositeMerge.error === 'NO_LEGS') {
-      showToast('Añade al menos una entrada o desactiva Construir posición', 'error');
+      showToast('Añade al menos una entrada', 'error');
     } else {
       showToast('Revisa los PnL de las entradas parciales', 'error');
     }

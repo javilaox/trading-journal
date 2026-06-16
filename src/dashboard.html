@@ -5962,22 +5962,14 @@
                       <option value="" data-i18n="placeholder_select_result">Selecciona resultado</option><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option>
                     </select>
                   </div>
-                  <div class="strategy-active-row field-full">
-                    <div class="toggle-row">
-                      <label class="switch" for="tradeCompositeEnabled">
-                        <input type="checkbox" id="tradeCompositeEnabled" />
-                        <span class="slider"></span>
-                      </label>
-                      <span>Construir posición</span>
-                    </div>
-                  </div>
-                  <div id="tradeCompositeSection" class="trade-composite-section field-full" hidden>
+                  <div id="tradeCompositeSection" class="trade-composite-section field-full">
                     <div class="trade-composite-head">
-                      <span class="settings-field-label">Entradas de la posición</span>
+                      <span class="settings-field-label">Entradas</span>
+                      <span id="tradeCompositeBadge" class="trade-composite-badge" hidden></span>
                       <button type="button" id="tradeAddPositionLeg" class="button button-secondary">Añadir entrada</button>
                     </div>
                     <p id="tradeCompositeEmptyHint" class="trade-composite-empty-hint" hidden>
-                      Añade al menos una entrada o desactiva Construir posición.
+                      Añade al menos una entrada.
                     </p>
                     <div id="tradePositionLegsList" class="trade-position-legs-list"></div>
                     <p id="tradeCompositeSummary" class="trade-composite-summary">Lotaje total: 0 · PnL total: 0.00€</p>
@@ -7373,22 +7365,14 @@
               <option value="BE">BE</option>
             </select>
           </div>
-          <div class="strategy-active-row field-full">
-            <div class="toggle-row">
-              <label class="switch" for="editTradeCompositeEnabled">
-                <input type="checkbox" id="editTradeCompositeEnabled" />
-                <span class="slider"></span>
-              </label>
-              <span>Construir posición</span>
-            </div>
-          </div>
-          <div id="editTradeCompositeSection" class="trade-composite-section field-full" hidden>
+          <div id="editTradeCompositeSection" class="trade-composite-section field-full">
             <div class="trade-composite-head">
-              <span class="settings-field-label">Entradas de la posición</span>
+              <span class="settings-field-label">Entradas</span>
+              <span id="editTradeCompositeBadge" class="trade-composite-badge" hidden></span>
               <button type="button" id="editTradeAddPositionLeg" class="button button-secondary">Añadir entrada</button>
             </div>
             <p id="editTradeCompositeEmptyHint" class="trade-composite-empty-hint" hidden>
-              Añade al menos una entrada o desactiva Construir posición.
+              Añade al menos una entrada.
             </p>
             <div id="editTradePositionLegsList" class="trade-position-legs-list"></div>
             <p id="editTradeCompositeSummary" class="trade-composite-summary">Lotaje total: 0 · PnL total: 0.00€</p>

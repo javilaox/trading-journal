@@ -52,7 +52,9 @@ const api = {
   updateBacktestingMetric: (metric) => ipcRenderer.invoke('update-backtesting-metric', metric),
   deleteBacktestingMetric: (metricId) => ipcRenderer.invoke('delete-backtesting-metric', metricId),
   setSupabaseSession: (session) => ipcRenderer.invoke('set-supabase-session', session),
-  getCurrentUserId: () => ipcRenderer.invoke('get-current-user-id')
+  getCurrentUserId: () => ipcRenderer.invoke('get-current-user-id'),
+  recalculateTradesCommissionForAccount: (payload) =>
+    ipcRenderer.invoke('recalculate-trades-commission-for-account', payload),
 };
 
 contextBridge.exposeInMainWorld('api', {
@@ -104,7 +106,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteBacktestingMetric: api.deleteBacktestingMetric,
   setSupabaseSession: api.setSupabaseSession,
   getCurrentUserId: api.getCurrentUserId,
-  getSyncPendingCount: api.getSyncPendingCount
+  getSyncPendingCount: api.getSyncPendingCount,
+  recalculateTradesCommissionForAccount: api.recalculateTradesCommissionForAccount,
 });
 
 // Compatibilidad: mantener API existente para no romper funcionalidades actuales.

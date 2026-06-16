@@ -27,6 +27,7 @@ const {
   parsePositionLegsFromRow,
   isCompositePositionFlag,
   applyCompositeToTradeFields,
+  sumLegsLotSize,
   hydrateTradeCompositeFields,
 } = require('./services/positionLegsUtils');
 const { parseOperatingHours } = require('./services/scheduleUtils');
@@ -92,6 +93,17 @@ function enqueueSyncItem({
   if (existing && existing.action === 'create' && action === 'delete') {
     db.prepare(`DELETE FROM sync_queue WHERE id = ?`).run(existing.id);
     return null;
+  }
+
+  // Evitar duplicados: si ya hay un pending_update para la misma entidad,
+  // actualizamos el payload en lugar de insertar otro.
+  if (existing && existing.action === 'update' && action === 'update') {
+    db.prepare(`
+      UPDATE sync_queue
+      SET payload_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(payloadJson, created, existing.id);
+    return existing.id;
   }
 
   if (existing && existing.action === 'update' && action === 'delete') {
@@ -427,12 +439,13 @@ function strategyFieldsForSupabase(strategy = {}) {
 
 function normalizeTrade(trade = {}) {
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
-  const composite =
-    isCompositePositionFlag(trade.is_composite_position ?? trade.isCompositePosition) || legs.length > 0;
+  // La flag is_composite_position se calcula automáticamente en función del número de entradas:
+  // - 2+ legs => posición construida
+  // - 1 leg => trade normal (pero conservamos position_legs como referencia)
   const applied = applyCompositeToTradeFields({
     ...trade,
-    is_composite_position: composite,
-    position_legs: composite ? legs : [],
+    position_legs: legs,
+    positionLegs: legs,
   });
   const grossPnl = Number(applied.pnl ?? trade.pnl ?? trade.pnl_net ?? 0) || 0;
   const commission = Number(trade.commission ?? 0) || 0;
@@ -456,7 +469,7 @@ function normalizeTrade(trade = {}) {
     entry_time: normalizeTimeField(trade.entry_time ?? trade.entryTime),
     exit_time: normalizeTimeField(trade.exit_time ?? trade.exitTime),
     is_composite_position: Boolean(applied.is_composite_position),
-    position_legs: composite ? applied.position_legs : [],
+    position_legs: applied.position_legs ?? legs,
   };
 }
 
@@ -1216,7 +1229,8 @@ ipcMain.handle('add-trade', async (event, trade) => {
     entry_time: mapped.entry_time ?? null,
     exit_time: mapped.exit_time ?? null,
     is_composite_position: Boolean(mapped.is_composite_position),
-    position_legs: mapped.is_composite_position ? mapped.position_legs || [] : [],
+    // Conservamos position_legs incluso cuando es 1 sola entrada (trade de referencia).
+    position_legs: mapped.position_legs || [],
     user_id: userId
   };
 
@@ -1377,7 +1391,8 @@ async function upsertTradeRemote({ userId, payload }) {
     entry_time: normalizeTimeField(payload.entry_time) ?? null,
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
     is_composite_position: Boolean(payload.is_composite_position),
-    position_legs: payload.is_composite_position ? payload.position_legs || [] : [],
+    // Conservamos position_legs incluso cuando no es posición construida.
+    position_legs: payload.position_legs || [],
     updated_at: nowIso(),
   };
 
@@ -1402,8 +1417,8 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
   const id = Number(remoteId);
   const client_uuid = payload?.client_uuid ? String(payload.client_uuid) : null;
   const legs = parsePositionLegs(payload.position_legs ?? payload.positionLegs ?? []);
-  const composite =
-    isCompositePositionFlag(payload.is_composite_position ?? payload.isCompositePosition) || legs.length > 0;
+  // Se recalcula en función de la cantidad de legs (2+ => posición construida)
+  const composite = legs.length >= 2;
   const patch = {
     client_uuid,
     date: payload.date || '',
@@ -1421,7 +1436,7 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
     entry_time: normalizeTimeField(payload.entry_time) ?? null,
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
     is_composite_position: composite,
-    position_legs: composite ? legs : [],
+    position_legs: legs,
     updated_at: nowIso(),
   };
 
@@ -2881,6 +2896,133 @@ ipcMain.handle('update-trades-strategy', (event, oldName, newName) =>
 ipcMain.handle('update-trades-account', (event, oldName, newName) =>
   renameTradesField('account', oldName, newName)
 );
+
+ipcMain.handle('recalculate-trades-commission-for-account', async (event, payload = {}) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const accountName = payload?.accountName ? String(payload.accountName) : '';
+  const newCommissionPerLot = Number(payload?.newCommissionPerLot ?? 0);
+  const oldCommissionPerLot = Number(payload?.oldCommissionPerLot ?? 0);
+
+  if (!accountName) return { success: false, error: 'INVALID_ACCOUNT_NAME' };
+  if (!Number.isFinite(newCommissionPerLot) || newCommissionPerLot < 0) {
+    return { success: false, error: 'INVALID_COMMISSION_PER_LOT' };
+  }
+
+  console.log('[commission] account commission changed', {
+    accountName,
+    from: oldCommissionPerLot,
+    to: newCommissionPerLot,
+  });
+
+  console.log('[commission] recalculating trades for account', accountName);
+
+  const now = nowIso();
+  const trades = db
+    .prepare(
+      `
+      SELECT
+        id,
+        client_uuid,
+        remote_id,
+        date,
+        asset,
+        result,
+        be_after_result,
+        pnl,
+        strategy,
+        account,
+        lotaje,
+        commission,
+        pnl_net,
+        image_before,
+        image_after,
+        entry_time,
+        exit_time,
+        position_legs,
+        is_composite_position,
+        sync_status,
+        deleted_at
+      FROM trades
+      WHERE user_id = ?
+        AND account = ?
+        AND (deleted_at IS NULL OR deleted_at = '')
+        AND (sync_status IS NULL OR sync_status = '' OR sync_status NOT IN ('pending_delete', 'deleted'))
+      ORDER BY id DESC
+      `
+    )
+    .all(String(userId), accountName);
+
+  let updatedCount = 0;
+
+  for (const trade of trades) {
+    const legs = parsePositionLegs(trade.position_legs ?? []);
+    const totalLot = legs.length > 0 ? sumLegsLotSize(legs) : Number(trade.lotaje ?? 0) || 0;
+    const grossPnl = Number(trade.pnl ?? 0) || 0;
+
+    const commission = totalLot * newCommissionPerLot;
+    const pnlNet = grossPnl - commission;
+
+    const isPendingCreate =
+      String(trade.sync_status || '') === 'pending_create' && (trade.remote_id == null || trade.remote_id === '');
+    const nextSyncStatus = isPendingCreate ? 'pending_create' : 'pending_update';
+
+    db.prepare(`
+      UPDATE trades
+      SET commission = ?, pnl_net = ?, updated_at = ?, sync_status = ?
+      WHERE user_id = ? AND id = ?
+    `).run(
+      commission,
+      pnlNet,
+      now,
+      nextSyncStatus,
+      String(userId),
+      Number(trade.id)
+    );
+
+    // Encolamos actualización para que Supabase (si está online) mantenga comisión y pnl_net.
+    enqueueSyncItem({
+      userId,
+      entityType: 'trade',
+      entityLocalId: String(trade.id),
+      entityRemoteId: trade.remote_id != null && trade.remote_id !== '' ? String(trade.remote_id) : null,
+      action: 'update',
+      payload: {
+        id: Number(trade.id),
+        client_uuid: trade.client_uuid || null,
+        date: trade.date,
+        asset: trade.asset,
+        result: trade.result,
+        be_after_result: trade.be_after_result ?? null,
+        pnl: grossPnl,
+        strategy: trade.strategy,
+        account: trade.account,
+        lotaje: Number(trade.lotaje ?? 0) || 0,
+        commission,
+        pnl_net: pnlNet,
+        image_before: trade.image_before,
+        image_after: trade.image_after,
+        entry_time: trade.entry_time ?? null,
+        exit_time: trade.exit_time ?? null,
+        is_composite_position: legs.length >= 2 ? 1 : 0,
+        position_legs: legs,
+      },
+    });
+
+    console.log('[commission] trade recalculated', { tradeId: trade.id, commission, pnlNet });
+    updatedCount += 1;
+  }
+
+  console.log('[commission] total updated count', updatedCount);
+
+  const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
+  if (online) {
+    await syncPendingChanges(String(userId));
+  }
+
+  return { success: true, updatedCount };
+});
 
 ipcMain.handle('add-backtest-trade', async (event, trade) => {
   return backtestingService.addBacktestTrade(trade || {});

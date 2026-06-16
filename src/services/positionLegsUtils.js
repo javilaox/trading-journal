@@ -66,6 +66,15 @@ function sumLegsLotSize(legs) {
   }, 0);
 }
 
+function isCompositeFromLegCount(legs) {
+  return parsePositionLegs(legs).length >= 2;
+}
+
+function positionLegsForStorage(legs) {
+  const list = parsePositionLegs(legs);
+  return list.length > 0 ? list : [];
+}
+
 /**
  * @param {Array} legs
  * @param {{ requireAtLeastOne?: boolean }} [opts]
@@ -102,19 +111,18 @@ function parsePositionLegsFromRow(row) {
  */
 function hydrateTradeCompositeFields(trade = {}) {
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
-  const composite =
-    isCompositePositionFlag(trade.is_composite_position ?? trade.isCompositePosition) || legs.length > 0;
-  const totalPnl = composite ? sumLegsPnl(legs) : Number(trade.pnl ?? 0) || 0;
-  const totalLot = composite ? sumLegsLotSize(legs) : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
+  const composite = isCompositeFromLegCount(legs);
+  const totalPnl = legs.length > 0 ? sumLegsPnl(legs) : Number(trade.pnl ?? 0) || 0;
+  const totalLot = legs.length > 0 ? sumLegsLotSize(legs) : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
   return {
     ...trade,
     is_composite_position: composite,
     isCompositePosition: composite,
-    position_legs: composite ? legs : [],
-    positionLegs: composite ? legs : [],
-    pnl: composite && legs.length ? totalPnl : Number(trade.pnl ?? 0) || 0,
-    lotaje: composite && totalLot > 0 ? totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0,
-    lotSize: composite && totalLot > 0 ? totalLot : Number(trade.lotSize ?? trade.lotaje ?? 0) || 0,
+    position_legs: legs,
+    positionLegs: legs,
+    pnl: legs.length > 0 ? totalPnl : Number(trade.pnl ?? 0) || 0,
+    lotaje: legs.length > 0 && totalLot > 0 ? totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0,
+    lotSize: legs.length > 0 && totalLot > 0 ? totalLot : Number(trade.lotSize ?? trade.lotaje ?? 0) || 0,
   };
 }
 
@@ -134,25 +142,22 @@ function createEmptyPositionLeg(index) {
 
 /**
  * Aplica reglas de posición compuesta al payload normalizado.
+ * is_composite_position = true solo con 2+ entradas; 1 entrada se guarda como referencia.
  */
 function applyCompositeToTradeFields(trade = {}) {
-  const composite = isCompositePositionFlag(trade.is_composite_position ?? trade.isCompositePosition);
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
-  if (!composite) {
-    return {
-      ...trade,
-      is_composite_position: false,
-      position_legs: [],
-    };
-  }
-  const totalPnl = sumLegsPnl(legs);
-  const totalLot = sumLegsLotSize(legs);
+  const composite = isCompositeFromLegCount(legs);
+  const totalPnl = legs.length > 0 ? sumLegsPnl(legs) : Number(trade.pnl ?? 0) || 0;
+  const totalLot = legs.length > 0 ? sumLegsLotSize(legs) : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0;
   return {
     ...trade,
-    is_composite_position: true,
+    is_composite_position: composite,
     position_legs: legs,
-    pnl: totalPnl,
-    lotaje: totalLot > 0 ? totalLot : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0,
+    pnl: legs.length > 0 ? totalPnl : Number(trade.pnl ?? 0) || 0,
+    lotaje:
+      legs.length > 0 && totalLot > 0
+        ? totalLot
+        : Number(trade.lotaje ?? trade.lotSize ?? 0) || 0,
   };
 }
 
@@ -171,6 +176,8 @@ module.exports = {
   validatePositionLegs,
   sumLegsPnl,
   sumLegsLotSize,
+  isCompositeFromLegCount,
+  positionLegsForStorage,
   serializePositionLegsForStorage,
   parsePositionLegsFromRow,
   isCompositePositionFlag,

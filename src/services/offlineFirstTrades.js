@@ -32,6 +32,7 @@ function remoteRowToSqliteValues(row, fallbackUserId) {
       : new Date().toISOString();
 
   const id = Number(row.id);
+  const remoteLegs = parsePositionLegs(row.position_legs ?? row.positionLegs ?? []);
   return [
     Number.isFinite(id) ? id : null,
     row.date ?? '',
@@ -48,7 +49,7 @@ function remoteRowToSqliteValues(row, fallbackUserId) {
     row.image_after ?? '',
     row.entry_time ?? null,
     row.exit_time ?? null,
-    isCompositePositionFlag(row.is_composite_position) ? 1 : 0,
+    remoteLegs.length >= 2 ? 1 : 0,
     serializePositionLegsForStorage(row.position_legs ?? []),
     updated,
     uid
@@ -201,10 +202,10 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
             : localLegs.length > 0
               ? localLegs
               : remoteLegs;
-        const compositeFlag =
-          isCompositePositionFlag(row.is_composite_position) ||
-          legsForStore.length > 0 ||
-          isCompositePositionFlag(localLegsRow?.is_composite_position);
+        // is_composite_position se calcula por número de legs:
+        // - 2+ legs => posición construida
+        // - 1 leg => trade normal (aunque conservemos position_legs como referencia)
+        const compositeFlag = legsForStore.length >= 2;
         updateStmt.run(
           clientUuidRaw,
           id,
