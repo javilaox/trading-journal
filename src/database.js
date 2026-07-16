@@ -2,6 +2,15 @@ const Database = require('better-sqlite3');
 
 const db = new Database('trades.db');
 
+// Rendimiento: WAL permite lecturas concurrentes con escrituras y acelera commits.
+// synchronous=NORMAL es seguro con WAL (sin riesgo de corrupción ante crash de app).
+try {
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+} catch (err) {
+  console.warn('SQLite pragma setup fallo (no crítico):', err);
+}
+
 function getTableColumns(tableName) {
   try {
     const rows = db.prepare(`PRAGMA table_info(${tableName})`).all();
@@ -48,6 +57,14 @@ function ensureTradesSchema() {
       ON trades(user_id, client_uuid)
       WHERE client_uuid IS NOT NULL
     `).run();
+  }
+
+  // Índices de rendimiento (todas las lecturas filtran por user_id)
+  if (cols.has('user_id')) {
+    db.prepare(`CREATE INDEX IF NOT EXISTS trades_user_idx ON trades(user_id)`).run();
+  }
+  if (cols.has('user_id') && cols.has('remote_id')) {
+    db.prepare(`CREATE INDEX IF NOT EXISTS trades_user_remote_idx ON trades(user_id, remote_id)`).run();
   }
 }
 
@@ -353,5 +370,15 @@ db.prepare(`
 `).run();
 
 ensureOfflineTables();
+
+// Índice de rendimiento para la cola de sync (selección por user_id + status en cada ciclo)
+try {
+  db.prepare(`
+    CREATE INDEX IF NOT EXISTS sync_queue_user_status_idx
+    ON sync_queue(user_id, status)
+  `).run();
+} catch (err) {
+  console.warn('SQLite índice sync_queue fallo (no crítico):', err);
+}
 
 module.exports = db;

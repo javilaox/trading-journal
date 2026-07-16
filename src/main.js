@@ -1979,7 +1979,8 @@ async function syncPendingChanges(userId) {
     }
   }
 
-  const pull = await pullRemoteData(userId).catch(() => ({ pulled: false }));
+  // Ya comprobamos conectividad al inicio de este ciclo; evitamos un segundo probe de red.
+  const pull = await pullRemoteData(userId, { assumeOnline: true }).catch(() => ({ pulled: false }));
 
   const pendingLeft = getSyncPendingCountForUser(userId);
   const failedLeft = getSyncFailedCountForUser(userId);
@@ -1994,111 +1995,36 @@ async function syncPendingChanges(userId) {
   return { ok, failed, pull };
 }
 
-function upsertTradesFromRemotePull(userId, remoteTrades) {
-  const uid = String(userId);
-  const rows = Array.isArray(remoteTrades) ? remoteTrades : [];
+async function pullRemoteData(userId, { assumeOnline = false } = {}) {
+  if (!assumeOnline) {
+    const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
+    if (!online) return { skipped: true, reason: 'OFFLINE' };
+  }
 
-  const selectByClient = db.prepare(
-    `SELECT id, sync_status, deleted_at FROM trades WHERE user_id = ? AND client_uuid = ? LIMIT 1`
-  );
-  const selectByRemote = db.prepare(
-    `SELECT id, sync_status, deleted_at FROM trades WHERE user_id = ? AND remote_id = ? LIMIT 1`
-  );
+  // Fetch remotos en paralelo (misma sesión/RLS). El merge local se hace después, secuencialmente.
+  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes] = await Promise.all([
+    tradesService.getTrades().catch((err) => ({ success: false, error: err })),
+    supabase
+      .from('real_accounts')
+      .select('id, user_id, name, balance, client_uuid, created_at')
+      .eq('user_id', String(userId)),
+    supabase
+      .from('real_strategies')
+      .select('id, user_id, name, client_uuid, created_at, description, schedule_enabled, operating_hours')
+      .eq('user_id', String(userId)),
+    supabase
+      .from('real_account_withdrawals')
+      .select(
+        'id, user_id, account_id, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
+      )
+      .eq('user_id', String(userId))
+      .is('deleted_at', null),
+  ]);
 
-  const insert = db.prepare(`
-    INSERT INTO trades
-    (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, updated_at, user_id, sync_status, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
-  `);
-
-  const update = db.prepare(`
-    UPDATE trades SET
-      client_uuid = COALESCE(?, client_uuid),
-      remote_id = COALESCE(?, remote_id),
-      date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
-      lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?, updated_at = ?,
-      sync_status = CASE
-        WHEN sync_status LIKE 'pending_%' THEN sync_status
-        ELSE 'synced'
-      END
-    WHERE user_id = ? AND id = ?
-  `);
-
-  const tx = db.transaction(() => {
-    for (const r of rows) {
-      const remoteId = Number(r?.id);
-      if (!Number.isFinite(remoteId) || remoteId <= 0) continue;
-
-      const clientUuid = r?.client_uuid ? String(r.client_uuid) : null;
-      const updatedAt = r?.updated_at ? String(r.updated_at) : nowIso();
-
-      const localHit =
-        (clientUuid ? selectByClient.get(uid, clientUuid) : null) ||
-        selectByRemote.get(uid, remoteId);
-
-      if (localHit && isTradeRowHidden(localHit)) {
-        console.log('[pullRemoteData] skipping locally deleted trade', localHit.id);
-        continue;
-      }
-
-      if (localHit && String(localHit.sync_status || '').startsWith('pending_')) {
-        continue;
-      }
-
-      if (!localHit) {
-        insert.run(
-          remoteId,
-          clientUuid,
-          remoteId,
-          r?.date ?? '',
-          r?.asset ?? '',
-          r?.result ?? '',
-          r?.be_after_result ?? null,
-          Number(r?.pnl ?? 0) || 0,
-          r?.strategy ?? '',
-          r?.account ?? '',
-          Number(r?.lotaje ?? 0) || 0,
-          Number(r?.commission ?? 0) || 0,
-          Number(r?.pnl_net ?? r?.pnl ?? 0) || 0,
-          r?.image_before ?? '',
-          r?.image_after ?? '',
-          updatedAt,
-          uid
-        );
-      } else {
-        update.run(
-          clientUuid,
-          remoteId,
-          r?.date ?? '',
-          r?.asset ?? '',
-          r?.result ?? '',
-          r?.be_after_result ?? null,
-          Number(r?.pnl ?? 0) || 0,
-          r?.strategy ?? '',
-          r?.account ?? '',
-          Number(r?.lotaje ?? 0) || 0,
-          Number(r?.commission ?? 0) || 0,
-          Number(r?.pnl_net ?? r?.pnl ?? 0) || 0,
-          r?.image_before ?? '',
-          r?.image_after ?? '',
-          updatedAt,
-          uid,
-          Number(localHit.id)
-        );
-      }
-    }
-  });
-
-  tx();
-}
-
-async function pullRemoteData(userId) {
-  const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
-  if (!online) return { skipped: true, reason: 'OFFLINE' };
-
-  const tradesRes = await tradesService.getTrades();
   if (tradesRes?.success && Array.isArray(tradesRes.data)) {
-    upsertTradesFromRemotePull(userId, tradesRes.data);
+    // upsertTradesIntoLocal preserva entry/exit_time y position_legs, respeta pending_* y tombstones,
+    // y solo pisa filas locales si el remoto es más reciente (updated_at).
+    upsertTradesIntoLocal(db, tradesRes.data, userId, '[pullRemoteData]');
   }
 
   const upsertSimpleEntity = (table, localTable, rows, mapRow) => {
@@ -2172,11 +2098,6 @@ async function pullRemoteData(userId) {
     tx();
   };
 
-  const accountsRes = await supabase
-    .from('real_accounts')
-    .select('id, user_id, name, balance, client_uuid, created_at')
-    .eq('user_id', String(userId));
-
   if (!accountsRes.error) {
     upsertSimpleEntity(
       'real_accounts',
@@ -2192,11 +2113,6 @@ async function pullRemoteData(userId) {
       })
     );
   }
-
-  const strategiesRes = await supabase
-    .from('real_strategies')
-    .select('id, user_id, name, client_uuid, created_at, description, schedule_enabled, operating_hours')
-    .eq('user_id', String(userId));
 
   if (!strategiesRes.error) {
     const uid = String(userId);
@@ -2258,14 +2174,6 @@ async function pullRemoteData(userId) {
     });
     tx();
   }
-
-  const withdrawalsRes = await supabase
-    .from('real_account_withdrawals')
-    .select(
-      'id, user_id, account_id, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
-    )
-    .eq('user_id', String(userId))
-    .is('deleted_at', null);
 
   if (!withdrawalsRes.error) {
     upsertWithdrawalsIntoLocal(db, withdrawalsRes.data || [], userId, '[pullRemoteData]');
