@@ -379,5 +379,6 @@
   "expenses_deleted": "Expense deleted",
   "expenses_validation_error": "Complete account, date and valid amount",
   "expenses_delete_title": "Delete expense",
-  "expenses_delete_confirm": "Delete this expense?"
+  "expenses_delete_confirm": "Delete this expense?",
+  "no_results": "No suggestions"
 }

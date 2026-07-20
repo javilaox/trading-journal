@@ -5564,7 +5564,10 @@ function initWithdrawalsUI() {
 // ------------------------ Gastos (mirror de Retiros) ------------------------
 
 let expensesCache = [];
+let expensePropsCache = [];
 let editingExpenseId = null;
+
+const EXPENSE_CATEGORY_SUGGESTIONS = ['Suscripción', 'Evaluación', 'Reset', 'Comisión externa', 'Otro'];
 
 function formatExpenseEuro(value) {
   return formatWithdrawalEuro(value);
@@ -5584,10 +5587,45 @@ async function loadExpensesCache() {
   }
 }
 
+// Lista persistida de props (sobrevive aunque se borren todos los gastos que las usan).
+async function loadExpensePropsCache() {
+  const backend = getBackendApi();
+  if (!backend?.getExpensePropsLocal) {
+    expensePropsCache = [];
+    return;
+  }
+  try {
+    expensePropsCache = await backend.getExpensePropsLocal();
+  } catch (err) {
+    console.warn('No se pudieron cargar las props de gastos:', err);
+    expensePropsCache = [];
+  }
+}
+
+// Registra la prop (si es nueva) en la lista persistida para que quede disponible
+// la próxima vez, aunque este gasto concreto se borre o edite después.
+async function registerExpensePropIfNew(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return;
+  const backend = getBackendApi();
+  if (!backend?.addExpensePropLocal) return;
+  try {
+    await backend.addExpensePropLocal({ name: trimmed });
+    await loadExpensePropsCache();
+  } catch (err) {
+    console.warn('No se pudo registrar la prop:', err);
+  }
+}
+
 // Las props de gastos no dependen de las cuentas reales configuradas: el usuario las escribe
-// libremente en el campo "Prop" y se sugieren/filtran a partir de lo ya usado en sus gastos.
+// libremente en el campo "Prop". Se sugieren a partir de la lista persistida, más el histórico
+// de gastos ya guardados (por si hay datos previos a la existencia de la lista persistida).
 function getKnownExpenseProps() {
   const names = new Set();
+  expensePropsCache.forEach((p) => {
+    const name = String(p?.name || '').trim();
+    if (name) names.add(name);
+  });
   expensesCache.forEach((e) => {
     const name = String(e.account_name || e.accountName || '').trim();
     if (name) names.add(name);
@@ -5616,11 +5654,8 @@ function fillExpenseAccountSelects() {
     if (prev && names.includes(prev)) filterSel.value = prev;
   }
 
-  // Formulario (input libre + datalist de sugerencias con props ya usadas).
-  const datalist = document.getElementById('expensePropOptions');
-  if (datalist) {
-    datalist.innerHTML = names.map((name) => `<option value="${escapeAttrChip(name)}"></option>`).join('');
-  }
+  // El campo del formulario usa el panel de sugerencias propio (ver attachSuggestDropdown),
+  // que lee getKnownExpenseProps() en caliente; no necesita repoblarse aquí.
 }
 
 function getFilteredExpensesList() {
@@ -5737,7 +5772,7 @@ function renderExpensesTable(list) {
 
 async function refreshExpensesUI() {
   if (!document.getElementById('managementView')) return;
-  await loadExpensesCache();
+  await Promise.all([loadExpensesCache(), loadExpensePropsCache()]);
   fillExpenseAccountSelects();
   const filtered = getFilteredExpensesList();
   const filteredMetrics = calculateExpenseMetrics(filtered);
@@ -5861,6 +5896,7 @@ async function saveExpenseAction() {
     return;
   }
   closeExpenseModal();
+  await registerExpensePropIfNew(account);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshExpensesUI();
   renderManagementBalanceBanner();
@@ -5888,8 +5924,65 @@ async function deleteExpenseAction(id) {
   showToast(t('expenses_deleted', 'Gasto eliminado'));
 }
 
+// Panel de sugerencias propio (tematizado) para sustituir al popup nativo de <datalist>,
+// que en Electron/Chromium no se puede estilizar acorde al tema oscuro de la app.
+function attachSuggestDropdown(inputId, panelId, getItems) {
+  const input = document.getElementById(inputId);
+  const panel = document.getElementById(panelId);
+  if (!input || !panel || input.dataset.suggestInit === '1') return null;
+  input.dataset.suggestInit = '1';
+
+  function renderItems(items) {
+    if (!items.length) {
+      panel.innerHTML = `<div class="suggest-empty">${escapeHtmlChipText(t('no_results', 'Sin sugerencias'))}</div>`;
+      return;
+    }
+    panel.innerHTML = items
+      .map((item) => `<button type="button" class="suggest-item" data-value="${escapeAttrChip(item)}">${escapeHtmlChipText(item)}</button>`)
+      .join('');
+  }
+
+  function open() {
+    const query = input.value.trim().toLowerCase();
+    const all = (typeof getItems === 'function' ? getItems() : []) || [];
+    const filtered = query ? all.filter((v) => String(v).toLowerCase().includes(query)) : all;
+    if (!filtered.length && !query) {
+      panel.hidden = true;
+      return;
+    }
+    renderItems(filtered);
+    panel.hidden = false;
+  }
+
+  function close() {
+    panel.hidden = true;
+  }
+
+  input.addEventListener('focus', open);
+  input.addEventListener('input', open);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  });
+  panel.addEventListener('mousedown', (event) => {
+    const btn = event.target.closest('.suggest-item');
+    if (!btn) return;
+    event.preventDefault();
+    input.value = btn.dataset.value || '';
+    close();
+    input.focus();
+  });
+  document.addEventListener('click', (event) => {
+    if (event.target === input || panel.contains(event.target)) return;
+    close();
+  });
+
+  return { open, close };
+}
+
 function initExpensesUI() {
   if (!document.getElementById('managementView')) return;
+  attachSuggestDropdown('expenseFormAccount', 'expenseFormAccountSuggest', getKnownExpenseProps);
+  attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => EXPENSE_CATEGORY_SUGGESTIONS);
   const openModal = () => openExpenseModal();
   document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
   document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);

@@ -151,6 +151,17 @@ function ensureOfflineTables() {
     ["sync_status", "sync_status TEXT DEFAULT 'synced'"],
     ['deleted_at', 'deleted_at TEXT'],
   ]);
+
+  safeEnsure('expense_props', [
+    ['user_id', 'user_id TEXT'],
+    ['client_uuid', 'client_uuid TEXT'],
+    ['remote_id', 'remote_id TEXT'],
+    ['name', 'name TEXT'],
+    ['created_at', 'created_at TEXT'],
+    ['updated_at', 'updated_at TEXT'],
+    ["sync_status", "sync_status TEXT DEFAULT 'synced'"],
+    ['deleted_at', 'deleted_at TEXT'],
+  ]);
 }
 
 db.prepare(`
@@ -404,6 +415,34 @@ db.prepare(`
 db.prepare(`
   CREATE INDEX IF NOT EXISTS real_account_expenses_date_idx
   ON real_account_expenses(user_id, date)
+`).run();
+
+// Lista de "props" reutilizable en el formulario de Gastos: persiste aunque se borren
+// todos los gastos que la referencian, y se sincroniza como el resto de entidades.
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS expense_props (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    client_uuid TEXT NOT NULL,
+    remote_id TEXT,
+    name TEXT NOT NULL,
+    created_at TEXT,
+    updated_at TEXT,
+    sync_status TEXT DEFAULT 'synced',
+    deleted_at TEXT,
+    UNIQUE(user_id, client_uuid)
+  )
+`).run();
+
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS expense_props_user_id_idx
+  ON expense_props(user_id)
+`).run();
+
+db.prepare(`
+  CREATE UNIQUE INDEX IF NOT EXISTS expense_props_user_name_unique
+  ON expense_props(user_id, name)
+  WHERE deleted_at IS NULL
 `).run();
 
 // Cola de sincronización

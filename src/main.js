@@ -53,6 +53,11 @@ const {
   supabaseRowFromPayload: expenseSupabaseRowFromPayload,
   upsertExpensesIntoLocal,
 } = require('./services/realAccountExpenses');
+const {
+  getPropsFromLocal: getExpensePropsFromLocal,
+  supabaseRowFromPayload: expensePropSupabaseRowFromPayload,
+  upsertPropsIntoLocal: upsertExpensePropsIntoLocal,
+} = require('./services/expensePropsService');
 
 let mainWindow = null;
 let currentUserId = null;
@@ -1454,6 +1459,56 @@ ipcMain.handle('delete-expense-local', async (_event, idOrClientUuid) => {
   return { success: true };
 });
 
+ipcMain.handle('get-expense-props-local', async () => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return [];
+  return getExpensePropsFromLocal(db, userId);
+});
+
+// Idempotente: si ya existe una prop con ese nombre (case-insensitive) para el usuario,
+// la devuelve tal cual sin duplicar ni volver a encolar sync.
+ipcMain.handle('add-expense-prop-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+  const name = String(raw?.name || '').trim();
+  if (!name) return { success: false, error: 'MISSING_NAME' };
+
+  const existing = db
+    .prepare(
+      `SELECT id, client_uuid, name FROM expense_props
+       WHERE user_id = ? AND name = ? COLLATE NOCASE
+         AND (deleted_at IS NULL OR deleted_at = '')
+       LIMIT 1`
+    )
+    .get(String(userId), name);
+  if (existing) {
+    return { success: true, created: false, prop: { id: existing.id, client_uuid: existing.client_uuid, name: existing.name } };
+  }
+
+  const clientUuid = makeClientUuid();
+  const ts = nowIso();
+  const info = db
+    .prepare(
+      `INSERT INTO expense_props (user_id, client_uuid, remote_id, name, created_at, updated_at, sync_status, deleted_at)
+       VALUES (?, ?, NULL, ?, ?, ?, 'pending_create', NULL)`
+    )
+    .run(String(userId), clientUuid, name, ts, ts);
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'expense_prop',
+    entityLocalId: clientUuid,
+    action: 'create',
+    payload: { user_id: String(userId), client_uuid: clientUuid, name },
+  });
+
+  return {
+    success: true,
+    created: true,
+    prop: { id: Number(info.lastInsertRowid), client_uuid: clientUuid, name },
+  };
+});
+
 ipcMain.handle('delete-real-strategy-local', async (_event, clientUuidOrName) => {
   const userId = await resolveUserIdForLocalCache();
   if (!userId) return { success: false, error: 'NO_USER_ID' };
@@ -2419,6 +2474,42 @@ async function syncPendingChanges(userId) {
         }
       }
 
+      if (entityType === 'expense_prop' && action === 'create') {
+        const clientUuid = String(item.entity_local_id || '');
+        const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
+        const rowBody = expensePropSupabaseRowFromPayload({ ...payload, user_id: String(userId), client_uuid: payloadUuid });
+
+        const ins = await supabase.from('expense_props').insert(rowBody).select('id, client_uuid').single();
+        if (ins.error) {
+          const msg = String(ins.error?.message || '').toLowerCase();
+          const isConflict = msg.includes('duplicate key') || msg.includes('unique') || ins.error?.code === '23505';
+          if (isConflict) {
+            const lookup = await supabase
+              .from('expense_props')
+              .select('id, client_uuid')
+              .eq('user_id', String(userId))
+              .or(`client_uuid.eq.${payloadUuid},name.ilike.${rowBody.name}`)
+              .maybeSingle();
+            if (lookup.error || !lookup.data?.id) throw ins.error;
+            db.prepare(
+              `UPDATE expense_props SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+            ).run(String(lookup.data.id), nowIso(), String(userId), payloadUuid);
+            db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(String(lookup.data.id), Number(item.id));
+            markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+            ok += 1;
+            continue;
+          }
+          throw ins.error;
+        }
+        db.prepare(
+          `UPDATE expense_props SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+        ).run(String(ins.data.id), nowIso(), String(userId), payloadUuid);
+        db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(String(ins.data.id), Number(item.id));
+        markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+        ok += 1;
+        continue;
+      }
+
       throw new Error(`UNSUPPORTED_ENTITY_OR_ACTION:${entityType}:${action}`);
     } catch (err) {
       failed += 1;
@@ -2450,7 +2541,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
   }
 
   // Fetch remotos en paralelo (misma sesión/RLS). El merge local se hace después, secuencialmente.
-  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes, expensesRes] = await Promise.all([
+  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes, expensesRes, expensePropsRes] = await Promise.all([
     tradesService.getTrades().catch((err) => ({ success: false, error: err })),
     supabase
       .from('real_accounts')
@@ -2472,6 +2563,11 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       .select(
         'id, user_id, account_id, account_name, account_size, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
       )
+      .eq('user_id', String(userId))
+      .is('deleted_at', null),
+    supabase
+      .from('expense_props')
+      .select('id, user_id, name, client_uuid, created_at, updated_at, deleted_at')
       .eq('user_id', String(userId))
       .is('deleted_at', null),
   ]);
@@ -2640,6 +2736,12 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     upsertExpensesIntoLocal(db, expensesRes.data || [], userId, '[pullRemoteData]');
   }
 
+  // Tolerante: si la migración de expense_props aún no está aplicada en Supabase,
+  // expensePropsRes.error vendrá poblado y simplemente se salta sin romper el resto del pull.
+  if (!expensePropsRes.error) {
+    upsertExpensePropsIntoLocal(db, expensePropsRes.data || [], userId, '[pullRemoteData]');
+  }
+
   return {
     pulled: true,
     trades: Array.isArray(tradesRes?.data) ? tradesRes.data.length : 0,
@@ -2647,6 +2749,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     real_strategies: Array.isArray(strategiesRes?.data) ? strategiesRes.data.length : 0,
     real_account_withdrawals: Array.isArray(withdrawalsRes?.data) ? withdrawalsRes.data.length : 0,
     real_account_expenses: Array.isArray(expensesRes?.data) ? expensesRes.data.length : 0,
+    expense_props: Array.isArray(expensePropsRes?.data) ? expensePropsRes.data.length : 0,
   };
 }
 

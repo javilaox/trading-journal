@@ -1751,7 +1751,52 @@
       #managementView .mgmt-balance-item strong {
         font-size: 1.05rem;
       }
+      #managementView .management-tab-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
       #managementView .management-tab-panel[hidden] { display: none; }
+      /* Panel de sugerencias propio (Prop / Categoría) para no depender del popup nativo
+         de <datalist>, que no se puede tematizar en Electron/Chromium. */
+      .suggest-wrap { position: relative; }
+      .suggest-panel {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        z-index: 60;
+        max-height: 220px;
+        overflow-y: auto;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+        padding: 4px;
+      }
+      .suggest-panel[hidden] { display: none; }
+      .suggest-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        color: inherit;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.86rem;
+      }
+      .suggest-item:hover,
+      .suggest-item:focus-visible {
+        background: rgba(148, 163, 184, 0.14);
+        outline: none;
+      }
+      .suggest-empty {
+        padding: 8px 10px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+      }
       @media (max-width: 960px) {
         .withdrawals-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         #managementView .wd-body-grid { grid-template-columns: 1fr; }
@@ -7740,8 +7785,10 @@
         <div class="withdrawal-modal-form">
           <div class="field">
             <label for="expenseFormAccount" data-i18n="expenses_prop">Prop</label>
-            <input id="expenseFormAccount" class="input" type="text" list="expensePropOptions" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
-            <datalist id="expensePropOptions"></datalist>
+            <div class="suggest-wrap">
+              <input id="expenseFormAccount" class="input" type="text" autocomplete="off" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="expenseFormAccountSuggest" class="suggest-panel" hidden></div>
+            </div>
           </div>
           <div class="field">
             <label for="expenseFormAccountSize" data-i18n="expenses_account_size">Tamaño de cuenta (opcional)</label>
@@ -7764,14 +7811,10 @@
           </div>
           <div class="field">
             <label for="expenseFormCategory" data-i18n="expenses_category">Categoría (opcional)</label>
-            <input id="expenseFormCategory" class="input" type="text" list="expenseCategoryOptions" data-i18n-placeholder="expenses_category_placeholder" placeholder="Suscripción, evaluación, reset..." />
-            <datalist id="expenseCategoryOptions">
-              <option value="Suscripción"></option>
-              <option value="Evaluación"></option>
-              <option value="Reset"></option>
-              <option value="Comisión externa"></option>
-              <option value="Otro"></option>
-            </datalist>
+            <div class="suggest-wrap">
+              <input id="expenseFormCategory" class="input" type="text" autocomplete="off" data-i18n-placeholder="expenses_category_placeholder" placeholder="Suscripción, evaluación, reset..." />
+              <div id="expenseFormCategorySuggest" class="suggest-panel" hidden></div>
+            </div>
           </div>
           <div class="field">
             <label for="expenseFormNote" data-i18n="withdrawals_note">Nota (opcional)</label>
