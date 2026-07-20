@@ -1,6 +1,10 @@
 /**
  * Gastos de cuentas reales (props, suscripciones, comisiones externas, etc.)
  * — offline-first (SQLite + sync_queue + Supabase). Mismo patrón que realAccountWithdrawals.js.
+ *
+ * Nota: "account_name" aquí representa el nombre de la PROP que el usuario escribe libremente
+ * (no está atado a las cuentas reales configuradas en Configuración), acompañado opcionalmente
+ * de "account_size" (10K/25K/50K/100K/150K).
  */
 
 function isExpenseRowHidden(row) {
@@ -15,6 +19,7 @@ function normalizeExpenseInput(raw = {}, userId) {
   const amount = Number(raw.amount);
   const date = String(raw.date || '').trim().slice(0, 10);
   const accountName = String(raw.account_name || raw.accountName || '').trim();
+  const accountSize = raw.account_size != null ? String(raw.account_size).trim() : '';
   const category = raw.category != null ? String(raw.category).trim() : '';
   const note = raw.note != null ? String(raw.note).trim() : '';
   const clientUuid = raw.client_uuid ? String(raw.client_uuid).trim() : '';
@@ -33,6 +38,7 @@ function normalizeExpenseInput(raw = {}, userId) {
         ? String(raw.account_client_uuid)
         : null,
     account_name: accountName,
+    account_size: accountSize || null,
     amount,
     date,
     category: category || null,
@@ -52,6 +58,7 @@ function mapExpenseRowToResponse(row) {
     account_client_uuid: row.account_client_uuid ?? null,
     account_name: row.account_name || '',
     accountName: row.account_name || '',
+    account_size: row.account_size || '',
     amount: Number(row.amount ?? 0) || 0,
     date: row.date || '',
     category: row.category || '',
@@ -82,6 +89,7 @@ function supabaseRowFromPayload(payload) {
     client_uuid: payload.client_uuid ? String(payload.client_uuid) : null,
     account_id: payload.account_id ? String(payload.account_id) : null,
     account_name: String(payload.account_name || ''),
+    account_size: payload.account_size != null ? String(payload.account_size) : null,
     amount: Number(payload.amount) || 0,
     date: String(payload.date || '').slice(0, 10),
     category: payload.category != null ? String(payload.category) : null,
@@ -103,8 +111,8 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
 
   const insert = db.prepare(`
     INSERT INTO real_account_expenses
-    (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
+    (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
   `);
 
   const update = db.prepare(`
@@ -113,6 +121,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
       remote_id = COALESCE(?, remote_id),
       account_id = COALESCE(?, account_id),
       account_name = ?,
+      account_size = ?,
       amount = ?,
       date = ?,
       category = ?,
@@ -152,6 +161,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           remoteId,
           r?.account_id ? String(r.account_id) : null,
           String(r?.account_name || ''),
+          r?.account_size != null ? String(r.account_size) : null,
           Number(r?.amount ?? 0) || 0,
           String(r?.date || '').slice(0, 10),
           r?.category != null ? String(r.category) : null,
@@ -165,6 +175,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           remoteId,
           r?.account_id ? String(r.account_id) : null,
           String(r?.account_name || ''),
+          r?.account_size != null ? String(r.account_size) : null,
           Number(r?.amount ?? 0) || 0,
           String(r?.date || '').slice(0, 10),
           r?.category != null ? String(r.category) : null,

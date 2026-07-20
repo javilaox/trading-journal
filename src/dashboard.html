@@ -1624,6 +1624,12 @@
         gap: 16px;
         align-items: start;
       }
+      /* El atributo [hidden] pierde frente a un display explícito con la misma especificidad
+         (las reglas de autor siempre ganan al user-agent stylesheet). Forzamos el ocultado aquí
+         para que el grid y el estado vacío nunca se muestren a la vez. */
+      #managementView .wd-body-grid[hidden] {
+        display: none;
+      }
       #managementView .wd-list-card,
       #managementView .wd-analytics-card,
       #managementView .wd-empty {
@@ -6328,8 +6334,8 @@
 
               <div class="card wd-filter-bar">
                 <div class="wd-filter-field">
-                  <label for="expenseFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
-                  <select id="expenseFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+                  <label for="expenseFilterAccount" data-i18n="expenses_filter_prop">Prop</label>
+                  <select id="expenseFilterAccount" class="input"><option value="" data-i18n="expenses_all_props">Todas las props</option></select>
                 </div>
                 <div class="wd-filter-field">
                   <label for="expenseFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
@@ -6357,7 +6363,8 @@
                       <thead>
                         <tr>
                           <th data-i18n="withdrawals_col_date">Fecha</th>
-                          <th data-i18n="withdrawals_col_account">Cuenta</th>
+                          <th data-i18n="expenses_col_prop">Prop</th>
+                          <th data-i18n="expenses_col_size">Tamaño</th>
                           <th data-i18n="expenses_col_category">Categoría</th>
                           <th data-i18n="withdrawals_col_amount">Importe</th>
                           <th data-i18n="withdrawals_col_note">Nota</th>
@@ -6370,10 +6377,10 @@
                 </section>
 
                 <aside class="card wd-analytics-card" id="expensesAnalyticsSection">
-                  <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
+                  <h2 class="wd-panel-title" data-i18n="expenses_analytics_title">Estadísticas de gastos</h2>
                   <div class="wd-analytics-stack">
                     <div class="wd-analytics-block">
-                      <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                      <h3 data-i18n="expenses_by_prop">Por prop</h3>
                       <ul id="expenseAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
                     </div>
                     <div class="wd-analytics-block">
@@ -7732,8 +7739,20 @@
         </div>
         <div class="withdrawal-modal-form">
           <div class="field">
-            <label for="expenseFormAccount" data-i18n="label_select_account_settings">Cuenta</label>
-            <select id="expenseFormAccount" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
+            <label for="expenseFormAccount" data-i18n="expenses_prop">Prop</label>
+            <input id="expenseFormAccount" class="input" type="text" list="expensePropOptions" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+            <datalist id="expensePropOptions"></datalist>
+          </div>
+          <div class="field">
+            <label for="expenseFormAccountSize" data-i18n="expenses_account_size">Tamaño de cuenta (opcional)</label>
+            <select id="expenseFormAccountSize" class="input">
+              <option value="" data-i18n="expenses_account_size_placeholder">Selecciona tamaño</option>
+              <option value="10K">10K</option>
+              <option value="25K">25K</option>
+              <option value="50K">50K</option>
+              <option value="100K">100K</option>
+              <option value="150K">150K</option>
+            </select>
           </div>
           <div class="field">
             <label for="expenseFormDate" data-i18n="withdrawals_date">Fecha</label>

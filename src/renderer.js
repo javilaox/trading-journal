@@ -5584,28 +5584,43 @@ async function loadExpensesCache() {
   }
 }
 
+// Las props de gastos no dependen de las cuentas reales configuradas: el usuario las escribe
+// libremente en el campo "Prop" y se sugieren/filtran a partir de lo ya usado en sus gastos.
+function getKnownExpenseProps() {
+  const names = new Set();
+  expensesCache.forEach((e) => {
+    const name = String(e.account_name || e.accountName || '').trim();
+    if (name) names.add(name);
+  });
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
 function fillExpenseAccountSelects() {
-  const names = getAccounts().map((account) => account.name);
-  const filterPlaceholder = t('all_accounts', 'Todas las cuentas');
-  const formPlaceholder = t('placeholder_select_account', 'Selecciona cuenta');
-  ['expenseFilterAccount', 'expenseFormAccount'].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const prev = sel.value;
-    const isFilter = id === 'expenseFilterAccount';
-    sel.innerHTML = '';
+  const names = getKnownExpenseProps();
+
+  // Filtro (select): reconstruir opciones conservando el valor seleccionado si sigue existiendo.
+  const filterSel = document.getElementById('expenseFilterAccount');
+  if (filterSel) {
+    const prev = filterSel.value;
+    filterSel.innerHTML = '';
     const base = document.createElement('option');
     base.value = '';
-    base.textContent = isFilter ? filterPlaceholder : formPlaceholder;
-    sel.appendChild(base);
+    base.textContent = t('expenses_all_props', 'Todas las props');
+    filterSel.appendChild(base);
     names.forEach((name) => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
-      sel.appendChild(opt);
+      filterSel.appendChild(opt);
     });
-    if (prev && names.includes(prev)) sel.value = prev;
-  });
+    if (prev && names.includes(prev)) filterSel.value = prev;
+  }
+
+  // Formulario (input libre + datalist de sugerencias con props ya usadas).
+  const datalist = document.getElementById('expensePropOptions');
+  if (datalist) {
+    datalist.innerHTML = names.map((name) => `<option value="${escapeAttrChip(name)}"></option>`).join('');
+  }
 }
 
 function getFilteredExpensesList() {
@@ -5694,7 +5709,7 @@ function renderExpensesTable(list) {
       expensesCache.length > 0
         ? t('expenses_no_filter_results', 'No hay gastos con estos filtros')
         : t('expenses_empty', 'Sin gastos');
-    tbody.innerHTML = `<tr><td colspan="6" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
     return;
   }
   list.forEach((e) => {
@@ -5702,6 +5717,7 @@ function renderExpensesTable(list) {
     tr.innerHTML = `
       <td>${escapeHtmlChipText(e.date || '')}</td>
       <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
+      <td>${escapeHtmlChipText(e.account_size || '—')}</td>
       <td>${escapeHtmlChipText(e.category || '—')}</td>
       <td class="wd-amount">${formatExpenseEuro(e.amount)}</td>
       <td>${escapeHtmlChipText(e.note || '—')}</td>
@@ -5762,11 +5778,13 @@ function openExpenseModal({ editId = null } = {}) {
     if (!e) return;
     editingExpenseId = editId;
     const accountInput = document.getElementById('expenseFormAccount');
+    const accountSizeInput = document.getElementById('expenseFormAccountSize');
     const dateInput = document.getElementById('expenseFormDate');
     const amountInput = document.getElementById('expenseFormAmount');
     const categoryInput = document.getElementById('expenseFormCategory');
     const noteInput = document.getElementById('expenseFormNote');
     if (accountInput) accountInput.value = e.account_name || e.accountName || '';
+    if (accountSizeInput) accountSizeInput.value = e.account_size || '';
     if (dateInput) dateInput.value = e.date || '';
     if (amountInput) amountInput.value = String(e.amount ?? '');
     if (categoryInput) categoryInput.value = e.category || '';
@@ -5802,6 +5820,8 @@ function resetExpenseForm({ keepEditingId = false } = {}) {
   if (noteInput) noteInput.value = '';
   const accountInput = document.getElementById('expenseFormAccount');
   if (accountInput) accountInput.value = '';
+  const accountSizeInput = document.getElementById('expenseFormAccountSize');
+  if (accountSizeInput) accountSizeInput.value = '';
   const saveBtn = document.getElementById('saveExpenseBtn');
   if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
   setExpenseModalTitle(false);
@@ -5813,6 +5833,7 @@ function startEditExpense(id) {
 
 async function saveExpenseAction() {
   const account = document.getElementById('expenseFormAccount')?.value?.trim();
+  const accountSize = document.getElementById('expenseFormAccountSize')?.value?.trim() || '';
   const date = document.getElementById('expenseFormDate')?.value;
   const amount = Number(document.getElementById('expenseFormAmount')?.value);
   const category = document.getElementById('expenseFormCategory')?.value?.trim() || '';
@@ -5823,7 +5844,7 @@ async function saveExpenseAction() {
   }
   const backend = getBackendApi();
   if (!backend) return;
-  const payload = { account_name: account, date, amount, category, note };
+  const payload = { account_name: account, account_size: accountSize, date, amount, category, note };
   let res;
   if (editingExpenseId) {
     const existing = expensesCache.find((e) => e.id === editingExpenseId);

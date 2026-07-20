@@ -2,7 +2,7 @@
  * Squirrel.Windows: --squirrel-install | --squirrel-updated | --squirrel-uninstall | --squirrel-obsolete
  * Debe ejecutarse antes que el resto de la app (accesos directos, desinstalación, salida rápida).
  */
-const { app, BrowserWindow, ipcMain, session, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog, Menu, screen } = require('electron');
 
 const isDev = !app.isPackaged;
 const started = require('electron-squirrel-startup');
@@ -352,12 +352,77 @@ function resolveWindowIcon() {
   return path.join(__dirname, '..', 'src', 'assets', 'jlx-app-icon.ico');
 }
 
+// 🖥️ Ventana: recordar tamaño/posición entre sesiones (si no hay estado guardado,
+// arrancar ocupando el área de trabajo de la pantalla en vez de un 1200x800 fijo,
+// que en monitores grandes deja mucho margen sin usar).
+function getWindowStateFilePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const raw = fs.readFileSync(getWindowStateFilePath(), 'utf8');
+    const state = JSON.parse(raw);
+    if (state && typeof state === 'object') return state;
+  } catch (err) {
+    // Sin estado previo o archivo corrupto: se ignora y se usan valores por defecto.
+  }
+  return null;
+}
+
+function saveWindowState(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    const isMaximized = win.isMaximized();
+    const bounds = isMaximized ? win.getNormalBounds() : win.getBounds();
+    const state = { ...bounds, isMaximized };
+    fs.writeFileSync(getWindowStateFilePath(), JSON.stringify(state));
+  } catch (err) {
+    console.warn('No se pudo guardar el tamaño/posición de la ventana:', err);
+  }
+}
+
+function boundsFitAnyDisplay(bounds) {
+  if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return false;
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    return (
+      bounds.x != null &&
+      bounds.y != null &&
+      bounds.x >= area.x - bounds.width &&
+      bounds.y >= area.y - bounds.height &&
+      bounds.x < area.x + area.width &&
+      bounds.y < area.y + area.height
+    );
+  });
+}
+
+function resolveInitialWindowBounds() {
+  const saved = loadWindowState();
+  if (saved && boundsFitAnyDisplay(saved)) {
+    return {
+      width: Math.round(saved.width) || 1200,
+      height: Math.round(saved.height) || 800,
+      x: Math.round(saved.x),
+      y: Math.round(saved.y),
+      isMaximized: Boolean(saved.isMaximized),
+    };
+  }
+  // Primer arranque (o estado inválido/pantalla desconectada): usar el área de trabajo
+  // de la pantalla principal para que la ventana aproveche todo el ancho disponible.
+  const work = screen.getPrimaryDisplay().workArea;
+  return { width: work.width, height: work.height, x: work.x, y: work.y, isMaximized: false };
+}
+
 // 🖥️ Ventana
 function createWindow() {
   const hasWebpackEntries = typeof MAIN_WINDOW_WEBPACK_ENTRY !== 'undefined' && typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined';
+  const initialBounds = resolveInitialWindowBounds();
   const windowOptions = {
-    width: 1200,
-    height: 800,
+    width: initialBounds.width,
+    height: initialBounds.height,
+    x: initialBounds.x,
+    y: initialBounds.y,
     webPreferences: {
       preload: hasWebpackEntries ? MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY : path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -371,6 +436,22 @@ function createWindow() {
     }
   }
   mainWindow = new BrowserWindow(windowOptions);
+
+  if (initialBounds.isMaximized) {
+    mainWindow.maximize();
+  }
+
+  let saveStateTimeout = null;
+  const scheduleSaveState = () => {
+    clearTimeout(saveStateTimeout);
+    saveStateTimeout = setTimeout(() => saveWindowState(mainWindow), 400);
+  };
+  mainWindow.on('resize', scheduleSaveState);
+  mainWindow.on('move', scheduleSaveState);
+  mainWindow.on('close', () => {
+    clearTimeout(saveStateTimeout);
+    saveWindowState(mainWindow);
+  });
 
   if (!isDev) {
     Menu.setApplicationMenu(null);
@@ -1183,8 +1264,8 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
   const info = db
     .prepare(
       `INSERT INTO real_account_expenses
-       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
+       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
     )
     .run(
       String(userId),
@@ -1192,6 +1273,7 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
       accountMeta.account_id,
       accountMeta.account_client_uuid,
       normalized.account_name,
+      normalized.account_size,
       normalized.amount,
       normalized.date,
       normalized.category,
@@ -1205,6 +1287,7 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
     client_uuid: clientUuid,
     account_id: accountMeta.account_id,
     account_name: normalized.account_name,
+    account_size: normalized.account_size,
     amount: normalized.amount,
     date: normalized.date,
     category: normalized.category,
@@ -1250,6 +1333,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
       ...raw,
       client_uuid: existing.client_uuid,
       account_name: raw?.account_name ?? raw?.accountName ?? existing.account_name,
+      account_size: raw?.account_size !== undefined ? raw.account_size : existing.account_size,
       amount: raw?.amount ?? existing.amount,
       date: raw?.date ?? existing.date,
       category: raw?.category !== undefined ? raw.category : existing.category,
@@ -1267,6 +1351,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
       account_id = ?,
       account_client_uuid = ?,
       account_name = ?,
+      account_size = ?,
       amount = ?,
       date = ?,
       category = ?,
@@ -1281,6 +1366,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
     accountMeta.account_id,
     accountMeta.account_client_uuid,
     normalized.account_name,
+    normalized.account_size,
     normalized.amount,
     normalized.date,
     normalized.category,
@@ -1296,6 +1382,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
     remote_id: existing.remote_id ? String(existing.remote_id) : null,
     account_id: accountMeta.account_id,
     account_name: normalized.account_name,
+    account_size: normalized.account_size,
     amount: normalized.amount,
     date: normalized.date,
     category: normalized.category,
@@ -2260,6 +2347,7 @@ async function syncPendingChanges(userId) {
             `UPDATE real_account_expenses
              SET account_id = COALESCE(?, account_id),
                  account_name = ?,
+                 account_size = ?,
                  amount = ?,
                  date = ?,
                  category = ?,
@@ -2270,6 +2358,7 @@ async function syncPendingChanges(userId) {
           ).run(
             rowBody.account_id,
             rowBody.account_name,
+            rowBody.account_size,
             rowBody.amount,
             rowBody.date,
             rowBody.category,
@@ -2381,7 +2470,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     supabase
       .from('real_account_expenses')
       .select(
-        'id, user_id, account_id, account_name, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
+        'id, user_id, account_id, account_name, account_size, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
       )
       .eq('user_id', String(userId))
       .is('deleted_at', null),
