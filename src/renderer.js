@@ -28,6 +28,7 @@ import {
 
 const { mountStatsView, unmountStatsView, applyFilters: applyStatsFilters } = require('./stats.js');
 const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawals');
+const { calculateExpenseMetrics } = require('./services/realAccountExpenses');
 const {
   getCurrentUserSafe,
   clearAuthUserCache,
@@ -5295,10 +5296,9 @@ function renderWithdrawalsSummary(list, globalMetrics) {
   set('withdrawalSummaryCount', String(count));
   set('withdrawalSummaryAvg', formatWithdrawalEuro(avg));
   set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${last.date}` : '—');
-  set(
-    'withdrawalSummaryEstimatedBalance',
-    formatWithdrawalEuro(globalMetrics?.estimatedBalanceGlobal ?? 0)
-  );
+  // Nota: el balance global ahora se muestra en el banner compartido de #managementView
+  // (ver renderManagementBalanceBanner), no aquí; globalMetrics se conserva por compatibilidad de firma.
+  void globalMetrics;
 }
 
 function renderWithdrawalsAnalytics(filteredList, metrics) {
@@ -5346,7 +5346,7 @@ function renderWithdrawalsAnalytics(filteredList, metrics) {
 function updateWithdrawalsLayoutState(hasAnyWithdrawals) {
   const emptyEl = document.getElementById('withdrawalsEmptyState');
   const bodyGrid = document.getElementById('withdrawalsBodyGrid');
-  const filterBar = document.querySelector('#withdrawalsView .wd-filter-bar');
+  const filterBar = document.querySelector('#managementTabWithdrawals .wd-filter-bar');
   if (emptyEl) emptyEl.hidden = Boolean(hasAnyWithdrawals);
   if (bodyGrid) bodyGrid.hidden = !hasAnyWithdrawals;
   if (filterBar) filterBar.hidden = !hasAnyWithdrawals;
@@ -5386,7 +5386,7 @@ function renderWithdrawalsTable(list) {
 }
 
 async function refreshWithdrawalsUI() {
-  if (!document.getElementById('withdrawalsView')) return;
+  if (!document.getElementById('managementView')) return;
   await loadWithdrawalsCache();
   fillWithdrawalAccountSelects();
   const filtered = getFilteredWithdrawalsList();
@@ -5532,7 +5532,7 @@ async function deleteWithdrawalAction(id) {
 }
 
 function initWithdrawalsUI() {
-  if (!document.getElementById('withdrawalsView')) return;
+  if (!document.getElementById('managementView')) return;
   const openModal = () => openWithdrawalModal();
   document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
   document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
@@ -5548,8 +5548,9 @@ function initWithdrawalsUI() {
     clearWithdrawalFilters();
     refreshWithdrawalsUI().catch(console.error);
   });
-  document.getElementById('goToWithdrawalsBtn')?.addEventListener('click', () => {
-    showView('withdrawals');
+  document.getElementById('goToManagementBtn')?.addEventListener('click', () => {
+    showView('management');
+    switchManagementTab('withdrawals');
   });
   ['withdrawalFilterAccount', 'withdrawalFilterFrom', 'withdrawalFilterTo'].forEach((id) => {
     document.getElementById(id)?.addEventListener('change', () => {
@@ -5558,6 +5559,385 @@ function initWithdrawalsUI() {
   });
   updateWithdrawalsLayoutState(false);
   resetWithdrawalForm();
+}
+
+// ------------------------ Gastos (mirror de Retiros) ------------------------
+
+let expensesCache = [];
+let editingExpenseId = null;
+
+function formatExpenseEuro(value) {
+  return formatWithdrawalEuro(value);
+}
+
+async function loadExpensesCache() {
+  const backend = getBackendApi();
+  if (!backend?.getExpensesLocal) {
+    expensesCache = [];
+    return;
+  }
+  try {
+    expensesCache = await backend.getExpensesLocal();
+  } catch (err) {
+    console.warn('No se pudieron cargar gastos locales:', err);
+    expensesCache = [];
+  }
+}
+
+function fillExpenseAccountSelects() {
+  const names = getAccounts().map((account) => account.name);
+  const filterPlaceholder = t('all_accounts', 'Todas las cuentas');
+  const formPlaceholder = t('placeholder_select_account', 'Selecciona cuenta');
+  ['expenseFilterAccount', 'expenseFormAccount'].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value;
+    const isFilter = id === 'expenseFilterAccount';
+    sel.innerHTML = '';
+    const base = document.createElement('option');
+    base.value = '';
+    base.textContent = isFilter ? filterPlaceholder : formPlaceholder;
+    sel.appendChild(base);
+    names.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (prev && names.includes(prev)) sel.value = prev;
+  });
+}
+
+function getFilteredExpensesList() {
+  const account = document.getElementById('expenseFilterAccount')?.value || '';
+  const from = document.getElementById('expenseFilterFrom')?.value || '';
+  const to = document.getElementById('expenseFilterTo')?.value || '';
+  return expensesCache.filter((e) => {
+    if (account && String(e.account_name || e.accountName) !== account) return false;
+    if (from && String(e.date) < from) return false;
+    if (to && String(e.date) > to) return false;
+    return true;
+  });
+}
+
+function renderExpensesSummary(list) {
+  const total = list.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const count = list.length;
+  const avg = count > 0 ? total / count : 0;
+  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set('expenseSummaryTotal', formatExpenseEuro(total));
+  set('expenseSummaryCount', String(count));
+  set('expenseSummaryAvg', formatExpenseEuro(avg));
+  set('expenseSummaryLast', last ? `${formatExpenseEuro(last.amount)} · ${last.date}` : '—');
+}
+
+function renderExpensesAnalytics(metrics) {
+  const byAccountEl = document.getElementById('expenseAnalyticsByAccount');
+  if (byAccountEl) {
+    const entries = Object.entries(metrics?.byAccount || {}).sort((a, b) => b[1].total - a[1].total);
+    byAccountEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([name, data]) =>
+              `<li><span>${escapeHtmlChipText(name)} (${data.count})</span><strong>${formatExpenseEuro(data.total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
+  const byMonthEl = document.getElementById('expenseAnalyticsByMonth');
+  if (byMonthEl) {
+    const entries = Object.entries(metrics?.byMonth || {}).sort((a, b) => b[0].localeCompare(a[0]));
+    byMonthEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([month, total]) =>
+              `<li><span>${escapeHtmlChipText(month)}</span><strong>${formatExpenseEuro(total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
+  const byCategoryEl = document.getElementById('expenseAnalyticsByCategory');
+  if (byCategoryEl) {
+    const entries = Object.entries(metrics?.byCategory || {}).sort((a, b) => b[1] - a[1]);
+    byCategoryEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([cat, total]) =>
+              `<li><span>${escapeHtmlChipText(cat)}</span><strong>${formatExpenseEuro(total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+}
+
+function updateExpensesLayoutState(hasAnyExpenses) {
+  const emptyEl = document.getElementById('expensesEmptyState');
+  const bodyGrid = document.getElementById('expensesBodyGrid');
+  const filterBar = document.querySelector('#managementTabExpenses .wd-filter-bar');
+  if (emptyEl) emptyEl.hidden = Boolean(hasAnyExpenses);
+  if (bodyGrid) bodyGrid.hidden = !hasAnyExpenses;
+  if (filterBar) filterBar.hidden = !hasAnyExpenses;
+}
+
+function renderExpensesTable(list) {
+  const tbody = document.getElementById('expensesTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!list.length) {
+    const msg =
+      expensesCache.length > 0
+        ? t('expenses_no_filter_results', 'No hay gastos con estos filtros')
+        : t('expenses_empty', 'Sin gastos');
+    tbody.innerHTML = `<tr><td colspan="6" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
+    return;
+  }
+  list.forEach((e) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtmlChipText(e.date || '')}</td>
+      <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
+      <td>${escapeHtmlChipText(e.category || '—')}</td>
+      <td class="wd-amount">${formatExpenseEuro(e.amount)}</td>
+      <td>${escapeHtmlChipText(e.note || '—')}</td>
+      <td class="withdrawals-actions">
+        <button type="button" class="withdrawals-action-btn" data-expense-edit="${e.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
+        <button type="button" class="withdrawals-action-btn danger" data-expense-delete="${e.id}">${escapeHtmlChipText(t('withdrawals_delete_btn', 'Eliminar'))}</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-expense-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => startEditExpense(Number(btn.dataset.expenseEdit)));
+  });
+  tbody.querySelectorAll('[data-expense-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => deleteExpenseAction(Number(btn.dataset.expenseDelete)));
+  });
+}
+
+async function refreshExpensesUI() {
+  if (!document.getElementById('managementView')) return;
+  await loadExpensesCache();
+  fillExpenseAccountSelects();
+  const filtered = getFilteredExpensesList();
+  const filteredMetrics = calculateExpenseMetrics(filtered);
+  const hasAnyExpenses = expensesCache.length > 0;
+  updateExpensesLayoutState(hasAnyExpenses);
+  renderExpensesSummary(filtered);
+  renderExpensesTable(filtered);
+  if (hasAnyExpenses) {
+    renderExpensesAnalytics(filteredMetrics);
+  }
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function clearExpenseFilters() {
+  const account = document.getElementById('expenseFilterAccount');
+  const from = document.getElementById('expenseFilterFrom');
+  const to = document.getElementById('expenseFilterTo');
+  if (account) account.value = '';
+  if (from) from.value = '';
+  if (to) to.value = '';
+}
+
+function setExpenseModalTitle(isEdit) {
+  const titleEl = document.getElementById('expenseModalTitle');
+  if (!titleEl) return;
+  titleEl.textContent = isEdit
+    ? t('expenses_modal_title_edit', 'Editar gasto')
+    : t('expenses_modal_title_new', 'Nuevo gasto');
+}
+
+function openExpenseModal({ editId = null } = {}) {
+  const overlay = document.getElementById('expenseModalOverlay');
+  if (!overlay) return;
+  fillExpenseAccountSelects();
+  resetExpenseForm({ keepEditingId: false });
+  if (editId != null) {
+    const e = expensesCache.find((row) => row.id === editId);
+    if (!e) return;
+    editingExpenseId = editId;
+    const accountInput = document.getElementById('expenseFormAccount');
+    const dateInput = document.getElementById('expenseFormDate');
+    const amountInput = document.getElementById('expenseFormAmount');
+    const categoryInput = document.getElementById('expenseFormCategory');
+    const noteInput = document.getElementById('expenseFormNote');
+    if (accountInput) accountInput.value = e.account_name || e.accountName || '';
+    if (dateInput) dateInput.value = e.date || '';
+    if (amountInput) amountInput.value = String(e.amount ?? '');
+    if (categoryInput) categoryInput.value = e.category || '';
+    if (noteInput) noteInput.value = e.note || '';
+    const saveBtn = document.getElementById('saveExpenseBtn');
+    if (saveBtn) saveBtn.textContent = t('expenses_save_btn', 'Guardar cambios');
+    setExpenseModalTitle(true);
+  } else {
+    setExpenseModalTitle(false);
+    const saveBtn = document.getElementById('saveExpenseBtn');
+    if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
+  }
+  overlay.classList.add('active');
+  document.getElementById('expenseFormAccount')?.focus();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeExpenseModal() {
+  const overlay = document.getElementById('expenseModalOverlay');
+  if (overlay) overlay.classList.remove('active');
+  resetExpenseForm();
+}
+
+function resetExpenseForm({ keepEditingId = false } = {}) {
+  if (!keepEditingId) editingExpenseId = null;
+  const dateInput = document.getElementById('expenseFormDate');
+  if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+  const amountInput = document.getElementById('expenseFormAmount');
+  if (amountInput) amountInput.value = '';
+  const categoryInput = document.getElementById('expenseFormCategory');
+  if (categoryInput) categoryInput.value = '';
+  const noteInput = document.getElementById('expenseFormNote');
+  if (noteInput) noteInput.value = '';
+  const accountInput = document.getElementById('expenseFormAccount');
+  if (accountInput) accountInput.value = '';
+  const saveBtn = document.getElementById('saveExpenseBtn');
+  if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
+  setExpenseModalTitle(false);
+}
+
+function startEditExpense(id) {
+  openExpenseModal({ editId: id });
+}
+
+async function saveExpenseAction() {
+  const account = document.getElementById('expenseFormAccount')?.value?.trim();
+  const date = document.getElementById('expenseFormDate')?.value;
+  const amount = Number(document.getElementById('expenseFormAmount')?.value);
+  const category = document.getElementById('expenseFormCategory')?.value?.trim() || '';
+  const note = document.getElementById('expenseFormNote')?.value?.trim() || '';
+  if (!account || !date || !Number.isFinite(amount) || amount <= 0) {
+    showToast(t('expenses_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
+    return;
+  }
+  const backend = getBackendApi();
+  if (!backend) return;
+  const payload = { account_name: account, date, amount, category, note };
+  let res;
+  if (editingExpenseId) {
+    const existing = expensesCache.find((e) => e.id === editingExpenseId);
+    res = await backend.updateExpenseLocal({
+      id: editingExpenseId,
+      client_uuid: existing?.client_uuid,
+      ...payload,
+    });
+  } else {
+    res = await backend.addExpenseLocal(payload);
+  }
+  if (!res?.success) {
+    showToast(res?.error || 'Error al guardar gasto', 'error');
+    return;
+  }
+  closeExpenseModal();
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await refreshExpensesUI();
+  renderManagementBalanceBanner();
+  showToast(t('expenses_saved', 'Gasto guardado'), 'success');
+}
+
+async function deleteExpenseAction(id) {
+  const e = expensesCache.find((row) => row.id === id);
+  if (!e) return;
+  const ok = await showConfirmModal({
+    title: t('expenses_delete_title', 'Eliminar gasto'),
+    message: t('expenses_delete_confirm', '¿Eliminar este gasto?'),
+    confirmText: t('withdrawals_delete_btn', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+    danger: true,
+  });
+  if (!ok) return;
+  const backend = getBackendApi();
+  if (!backend?.deleteExpenseLocal) return;
+  await backend.deleteExpenseLocal(e.client_uuid || String(e.id));
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  if (editingExpenseId === id) closeExpenseModal();
+  await refreshExpensesUI();
+  renderManagementBalanceBanner();
+  showToast(t('expenses_deleted', 'Gasto eliminado'));
+}
+
+function initExpensesUI() {
+  if (!document.getElementById('managementView')) return;
+  const openModal = () => openExpenseModal();
+  document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
+  document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);
+  document.getElementById('saveExpenseBtn')?.addEventListener('click', () => {
+    saveExpenseAction().catch(console.error);
+  });
+  document.getElementById('cancelExpenseEditBtn')?.addEventListener('click', closeExpenseModal);
+  document.getElementById('closeExpenseModalBtn')?.addEventListener('click', closeExpenseModal);
+  document.getElementById('expenseModalOverlay')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'expenseModalOverlay') closeExpenseModal();
+  });
+  document.getElementById('expenseClearFiltersBtn')?.addEventListener('click', () => {
+    clearExpenseFilters();
+    refreshExpensesUI().catch(console.error);
+  });
+  ['expenseFilterAccount', 'expenseFilterFrom', 'expenseFilterTo'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      refreshExpensesUI().catch(console.error);
+    });
+  });
+  updateExpensesLayoutState(false);
+  resetExpenseForm();
+}
+
+// ------------------------ Gestión: pestañas + balance global compartido ------------------------
+
+let managementActiveTab = 'withdrawals';
+
+function switchManagementTab(tab) {
+  managementActiveTab = tab === 'expenses' ? 'expenses' : 'withdrawals';
+  const withdrawalsPanel = document.getElementById('managementTabWithdrawals');
+  const expensesPanel = document.getElementById('managementTabExpenses');
+  if (withdrawalsPanel) withdrawalsPanel.hidden = managementActiveTab !== 'withdrawals';
+  if (expensesPanel) expensesPanel.hidden = managementActiveTab !== 'expenses';
+  document.getElementById('mgmtTabBtnWithdrawals')?.classList.toggle('active', managementActiveTab === 'withdrawals');
+  document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
+}
+
+function renderManagementBalanceBanner() {
+  const accounts = getAccounts().map((account) => ({
+    name: account.name,
+    capital: Number(account.capital ?? 0) || 0,
+  }));
+  const operationalNet = cachedTrades.reduce((sum, t) => sum + tradeOperationalNet(t), 0);
+  const totalCapital = accounts.reduce((sum, a) => sum + a.capital, 0);
+  const totalWithdrawn = withdrawalsCache.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const totalSpent = expensesCache.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const globalBalance = totalCapital + operationalNet - totalWithdrawn - totalSpent;
+
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set('managementBalanceGlobal', formatWithdrawalEuro(globalBalance));
+  set('managementBalanceWithdrawn', formatWithdrawalEuro(totalWithdrawn));
+  set('managementBalanceSpent', formatWithdrawalEuro(totalSpent));
+}
+
+async function refreshManagementUI() {
+  if (!document.getElementById('managementView')) return;
+  await Promise.all([refreshWithdrawalsUI(), refreshExpensesUI()]);
+  renderManagementBalanceBanner();
+}
+
+function initManagementTabs() {
+  if (!document.getElementById('managementView')) return;
+  document.getElementById('mgmtTabBtnWithdrawals')?.addEventListener('click', () => switchManagementTab('withdrawals'));
+  document.getElementById('mgmtTabBtnExpenses')?.addEventListener('click', () => switchManagementTab('expenses'));
+  switchManagementTab('withdrawals');
 }
 
 function getAccountTradeNames(account) {
@@ -5581,13 +5961,22 @@ function getAccountWithdrawalStats(accountName) {
   return { withdrawn, count, last };
 }
 
+function getAccountExpenseStats(accountName) {
+  const list = expensesCache.filter((e) => String(e.account_name || e.accountName) === accountName);
+  const spent = list.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const count = list.length;
+  const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  return { spent, count, last };
+}
+
 function getAccountEstimatedBalance(account) {
   const names = getAccountTradeNames(account);
   const stats = getAccountWithdrawalStats(account.name);
+  const expenseStats = getAccountExpenseStats(account.name);
   const operationalNet = cachedTrades
     .filter((t) => names.has(String(t.account || '')))
     .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
-  return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn;
+  return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn - expenseStats.spent;
 }
 
 function countTradesForStrategy(record) {
@@ -5660,6 +6049,7 @@ function renderSettingsAccountsList() {
   listEl.innerHTML = accounts
     .map((account) => {
       const stats = getAccountWithdrawalStats(account.name);
+      const expenseStats = getAccountExpenseStats(account.name);
       const balance = getAccountEstimatedBalance(account);
       const tradeCount = countTradesForAccount(account);
       const badges = [];
@@ -5673,6 +6063,7 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
               <div class="settings-entity-stat">Retirado<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
+              <div class="settings-entity-stat">Gastado<strong>${formatWithdrawalEuro(expenseStats.spent)}</strong></div>
               <div class="settings-entity-stat">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
             </div>
             ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}
@@ -5733,6 +6124,7 @@ function updateAccountModalSummary(account) {
     return;
   }
   const stats = getAccountWithdrawalStats(account.name);
+  const expenseStats = getAccountExpenseStats(account.name);
   const balance = getAccountEstimatedBalance(account);
   const tradeCount = countTradesForAccount(account);
   summaryEl.hidden = false;
@@ -5740,6 +6132,7 @@ function updateAccountModalSummary(account) {
     <div><strong>Resumen</strong></div>
     <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
     <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${stats.last.date})` : '—'}</strong></div>
+    <div>Total gastado: <strong>${formatWithdrawalEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
     <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
     <div>Trades asociados: <strong>${tradeCount}</strong></div>`;
 }
@@ -5952,9 +6345,13 @@ async function deleteAccountWithConfirmation(account, identity) {
   const id = identity || identityFromAccount(account);
   const tradeCount = countTradesForAccount(account);
   const withdrawalCount = getAccountWithdrawalStats(account.name).count;
+  const expenseCount = getAccountExpenseStats(account.name).count;
   const statsLines = [`Trades asociados: <strong>${tradeCount}</strong>`];
   if (withdrawalCount > 0) {
     statsLines.push(`Retiros asociados: <strong>${withdrawalCount}</strong>`);
+  }
+  if (expenseCount > 0) {
+    statsLines.push(`Gastos asociados: <strong>${expenseCount}</strong>`);
   }
   const ok = await showSecureDeleteModal({
     title: t('delete_account', 'Eliminar cuenta'),
@@ -5964,7 +6361,7 @@ async function deleteAccountWithConfirmation(account, identity) {
       'Esta acción ocultará la cuenta de tus formularios, pero no borrará tus trades históricos.'
     ),
     statsLines,
-    hasAssociatedData: tradeCount > 0 || withdrawalCount > 0,
+    hasAssociatedData: tradeCount > 0 || withdrawalCount > 0 || expenseCount > 0,
     confirmText: t('delete', 'Eliminar'),
     cancelText: t('cancel', 'Cancelar'),
   });
@@ -6303,10 +6700,12 @@ function updateWinrateInfoLabel() {
 function getViewFromHash() {
   const hash = (window.location.hash || '').replace('#', '').toLowerCase();
   if (hash === 'backtestingconfig') return 'backtestingConfig';
+  // Alias retrocompatible: enlaces/hash antiguos a #withdrawals siguen llevando a Gestión.
+  if (hash === 'withdrawals') return 'management';
   if (
     hash === 'trade' ||
     hash === 'config' ||
-    hash === 'withdrawals' ||
+    hash === 'management' ||
     hash === 'dashboard' ||
     hash === 'backtesting' ||
     hash === 'stats'
@@ -6317,9 +6716,9 @@ function getViewFromHash() {
 }
 
 function showView(viewId) {
-  const views = ['dashboard', 'trade', 'config', 'stats', 'withdrawals', 'backtesting', 'backtestingConfig'];
+  const views = ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig'];
   const previousView = currentView;
-  currentView = views.includes(viewId) ? viewId : 'dashboard';
+  currentView = views.includes(viewId) ? viewId : (viewId === 'withdrawals' ? 'management' : 'dashboard');
 
   if (previousView === 'stats' && currentView !== 'stats') {
     unmountStatsView();
@@ -6329,7 +6728,7 @@ function showView(viewId) {
   setSidebarActiveView(currentView);
   if (currentView !== 'dashboard') closeTradePanel();
 
-  ['dashboard', 'trade', 'config', 'stats', 'withdrawals', 'backtesting', 'backtestingConfig'].forEach((v) => {
+  ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig'].forEach((v) => {
     const el = document.getElementById(`${v}View`);
     if (el) el.style.display = v === currentView ? 'block' : 'none';
   });
@@ -6352,8 +6751,8 @@ function showView(viewId) {
     void loadAccounts().catch(console.error);
     void loadStrategies().catch(console.error);
   }
-  if (currentView === 'withdrawals') {
-    void refreshWithdrawalsUI().catch(console.error);
+  if (currentView === 'management') {
+    void refreshManagementUI().catch(console.error);
   }
   if (currentView === 'backtesting') {
     void refreshBacktestingView().catch(console.error);
@@ -12611,6 +13010,8 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   initAccountStrategyModals();
   initWithdrawalsUI();
+  initExpensesUI();
+  initManagementTabs();
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],

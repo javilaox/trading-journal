@@ -881,7 +881,7 @@
       #dashboardView,
       #tradeView,
       #configView,
-      #withdrawalsView,
+      #managementView,
       #backtestingView,
       #backtestingConfigView {
         width: 100%;
@@ -1561,7 +1561,7 @@
       .withdrawal-report-block h3 { margin: 0 0 8px; font-size: 0.95rem; }
       .withdrawal-report-list { margin: 0; padding: 0; list-style: none; font-size: 0.875rem; }
       .withdrawal-report-list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-      #withdrawalsView .withdrawals-page {
+      #managementView .withdrawals-page {
         display: flex;
         flex-direction: column;
         gap: 16px;
@@ -1570,88 +1570,88 @@
         margin: 0 auto;
         box-sizing: border-box;
       }
-      #withdrawalsView .wd-header {
+      #managementView .wd-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
         flex-wrap: wrap;
       }
-      #withdrawalsView .wd-header-text { min-width: 0; }
-      #withdrawalsView .wd-header .page-title { margin: 0; font-size: 1.35rem; }
-      #withdrawalsView .wd-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 0.88rem; }
-      #withdrawalsView #openWithdrawalModalBtn {
+      #managementView .wd-header-text { min-width: 0; }
+      #managementView .wd-header .page-title { margin: 0; font-size: 1.35rem; }
+      #managementView .wd-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 0.88rem; }
+      #managementView #openWithdrawalModalBtn {
         height: 38px;
         padding: 0 16px;
         border-radius: 10px;
         white-space: nowrap;
         flex-shrink: 0;
       }
-      #withdrawalsView .wd-filter-bar {
+      #managementView .wd-filter-bar {
         display: flex;
         align-items: flex-end;
         gap: 12px;
         flex-wrap: wrap;
         padding: 12px 14px;
       }
-      #withdrawalsView .wd-filter-field {
+      #managementView .wd-filter-field {
         display: flex;
         flex-direction: column;
         gap: 4px;
         min-width: 0;
         flex: 1 1 140px;
       }
-      #withdrawalsView .wd-filter-field label {
+      #managementView .wd-filter-field label {
         font-size: 0.72rem;
         color: var(--text-muted);
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.03em;
       }
-      #withdrawalsView .wd-filter-field .input {
+      #managementView .wd-filter-field .input {
         height: 34px;
         padding: 0 10px;
         font-size: 0.84rem;
       }
-      #withdrawalsView #withdrawalClearFiltersBtn {
+      #managementView #withdrawalClearFiltersBtn {
         height: 34px;
         padding: 0 12px;
         flex-shrink: 0;
       }
-      #withdrawalsView .wd-body-grid {
+      #managementView .wd-body-grid {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
         gap: 16px;
         align-items: start;
       }
-      #withdrawalsView .wd-list-card,
-      #withdrawalsView .wd-analytics-card,
-      #withdrawalsView .wd-empty {
+      #managementView .wd-list-card,
+      #managementView .wd-analytics-card,
+      #managementView .wd-empty {
         padding: 14px 16px;
         margin: 0;
       }
-      #withdrawalsView .wd-panel-title {
+      #managementView .wd-panel-title {
         margin: 0 0 12px;
         font-size: 0.92rem;
         font-weight: 600;
         color: var(--text-muted);
       }
-      #withdrawalsView .wd-empty {
+      #managementView .wd-empty {
         text-align: center;
         padding: 48px 24px;
       }
-      #withdrawalsView .wd-empty-icon {
+      #managementView .wd-empty-icon {
         width: 48px;
         height: 48px;
         margin: 0 auto 12px;
         color: rgba(148, 163, 184, 0.55);
       }
-      #withdrawalsView .wd-empty h2 {
+      #managementView .wd-empty h2 {
         margin: 0 0 8px;
         font-size: 1.05rem;
         font-weight: 600;
       }
-      #withdrawalsView .wd-empty p {
+      #managementView .wd-empty p {
         margin: 0 0 16px;
         color: var(--text-muted);
         font-size: 0.88rem;
@@ -1659,8 +1659,8 @@
         max-width: 360px;
         margin-inline: auto;
       }
-      #withdrawalsView .wd-analytics-stack { display: flex; flex-direction: column; gap: 14px; }
-      #withdrawalsView .wd-analytics-block h3 {
+      #managementView .wd-analytics-stack { display: flex; flex-direction: column; gap: 14px; }
+      #managementView .wd-analytics-block h3 {
         margin: 0 0 6px;
         font-size: 0.78rem;
         color: var(--text-muted);
@@ -1668,10 +1668,10 @@
         text-transform: uppercase;
         letter-spacing: 0.03em;
       }
-      #withdrawalsView .wd-analytics-block .withdrawal-report-list { font-size: 0.82rem; }
-      #withdrawalsView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
-      #withdrawalsView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
-      #withdrawalsView .withdrawals-vs-row {
+      #managementView .wd-analytics-block .withdrawal-report-list { font-size: 0.82rem; }
+      #managementView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
+      #managementView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
+      #managementView .withdrawals-vs-row {
         display: flex;
         justify-content: space-between;
         gap: 12px;
@@ -1679,37 +1679,81 @@
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         font-size: 0.82rem;
       }
-      #withdrawalModalOverlay .modal.withdrawal-modal {
+      #withdrawalModalOverlay .modal.withdrawal-modal,
+      #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
         max-height: min(86vh, 560px);
       }
-      #withdrawalModalOverlay .withdrawal-modal-form {
+      #withdrawalModalOverlay .withdrawal-modal-form,
+      #expenseModalOverlay .withdrawal-modal-form {
         display: flex;
         flex-direction: column;
         gap: 12px;
         padding: 16px 18px 18px;
       }
-      #withdrawalModalOverlay .withdrawal-modal-form .field label {
+      #withdrawalModalOverlay .withdrawal-modal-form .field label,
+      #expenseModalOverlay .withdrawal-modal-form .field label {
         display: block;
         margin-bottom: 4px;
         font-size: 0.78rem;
         color: var(--text-muted);
         font-weight: 600;
       }
-      #withdrawalModalOverlay .withdrawal-modal-actions {
+      #withdrawalModalOverlay .withdrawal-modal-actions,
+      #expenseModalOverlay .withdrawal-modal-actions {
         display: flex;
         justify-content: flex-end;
         gap: 8px;
         padding: 0 18px 16px;
       }
+      #managementView .mgmt-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      #managementView .mgmt-tab-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 10px 4px;
+        margin-bottom: -1px;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      #managementView .mgmt-tab-btn.active {
+        color: var(--text-color, #fff);
+        border-bottom-color: var(--accent, #4f8cff);
+      }
+      #managementView .mgmt-balance-banner {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: center;
+        padding: 14px 18px;
+        margin-bottom: 16px;
+      }
+      #managementView .mgmt-balance-item span {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        margin-bottom: 2px;
+      }
+      #managementView .mgmt-balance-item strong {
+        font-size: 1.05rem;
+      }
+      #managementView .management-tab-panel[hidden] { display: none; }
       @media (max-width: 960px) {
         .withdrawals-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        #withdrawalsView .wd-body-grid { grid-template-columns: 1fr; }
+        #managementView .wd-body-grid { grid-template-columns: 1fr; }
       }
       @media (max-width: 520px) {
         .withdrawals-summary-grid { grid-template-columns: 1fr; }
-        #withdrawalsView .wd-header { align-items: flex-start; }
-        #withdrawalsView #openWithdrawalModalBtn { width: 100%; }
+        #managementView .wd-header { align-items: flex-start; }
+        #managementView #openWithdrawalModalBtn { width: 100%; }
       }
       .schedule-discipline-metrics {
         display: grid !important;
@@ -2116,7 +2160,7 @@
         font-size: 12px;
         opacity: 0.75;
       }
-      #dashboardView, #tradeView, #configView, #withdrawalsView {
+      #dashboardView, #tradeView, #configView, #managementView {
         transition: opacity 0.2s ease;
       }
       .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: var(--space-sm); }
@@ -6089,10 +6133,10 @@
 
               <article class="settings-card" id="configWithdrawalsLinkCard">
                 <div class="settings-header">
-                  <h3 class="title-with-icon"><i data-lucide="banknote"></i><span data-i18n="withdrawals_nav">Retiros</span></h3>
-                  <p data-i18n="withdrawals_config_link_desc">Gestiona los retiros de capital desde la vista dedicada.</p>
+                  <h3 class="title-with-icon"><i data-lucide="banknote"></i><span data-i18n="management_nav">Gestión</span></h3>
+                  <p data-i18n="management_config_link_desc">Gestiona retiros y gastos desde la vista dedicada.</p>
                 </div>
-                <button id="goToWithdrawalsBtn" class="button button-add" type="button" data-i18n="withdrawals_manage_btn">Gestionar retiros</button>
+                <button id="goToManagementBtn" class="button button-add" type="button" data-i18n="withdrawals_manage_btn">Gestionar retiros y gastos</button>
               </article>
 
               <article class="settings-card">
@@ -6125,114 +6169,224 @@
           </section>
         </div>
 
-        <div id="withdrawalsView" style="display:none;">
+        <div id="managementView" style="display:none;">
           <div class="withdrawals-page">
             <header class="wd-header">
               <div class="wd-header-text">
                 <h1 class="page-title title-with-icon">
                   <i data-lucide="banknote"></i>
-                  <span data-i18n="withdrawals_title">Retiros</span>
+                  <span data-i18n="management_title">Gestión</span>
                 </h1>
-                <p class="wd-subtitle" data-i18n="withdrawals_subtitle_short">Registro financiero por cuenta</p>
+                <p class="wd-subtitle" data-i18n="management_subtitle_short">Retiros y gastos por cuenta</p>
               </div>
-              <button id="openWithdrawalModalBtn" class="button button-add" type="button" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
             </header>
 
-            <div class="withdrawals-summary-grid">
-              <div class="withdrawals-summary-item">
+            <div class="card mgmt-balance-banner">
+              <div class="mgmt-balance-item">
+                <span data-i18n="management_balance_global">Balance global estimado</span>
+                <strong id="managementBalanceGlobal">0.00€</strong>
+              </div>
+              <div class="mgmt-balance-item">
                 <span data-i18n="withdrawals_total">Total retirado</span>
-                <strong id="withdrawalSummaryTotal">0.00€</strong>
+                <strong id="managementBalanceWithdrawn">0.00€</strong>
               </div>
-              <div class="withdrawals-summary-item">
-                <span data-i18n="withdrawals_count">Nº retiros</span>
-                <strong id="withdrawalSummaryCount">0</strong>
-              </div>
-              <div class="withdrawals-summary-item">
-                <span data-i18n="withdrawals_average">Retiro medio</span>
-                <strong id="withdrawalSummaryAvg">0.00€</strong>
-              </div>
-              <div class="withdrawals-summary-item">
-                <span data-i18n="withdrawals_last">Último retiro</span>
-                <strong id="withdrawalSummaryLast">—</strong>
-              </div>
-              <div class="withdrawals-summary-item">
-                <span data-i18n="withdrawals_estimated_balance">Balance estimado global</span>
-                <strong id="withdrawalSummaryEstimatedBalance">0.00€</strong>
+              <div class="mgmt-balance-item">
+                <span data-i18n="expenses_total">Total gastado</span>
+                <strong id="managementBalanceSpent">0.00€</strong>
               </div>
             </div>
 
-            <div class="card wd-filter-bar">
-              <div class="wd-filter-field">
-                <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
-                <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
-              </div>
-              <div class="wd-filter-field">
-                <label for="withdrawalFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
-                <input id="withdrawalFilterFrom" class="input" type="date" />
-              </div>
-              <div class="wd-filter-field">
-                <label for="withdrawalFilterTo" data-i18n="withdrawals_filter_to">Hasta</label>
-                <input id="withdrawalFilterTo" class="input" type="date" />
-              </div>
-              <button id="withdrawalClearFiltersBtn" class="button button-cancel" type="button" data-i18n="withdrawals_clear_filters">Limpiar</button>
+            <div class="mgmt-tabs" role="tablist">
+              <button type="button" class="mgmt-tab-btn active" id="mgmtTabBtnWithdrawals" data-mgmt-tab="withdrawals" data-i18n="withdrawals_nav">Retiros</button>
+              <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnExpenses" data-mgmt-tab="expenses" data-i18n="expenses_nav">Gastos</button>
             </div>
 
-            <div id="withdrawalsEmptyState" class="card wd-empty">
-              <i data-lucide="wallet" class="wd-empty-icon" aria-hidden="true"></i>
-              <h2 data-i18n="withdrawals_empty_title">No hay retiros registrados</h2>
-              <p data-i18n="withdrawals_empty_desc">Registra tu primer retiro para llevar control financiero de tus cuentas.</p>
-              <button type="button" class="button button-add" id="withdrawalsEmptyCta" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
-            </div>
+            <div id="managementTabWithdrawals" class="management-tab-panel">
+              <div class="wd-header" style="margin-bottom:16px;">
+                <div></div>
+                <button id="openWithdrawalModalBtn" class="button button-add" type="button" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
+              </div>
 
-            <div id="withdrawalsBodyGrid" class="wd-body-grid" hidden>
-              <section class="card wd-list-card" id="withdrawalsListCard">
-                <h2 class="wd-panel-title" data-i18n="withdrawals_list_title">Listado de retiros</h2>
-                <div class="withdrawals-table-wrap">
-                  <table class="withdrawals-table">
-                    <thead>
-                      <tr>
-                        <th data-i18n="withdrawals_col_date">Fecha</th>
-                        <th data-i18n="withdrawals_col_account">Cuenta</th>
-                        <th data-i18n="withdrawals_col_amount">Importe</th>
-                        <th data-i18n="withdrawals_col_note">Nota</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody id="withdrawalsTableBody"></tbody>
-                  </table>
+              <div class="withdrawals-summary-grid">
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="withdrawals_total">Total retirado</span>
+                  <strong id="withdrawalSummaryTotal">0.00€</strong>
                 </div>
-              </section>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="withdrawals_count">Nº retiros</span>
+                  <strong id="withdrawalSummaryCount">0</strong>
+                </div>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="withdrawals_average">Retiro medio</span>
+                  <strong id="withdrawalSummaryAvg">0.00€</strong>
+                </div>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="withdrawals_last">Último retiro</span>
+                  <strong id="withdrawalSummaryLast">—</strong>
+                </div>
+              </div>
 
-              <aside class="card wd-analytics-card" id="withdrawalsAnalyticsSection">
-                <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
-                <div class="wd-analytics-stack">
-                  <div class="wd-analytics-block">
-                    <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
-                    <ul id="withdrawalAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
+              <div class="card wd-filter-bar">
+                <div class="wd-filter-field">
+                  <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
+                  <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+                </div>
+                <div class="wd-filter-field">
+                  <label for="withdrawalFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
+                  <input id="withdrawalFilterFrom" class="input" type="date" />
+                </div>
+                <div class="wd-filter-field">
+                  <label for="withdrawalFilterTo" data-i18n="withdrawals_filter_to">Hasta</label>
+                  <input id="withdrawalFilterTo" class="input" type="date" />
+                </div>
+                <button id="withdrawalClearFiltersBtn" class="button button-cancel" type="button" data-i18n="withdrawals_clear_filters">Limpiar</button>
+              </div>
+
+              <div id="withdrawalsEmptyState" class="card wd-empty">
+                <i data-lucide="wallet" class="wd-empty-icon" aria-hidden="true"></i>
+                <h2 data-i18n="withdrawals_empty_title">No hay retiros registrados</h2>
+                <p data-i18n="withdrawals_empty_desc">Registra tu primer retiro para llevar control financiero de tus cuentas.</p>
+                <button type="button" class="button button-add" id="withdrawalsEmptyCta" data-i18n="withdrawals_new_btn">Nuevo retiro</button>
+              </div>
+
+              <div id="withdrawalsBodyGrid" class="wd-body-grid" hidden>
+                <section class="card wd-list-card" id="withdrawalsListCard">
+                  <h2 class="wd-panel-title" data-i18n="withdrawals_list_title">Listado de retiros</h2>
+                  <div class="withdrawals-table-wrap">
+                    <table class="withdrawals-table">
+                      <thead>
+                        <tr>
+                          <th data-i18n="withdrawals_col_date">Fecha</th>
+                          <th data-i18n="withdrawals_col_account">Cuenta</th>
+                          <th data-i18n="withdrawals_col_amount">Importe</th>
+                          <th data-i18n="withdrawals_col_note">Nota</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="withdrawalsTableBody"></tbody>
+                    </table>
                   </div>
-                  <div class="wd-analytics-block">
-                    <h3 data-i18n="withdrawals_by_month">Por mes</h3>
-                    <ul id="withdrawalAnalyticsByMonth" class="withdrawal-report-list"><li>—</li></ul>
-                  </div>
-                  <div class="wd-analytics-block">
-                    <h3 data-i18n="withdrawals_top_account">Más retirado</h3>
-                    <p id="withdrawalAnalyticsTopAccount" class="withdrawals-analytics-value">—</p>
-                  </div>
-                  <div class="wd-analytics-block">
-                    <h3 data-i18n="withdrawals_operational_vs_withdrawn">Operativo vs retirado</h3>
-                    <div class="withdrawals-analytics-vs">
-                      <div class="withdrawals-vs-row">
-                        <span data-i18n="withdrawals_operational_pnl">PnL operativo</span>
-                        <strong id="withdrawalAnalyticsOperationalPnl">0.00€</strong>
-                      </div>
-                      <div class="withdrawals-vs-row">
-                        <span data-i18n="withdrawals_total">Retirado</span>
-                        <strong id="withdrawalAnalyticsWithdrawnTotal">0.00€</strong>
+                </section>
+
+                <aside class="card wd-analytics-card" id="withdrawalsAnalyticsSection">
+                  <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
+                  <div class="wd-analytics-stack">
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                      <ul id="withdrawalAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_by_month">Por mes</h3>
+                      <ul id="withdrawalAnalyticsByMonth" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_top_account">Más retirado</h3>
+                      <p id="withdrawalAnalyticsTopAccount" class="withdrawals-analytics-value">—</p>
+                    </div>
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_operational_vs_withdrawn">Operativo vs retirado</h3>
+                      <div class="withdrawals-analytics-vs">
+                        <div class="withdrawals-vs-row">
+                          <span data-i18n="withdrawals_operational_pnl">PnL operativo</span>
+                          <strong id="withdrawalAnalyticsOperationalPnl">0.00€</strong>
+                        </div>
+                        <div class="withdrawals-vs-row">
+                          <span data-i18n="withdrawals_total">Retirado</span>
+                          <strong id="withdrawalAnalyticsWithdrawnTotal">0.00€</strong>
+                        </div>
                       </div>
                     </div>
                   </div>
+                </aside>
+              </div>
+            </div>
+
+            <div id="managementTabExpenses" class="management-tab-panel" hidden>
+              <div class="wd-header" style="margin-bottom:16px;">
+                <div></div>
+                <button id="openExpenseModalBtn" class="button button-add" type="button" data-i18n="expenses_new_btn">Nuevo gasto</button>
+              </div>
+
+              <div class="withdrawals-summary-grid">
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="expenses_total">Total gastado</span>
+                  <strong id="expenseSummaryTotal">0.00€</strong>
                 </div>
-              </aside>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="expenses_count">Nº gastos</span>
+                  <strong id="expenseSummaryCount">0</strong>
+                </div>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="expenses_average">Gasto medio</span>
+                  <strong id="expenseSummaryAvg">0.00€</strong>
+                </div>
+                <div class="withdrawals-summary-item">
+                  <span data-i18n="expenses_last">Último gasto</span>
+                  <strong id="expenseSummaryLast">—</strong>
+                </div>
+              </div>
+
+              <div class="card wd-filter-bar">
+                <div class="wd-filter-field">
+                  <label for="expenseFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
+                  <select id="expenseFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+                </div>
+                <div class="wd-filter-field">
+                  <label for="expenseFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
+                  <input id="expenseFilterFrom" class="input" type="date" />
+                </div>
+                <div class="wd-filter-field">
+                  <label for="expenseFilterTo" data-i18n="withdrawals_filter_to">Hasta</label>
+                  <input id="expenseFilterTo" class="input" type="date" />
+                </div>
+                <button id="expenseClearFiltersBtn" class="button button-cancel" type="button" data-i18n="withdrawals_clear_filters">Limpiar</button>
+              </div>
+
+              <div id="expensesEmptyState" class="card wd-empty">
+                <i data-lucide="receipt" class="wd-empty-icon" aria-hidden="true"></i>
+                <h2 data-i18n="expenses_empty_title">No hay gastos registrados</h2>
+                <p data-i18n="expenses_empty_desc">Registra tu primer gasto (suscripciones, evaluaciones, resets, comisiones externas...).</p>
+                <button type="button" class="button button-add" id="expensesEmptyCta" data-i18n="expenses_new_btn">Nuevo gasto</button>
+              </div>
+
+              <div id="expensesBodyGrid" class="wd-body-grid" hidden>
+                <section class="card wd-list-card" id="expensesListCard">
+                  <h2 class="wd-panel-title" data-i18n="expenses_list_title">Listado de gastos</h2>
+                  <div class="withdrawals-table-wrap">
+                    <table class="withdrawals-table">
+                      <thead>
+                        <tr>
+                          <th data-i18n="withdrawals_col_date">Fecha</th>
+                          <th data-i18n="withdrawals_col_account">Cuenta</th>
+                          <th data-i18n="expenses_col_category">Categoría</th>
+                          <th data-i18n="withdrawals_col_amount">Importe</th>
+                          <th data-i18n="withdrawals_col_note">Nota</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="expensesTableBody"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <aside class="card wd-analytics-card" id="expensesAnalyticsSection">
+                  <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
+                  <div class="wd-analytics-stack">
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                      <ul id="expenseAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="withdrawals_by_month">Por mes</h3>
+                      <ul id="expenseAnalyticsByMonth" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="expenses_by_category">Por categoría</h3>
+                      <ul id="expenseAnalyticsByCategory" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                  </div>
+                </aside>
+              </div>
             </div>
           </div>
         </div>
@@ -7566,6 +7720,48 @@
         <div class="withdrawal-modal-actions">
           <button id="cancelWithdrawalEditBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>
           <button id="saveWithdrawalBtn" class="button button-add" type="button" data-i18n="withdrawals_add_btn">Añadir retiro</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="expenseModalOverlay" class="modal-overlay app-modal-overlay" role="presentation">
+      <div class="modal app-modal withdrawal-modal" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">
+        <div class="modal-header app-modal-header">
+          <h3 id="expenseModalTitle" data-i18n="expenses_modal_title_new">Nuevo gasto</h3>
+          <button id="closeExpenseModalBtn" class="modal-close app-modal-close" type="button" data-i18n="close">Cerrar</button>
+        </div>
+        <div class="withdrawal-modal-form">
+          <div class="field">
+            <label for="expenseFormAccount" data-i18n="label_select_account_settings">Cuenta</label>
+            <select id="expenseFormAccount" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
+          </div>
+          <div class="field">
+            <label for="expenseFormDate" data-i18n="withdrawals_date">Fecha</label>
+            <input id="expenseFormDate" class="input" type="date" required />
+          </div>
+          <div class="field">
+            <label for="expenseFormAmount" data-i18n="withdrawals_amount">Importe (€)</label>
+            <input id="expenseFormAmount" class="input" type="number" step="0.01" min="0.01" data-i18n-placeholder="withdrawals_amount_placeholder" placeholder="50.00" />
+          </div>
+          <div class="field">
+            <label for="expenseFormCategory" data-i18n="expenses_category">Categoría (opcional)</label>
+            <input id="expenseFormCategory" class="input" type="text" list="expenseCategoryOptions" data-i18n-placeholder="expenses_category_placeholder" placeholder="Suscripción, evaluación, reset..." />
+            <datalist id="expenseCategoryOptions">
+              <option value="Suscripción"></option>
+              <option value="Evaluación"></option>
+              <option value="Reset"></option>
+              <option value="Comisión externa"></option>
+              <option value="Otro"></option>
+            </datalist>
+          </div>
+          <div class="field">
+            <label for="expenseFormNote" data-i18n="withdrawals_note">Nota (opcional)</label>
+            <input id="expenseFormNote" class="input" type="text" data-i18n-placeholder="withdrawals_note_placeholder" placeholder="Comentario" />
+          </div>
+        </div>
+        <div class="withdrawal-modal-actions">
+          <button id="cancelExpenseEditBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>
+          <button id="saveExpenseBtn" class="button button-add" type="button" data-i18n="expenses_add_btn">Añadir gasto</button>
         </div>
       </div>
     </div>

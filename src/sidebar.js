@@ -3,13 +3,13 @@
  */
 const { navigateTo } = require('./navigation.js');
 
-const SPA_VIEWS = new Set(['dashboard', 'trade', 'stats', 'withdrawals', 'config', 'backtesting', 'backtestingConfig']);
+const SPA_VIEWS = new Set(['dashboard', 'trade', 'stats', 'management', 'config', 'backtesting', 'backtestingConfig']);
 
 const NAV_ITEMS = [
   { id: 'btnDashboard', view: 'dashboard', icon: 'layout-dashboard', i18n: 'dashboard', label: 'Dashboard' },
   { id: 'btnTrade', view: 'trade', icon: 'plus-circle', i18n: 'new_trade', label: 'Nuevo trade' },
   { id: 'btnStats', view: 'stats', icon: 'bar-chart-3', i18n: 'stats', label: 'Estadísticas' },
-  { id: 'btnWithdrawals', view: 'withdrawals', icon: 'banknote', i18n: 'withdrawals_nav', label: 'Retiros' },
+  { id: 'btnManagement', view: 'management', icon: 'banknote', i18n: 'management_nav', label: 'Gestión' },
   { id: 'btnConfig', view: 'config', icon: 'settings', i18n: 'settings', label: 'Configuración' },
   { id: 'btnBacktesting', view: 'backtesting', icon: 'flask-conical', i18n: '', label: 'Backtesting' },
   {
@@ -97,7 +97,7 @@ function getSidebarActionButton(target) {
     dashboard: 'btnDashboard',
     trade: 'btnTrade',
     stats: 'btnStats',
-    withdrawals: 'btnWithdrawals',
+    management: 'btnManagement',
     config: 'btnConfig',
     backtesting: 'btnBacktesting',
     backtestingconfig: 'btnBacktestingConfig'
@@ -128,7 +128,7 @@ function normalizeSidebarStructure(activeView = '') {
   const realSection = getSidebarSectionByLabel('REAL');
   if (!realSection) return;
 
-  const realOrder = ['dashboard', 'trade', 'stats', 'withdrawals', 'config'];
+  const realOrder = ['dashboard', 'trade', 'stats', 'management', 'config'];
   const wrapperSelector = 'li, .sidebar-item, .nav-item, .menu-item, .item';
 
   realOrder.forEach((view) => {
@@ -139,7 +139,7 @@ function normalizeSidebarStructure(activeView = '') {
         dashboard: 'btnDashboard',
         trade: 'btnTrade',
         stats: 'btnStats',
-        withdrawals: 'btnWithdrawals',
+        management: 'btnManagement',
         config: 'btnConfig',
       };
       btn.id = idMap[view] || '';

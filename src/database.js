@@ -133,6 +133,23 @@ function ensureOfflineTables() {
     ["sync_status", "sync_status TEXT DEFAULT 'synced'"],
     ['deleted_at', 'deleted_at TEXT'],
   ]);
+
+  safeEnsure('real_account_expenses', [
+    ['user_id', 'user_id TEXT'],
+    ['client_uuid', 'client_uuid TEXT'],
+    ['remote_id', 'remote_id TEXT'],
+    ['account_id', 'account_id TEXT'],
+    ['account_client_uuid', 'account_client_uuid TEXT'],
+    ['account_name', 'account_name TEXT'],
+    ['amount', 'amount REAL'],
+    ['date', 'date TEXT'],
+    ['category', 'category TEXT'],
+    ['note', 'note TEXT'],
+    ['created_at', 'created_at TEXT'],
+    ['updated_at', 'updated_at TEXT'],
+    ["sync_status", "sync_status TEXT DEFAULT 'synced'"],
+    ['deleted_at', 'deleted_at TEXT'],
+  ]);
 }
 
 db.prepare(`
@@ -349,6 +366,42 @@ db.prepare(`
 db.prepare(`
   CREATE INDEX IF NOT EXISTS real_account_withdrawals_date_idx
   ON real_account_withdrawals(user_id, date)
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS real_account_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    client_uuid TEXT NOT NULL,
+    remote_id TEXT,
+    account_id TEXT,
+    account_client_uuid TEXT,
+    account_name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    date TEXT NOT NULL,
+    category TEXT,
+    note TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    sync_status TEXT DEFAULT 'synced',
+    deleted_at TEXT,
+    UNIQUE(user_id, client_uuid)
+  )
+`).run();
+
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS real_account_expenses_user_id_idx
+  ON real_account_expenses(user_id)
+`).run();
+
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS real_account_expenses_account_name_idx
+  ON real_account_expenses(user_id, account_name)
+`).run();
+
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS real_account_expenses_date_idx
+  ON real_account_expenses(user_id, date)
 `).run();
 
 // Cola de sincronización

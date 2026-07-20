@@ -46,6 +46,13 @@ const {
   supabaseRowFromPayload,
   upsertWithdrawalsIntoLocal,
 } = require('./services/realAccountWithdrawals');
+const {
+  normalizeExpenseInput,
+  mapExpenseRowToResponse,
+  getExpensesFromLocal,
+  supabaseRowFromPayload: expenseSupabaseRowFromPayload,
+  upsertExpensesIntoLocal,
+} = require('./services/realAccountExpenses');
 
 let mainWindow = null;
 let currentUserId = null;
@@ -1152,6 +1159,214 @@ ipcMain.handle('delete-withdrawal-local', async (_event, idOrClientUuid) => {
   return { success: true };
 });
 
+function resolveRealAccountMetaForExpense(userId, accountName) {
+  return resolveRealAccountMetaForWithdrawal(userId, accountName);
+}
+
+ipcMain.handle('get-expenses-local', async () => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return [];
+  return getExpensesFromLocal(db, userId);
+});
+
+ipcMain.handle('add-expense-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : makeClientUuid();
+  const normalized = normalizeExpenseInput({ ...raw, client_uuid: clientUuid }, userId);
+  if (normalized.error) return { success: false, error: normalized.error };
+
+  const accountMeta = resolveRealAccountMetaForExpense(userId, normalized.account_name);
+  const ts = nowIso();
+
+  const info = db
+    .prepare(
+      `INSERT INTO real_account_expenses
+       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
+    )
+    .run(
+      String(userId),
+      clientUuid,
+      accountMeta.account_id,
+      accountMeta.account_client_uuid,
+      normalized.account_name,
+      normalized.amount,
+      normalized.date,
+      normalized.category,
+      normalized.note,
+      ts,
+      ts
+    );
+
+  const payload = {
+    user_id: String(userId),
+    client_uuid: clientUuid,
+    account_id: accountMeta.account_id,
+    account_name: normalized.account_name,
+    amount: normalized.amount,
+    date: normalized.date,
+    category: normalized.category,
+    note: normalized.note,
+  };
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_expense',
+    entityLocalId: clientUuid,
+    action: 'create',
+    payload,
+  });
+
+  return {
+    success: true,
+    client_uuid: clientUuid,
+    id: Number(info.lastInsertRowid),
+    expense: mapExpenseRowToResponse(
+      db.prepare(`SELECT * FROM real_account_expenses WHERE id = ?`).get(Number(info.lastInsertRowid))
+    ),
+  };
+});
+
+ipcMain.handle('update-expense-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const localId = Number(raw?.id ?? raw?.localId);
+  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : '';
+  const existing = clientUuid
+    ? db
+        .prepare(`SELECT * FROM real_account_expenses WHERE user_id = ? AND client_uuid = ? LIMIT 1`)
+        .get(String(userId), clientUuid)
+    : Number.isFinite(localId)
+      ? db.prepare(`SELECT * FROM real_account_expenses WHERE user_id = ? AND id = ? LIMIT 1`).get(String(userId), localId)
+      : null;
+
+  if (!existing) return { success: false, error: 'NOT_FOUND' };
+
+  const normalized = normalizeExpenseInput(
+    {
+      ...raw,
+      client_uuid: existing.client_uuid,
+      account_name: raw?.account_name ?? raw?.accountName ?? existing.account_name,
+      amount: raw?.amount ?? existing.amount,
+      date: raw?.date ?? existing.date,
+      category: raw?.category !== undefined ? raw.category : existing.category,
+      note: raw?.note !== undefined ? raw.note : existing.note,
+    },
+    userId
+  );
+  if (normalized.error) return { success: false, error: normalized.error };
+
+  const accountMeta = resolveRealAccountMetaForExpense(userId, normalized.account_name);
+  const ts = nowIso();
+
+  db.prepare(
+    `UPDATE real_account_expenses SET
+      account_id = ?,
+      account_client_uuid = ?,
+      account_name = ?,
+      amount = ?,
+      date = ?,
+      category = ?,
+      note = ?,
+      updated_at = ?,
+      sync_status = CASE
+        WHEN sync_status = 'pending_create' THEN 'pending_create'
+        ELSE 'pending_update'
+      END
+     WHERE user_id = ? AND id = ?`
+  ).run(
+    accountMeta.account_id,
+    accountMeta.account_client_uuid,
+    normalized.account_name,
+    normalized.amount,
+    normalized.date,
+    normalized.category,
+    normalized.note,
+    ts,
+    String(userId),
+    Number(existing.id)
+  );
+
+  const payload = {
+    user_id: String(userId),
+    client_uuid: String(existing.client_uuid),
+    remote_id: existing.remote_id ? String(existing.remote_id) : null,
+    account_id: accountMeta.account_id,
+    account_name: normalized.account_name,
+    amount: normalized.amount,
+    date: normalized.date,
+    category: normalized.category,
+    note: normalized.note,
+  };
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_expense',
+    entityLocalId: String(existing.client_uuid),
+    entityRemoteId: existing.remote_id ? String(existing.remote_id) : null,
+    action: String(existing.sync_status) === 'pending_create' ? 'create' : 'update',
+    payload,
+  });
+
+  return {
+    success: true,
+    expense: mapExpenseRowToResponse(
+      db.prepare(`SELECT * FROM real_account_expenses WHERE id = ?`).get(Number(existing.id))
+    ),
+  };
+});
+
+ipcMain.handle('delete-expense-local', async (_event, idOrClientUuid) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+  const needle = String(idOrClientUuid || '').trim();
+  if (!needle) return { success: false, error: 'MISSING_ID' };
+  const ts = nowIso();
+
+  let row = db
+    .prepare(
+      `SELECT id, client_uuid, remote_id, sync_status FROM real_account_expenses
+       WHERE user_id = ? AND client_uuid = ?
+       LIMIT 1`
+    )
+    .get(String(userId), needle);
+  if (!row && /^\d+$/.test(needle)) {
+    row = db
+      .prepare(
+        `SELECT id, client_uuid, remote_id, sync_status FROM real_account_expenses
+         WHERE user_id = ? AND id = ?
+         LIMIT 1`
+      )
+      .get(String(userId), Number(needle));
+  }
+
+  if (!row) return { success: true, skipped: true };
+
+  db.prepare(
+    `UPDATE real_account_expenses
+     SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+     WHERE user_id = ? AND id = ?`
+  ).run(ts, ts, String(userId), Number(row.id));
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'real_account_expense',
+    entityLocalId: String(row.client_uuid),
+    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+    action: 'delete',
+    payload: {
+      user_id: String(userId),
+      client_uuid: String(row.client_uuid),
+      remote_id: row.remote_id ? String(row.remote_id) : null,
+    },
+  });
+
+  return { success: true };
+});
+
 ipcMain.handle('delete-real-strategy-local', async (_event, clientUuidOrName) => {
   const userId = await resolveUserIdForLocalCache();
   if (!userId) return { success: false, error: 'NO_USER_ID' };
@@ -1971,6 +2186,150 @@ async function syncPendingChanges(userId) {
         }
       }
 
+      if (entityType === 'real_account_expense') {
+        const clientUuid = String(item.entity_local_id || '');
+        const remoteId = item.entity_remote_id || payload?.remote_id || null;
+        const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
+        const rowBody = expenseSupabaseRowFromPayload({ ...payload, user_id: String(userId), client_uuid: payloadUuid });
+
+        if (action === 'create') {
+          const ins = await supabase
+            .from('real_account_expenses')
+            .insert(rowBody)
+            .select('id, client_uuid')
+            .single();
+          if (ins.error) {
+            const msg = String(ins.error?.message || '').toLowerCase();
+            const isConflict = msg.includes('duplicate key') || msg.includes('unique') || ins.error?.code === '23505';
+            if (isConflict) {
+              const lookup = await supabase
+                .from('real_account_expenses')
+                .select('id, client_uuid')
+                .eq('user_id', String(userId))
+                .eq('client_uuid', payloadUuid)
+                .maybeSingle();
+              if (lookup.error || !lookup.data?.id) throw ins.error;
+              db.prepare(
+                `UPDATE real_account_expenses
+                 SET remote_id = ?, sync_status = 'synced', updated_at = ?
+                 WHERE user_id = ? AND client_uuid = ?`
+              ).run(String(lookup.data.id), nowIso(), String(userId), payloadUuid);
+              db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(
+                String(lookup.data.id),
+                Number(item.id)
+              );
+              markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+              ok += 1;
+              continue;
+            }
+            throw ins.error;
+          }
+          db.prepare(
+            `UPDATE real_account_expenses
+             SET remote_id = ?, sync_status = 'synced', updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(String(ins.data.id), nowIso(), String(userId), payloadUuid);
+          db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(
+            String(ins.data.id),
+            Number(item.id)
+          );
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (action === 'update') {
+          const patch = { ...rowBody };
+          delete patch.user_id;
+          if (remoteId) {
+            const upd = await supabase
+              .from('real_account_expenses')
+              .update(patch)
+              .eq('id', String(remoteId))
+              .eq('user_id', String(userId));
+            if (upd.error) throw upd.error;
+          } else {
+            const upd = await supabase
+              .from('real_account_expenses')
+              .update(patch)
+              .eq('user_id', String(userId))
+              .eq('client_uuid', payloadUuid);
+            if (upd.error) throw upd.error;
+          }
+          db.prepare(
+            `UPDATE real_account_expenses
+             SET account_id = COALESCE(?, account_id),
+                 account_name = ?,
+                 amount = ?,
+                 date = ?,
+                 category = ?,
+                 note = ?,
+                 sync_status = 'synced',
+                 updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(
+            rowBody.account_id,
+            rowBody.account_name,
+            rowBody.amount,
+            rowBody.date,
+            rowBody.category,
+            rowBody.note,
+            nowIso(),
+            String(userId),
+            payloadUuid
+          );
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (action === 'delete') {
+          const local = db
+            .prepare(
+              `SELECT remote_id, sync_status FROM real_account_expenses WHERE user_id = ? AND client_uuid = ?`
+            )
+            .get(String(userId), payloadUuid);
+
+          if (!local?.remote_id && String(local?.sync_status || '').startsWith('pending_')) {
+            db.prepare(
+              `UPDATE real_account_expenses
+               SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+               WHERE user_id = ? AND client_uuid = ?`
+            ).run(nowIso(), nowIso(), String(userId), payloadUuid);
+            markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+            ok += 1;
+            continue;
+          }
+
+          const tsDelete = nowIso();
+          if (remoteId || local?.remote_id) {
+            const rid = String(remoteId || local.remote_id);
+            const upd = await supabase
+              .from('real_account_expenses')
+              .update({ deleted_at: tsDelete, updated_at: tsDelete })
+              .eq('id', rid)
+              .eq('user_id', String(userId));
+            if (upd.error) throw upd.error;
+          } else {
+            const upd = await supabase
+              .from('real_account_expenses')
+              .update({ deleted_at: tsDelete, updated_at: tsDelete })
+              .eq('user_id', String(userId))
+              .eq('client_uuid', payloadUuid);
+            if (upd.error) throw upd.error;
+          }
+
+          db.prepare(
+            `UPDATE real_account_expenses
+             SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+             WHERE user_id = ? AND client_uuid = ?`
+          ).run(tsDelete, tsDelete, String(userId), payloadUuid);
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+      }
+
       throw new Error(`UNSUPPORTED_ENTITY_OR_ACTION:${entityType}:${action}`);
     } catch (err) {
       failed += 1;
@@ -2002,7 +2361,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
   }
 
   // Fetch remotos en paralelo (misma sesión/RLS). El merge local se hace después, secuencialmente.
-  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes] = await Promise.all([
+  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes, expensesRes] = await Promise.all([
     tradesService.getTrades().catch((err) => ({ success: false, error: err })),
     supabase
       .from('real_accounts')
@@ -2016,6 +2375,13 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       .from('real_account_withdrawals')
       .select(
         'id, user_id, account_id, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
+      )
+      .eq('user_id', String(userId))
+      .is('deleted_at', null),
+    supabase
+      .from('real_account_expenses')
+      .select(
+        'id, user_id, account_id, account_name, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
       )
       .eq('user_id', String(userId))
       .is('deleted_at', null),
@@ -2179,12 +2545,19 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     upsertWithdrawalsIntoLocal(db, withdrawalsRes.data || [], userId, '[pullRemoteData]');
   }
 
+  // Tolerante: si la migración de Supabase para gastos aún no está aplicada, expensesRes.error
+  // vendrá poblado (tabla inexistente) y simplemente lo saltamos sin romper el resto del pull.
+  if (!expensesRes.error) {
+    upsertExpensesIntoLocal(db, expensesRes.data || [], userId, '[pullRemoteData]');
+  }
+
   return {
     pulled: true,
     trades: Array.isArray(tradesRes?.data) ? tradesRes.data.length : 0,
     real_accounts: Array.isArray(accountsRes?.data) ? accountsRes.data.length : 0,
     real_strategies: Array.isArray(strategiesRes?.data) ? strategiesRes.data.length : 0,
     real_account_withdrawals: Array.isArray(withdrawalsRes?.data) ? withdrawalsRes.data.length : 0,
+    real_account_expenses: Array.isArray(expensesRes?.data) ? expensesRes.data.length : 0,
   };
 }
 
