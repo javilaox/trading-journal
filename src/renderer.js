@@ -5952,6 +5952,11 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     }
     renderItems(filtered);
     panel.hidden = false;
+    // El panel vive dentro de un formulario con scroll propio; nos aseguramos de que
+    // quede visible en vez de recortado por el borde del área con overflow.
+    requestAnimationFrame(() => {
+      panel.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   function close() {

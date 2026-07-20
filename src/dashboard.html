@@ -1566,8 +1566,8 @@
         flex-direction: column;
         gap: 16px;
         width: 100%;
-        max-width: 1120px;
-        margin: 0 auto;
+        max-width: none;
+        margin: 0;
         box-sizing: border-box;
       }
       #managementView .wd-header {
@@ -1689,6 +1689,15 @@
       #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
         max-height: min(86vh, 560px);
+        /* La base .modal/.app-modal tiene overflow:hidden (para las esquinas redondeadas);
+           aquí lo convertimos en columna flex para que solo el formulario haga scroll interno
+           y la cabecera y los botones de acción queden siempre visibles y fijos. */
+        display: flex;
+        flex-direction: column;
+      }
+      #withdrawalModalOverlay .modal-header.app-modal-header,
+      #expenseModalOverlay .modal-header.app-modal-header {
+        flex-shrink: 0;
       }
       #withdrawalModalOverlay .withdrawal-modal-form,
       #expenseModalOverlay .withdrawal-modal-form {
@@ -1696,6 +1705,14 @@
         flex-direction: column;
         gap: 12px;
         padding: 16px 18px 18px;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      #withdrawalModalOverlay .withdrawal-modal-actions,
+      #expenseModalOverlay .withdrawal-modal-actions {
+        flex-shrink: 0;
       }
       #withdrawalModalOverlay .withdrawal-modal-form .field label,
       #expenseModalOverlay .withdrawal-modal-form .field label {
