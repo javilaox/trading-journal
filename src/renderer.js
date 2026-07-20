@@ -5221,6 +5221,14 @@ function formatWithdrawalEuro(value) {
   return `${n.toFixed(2)}€`;
 }
 
+// Los gastos se muestran siempre en negativo (salida de dinero), aunque internamente
+// se guarden y sumen como valores positivos.
+function formatNegativeEuro(value) {
+  const n = Math.abs(Number(value) || 0);
+  if (n === 0) return formatWithdrawalEuro(0);
+  return `-${formatWithdrawalEuro(n)}`;
+}
+
 function tradeOperationalNet(trade) {
   const net = Number(trade?.pnl_net ?? trade?.pnlNet);
   if (Number.isFinite(net)) return net;
@@ -5570,7 +5578,7 @@ let editingExpenseId = null;
 const EXPENSE_CATEGORY_SUGGESTIONS = ['Suscripción', 'Evaluación', 'Reset', 'Comisión externa', 'Otro'];
 
 function formatExpenseEuro(value) {
-  return formatWithdrawalEuro(value);
+  return formatNegativeEuro(value);
 }
 
 async function loadExpensesCache() {
@@ -6043,7 +6051,7 @@ function renderManagementBalanceBanner() {
   };
   set('managementBalanceGlobal', formatWithdrawalEuro(globalBalance));
   set('managementBalanceWithdrawn', formatWithdrawalEuro(totalWithdrawn));
-  set('managementBalanceSpent', formatWithdrawalEuro(totalSpent));
+  set('managementBalanceSpent', formatNegativeEuro(totalSpent));
 }
 
 async function refreshManagementUI() {
@@ -6182,7 +6190,7 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
               <div class="settings-entity-stat">Retirado<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
-              <div class="settings-entity-stat">Gastado<strong>${formatWithdrawalEuro(expenseStats.spent)}</strong></div>
+              <div class="settings-entity-stat">Gastado<strong>${formatNegativeEuro(expenseStats.spent)}</strong></div>
               <div class="settings-entity-stat">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
             </div>
             ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}
@@ -6251,7 +6259,7 @@ function updateAccountModalSummary(account) {
     <div><strong>Resumen</strong></div>
     <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
     <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${stats.last.date})` : '—'}</strong></div>
-    <div>Total gastado: <strong>${formatWithdrawalEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
+    <div>Total gastado: <strong>${formatNegativeEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
     <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
     <div>Trades asociados: <strong>${tradeCount}</strong></div>`;
 }
