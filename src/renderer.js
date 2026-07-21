@@ -4235,6 +4235,13 @@ function refreshCustomSelectForNative(nativeSelect) {
     if (option.disabled) optionElement.classList.add('disabled');
 
     optionElement.addEventListener('click', (event) => {
+      // preventDefault() además de stopPropagation(): en algunos formularios (p. ej. el modal
+      // de sesión de backtesting) el <select> nativo está envuelto en un <label>, y el propio
+      // <select> (aunque oculto por .native-select-hidden) sigue siendo su control asociado.
+      // Sin preventDefault(), el navegador reenvía el click del label al <select> oculto
+      // (comportamiento nativo de <label>), lo que puede "tragarse" el click y hacer que el
+      // desplegable no llegue a abrirse o se cierre inmediatamente.
+      event.preventDefault();
       event.stopPropagation();
       if (option.disabled) return;
       nativeSelect.value = option.value;
@@ -4249,6 +4256,9 @@ function refreshCustomSelectForNative(nativeSelect) {
   });
 
   selected.onclick = (event) => {
+    // Ver comentario arriba: preventDefault() evita que un <label> ancestro reenvíe el click
+    // al <select> nativo oculto.
+    event.preventDefault();
     event.stopPropagation();
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects(custom);
