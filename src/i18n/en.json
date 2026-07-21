@@ -385,6 +385,7 @@
   "expenses_account_size": "Account size (optional)",
   "expenses_account_size_placeholder": "Select size",
   "expenses_by_prop": "By prop",
+  "expenses_by_month": "Expenses by month",
   "expenses_by_category": "By category",
   "expenses_saved": "Expense saved",
   "expenses_deleted": "Expense deleted",

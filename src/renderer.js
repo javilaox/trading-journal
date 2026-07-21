@@ -4186,8 +4186,7 @@ function refreshCustomSelectForNative(nativeSelect) {
     nativeSelect.id === 'asset' ||
     nativeSelect.id === 'btAsset' ||
     nativeSelect.id === 'btDirection' ||
-    nativeSelect.id === 'btAccount' ||
-    nativeSelect.closest('#btSessionModalOverlay')
+    nativeSelect.id === 'btAccount'
   ) {
     return;
   }
@@ -4282,9 +4281,7 @@ function initCustomSelects(root = document) {
       select.id === 'asset' ||
       select.id === 'btAsset' ||
       select.id === 'btDirection' ||
-      select.id === 'btAccount' ||
-      select.closest('#btSessionModalOverlay') ||
-      select.closest('#btStrategyModalOverlay')
+      select.id === 'btAccount'
     ) {
       return;
     }
@@ -5291,6 +5288,12 @@ function fillWithdrawalAccountSelects() {
     });
     if (prev && names.includes(prev)) formSel.value = prev;
   }
+
+  // Estos selects reconstruyen su innerHTML aquí; sin refrescar el "custom-select" que los
+  // envuelve, su etiqueta visible se queda desactualizada (options viejas o valor no reflejado)
+  // aunque el <select> nativo subyacente sí tenga el valor correcto.
+  refreshCustomSelectForNative(filterSel);
+  refreshCustomSelectForNative(formSel);
 }
 
 function getFilteredWithdrawalsList() {
@@ -5502,6 +5505,9 @@ function openWithdrawalModal({ editId = null } = {}) {
     const saveBtn = document.getElementById('saveWithdrawalBtn');
     if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
   }
+  // El valor de "Cuenta (opcional)" se asigna arriba con .value = ... directamente (sin evento
+  // change), así que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
+  refreshCustomSelectForNative(document.getElementById('withdrawalFormAccount'));
   overlay.classList.add('active');
   document.getElementById('withdrawalFormProp')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -5719,6 +5725,9 @@ function fillExpenseAccountSelects() {
     });
     if (prev && names.includes(prev)) filterSel.value = prev;
   }
+  // Igual que en fillWithdrawalAccountSelects: refrescamos el custom-select tras reconstruir
+  // las opciones del <select> nativo para que la etiqueta visible no quede desactualizada.
+  refreshCustomSelectForNative(filterSel);
 
   // El campo del formulario usa el panel de sugerencias propio (ver attachSuggestDropdown),
   // que lee getKnownExpenseProps() en caliente; no necesita repoblarse aquí.
@@ -5898,6 +5907,9 @@ function openExpenseModal({ editId = null } = {}) {
     const saveBtn = document.getElementById('saveExpenseBtn');
     if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
   }
+  // "Tamaño de cuenta" se asigna arriba con .value = ... directamente (sin evento change), así
+  // que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
+  refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
   overlay.classList.add('active');
   document.getElementById('expenseFormAccount')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -12303,10 +12315,6 @@ function openBacktestingSessionModal(sessionId) {
   const ov = document.getElementById('btSessionModalOverlay');
   if (!ov) return;
   populateBacktestingSessionModalForm();
-  document.querySelectorAll('#btSessionModalOverlay .custom-select').forEach((el) => el.remove());
-  document.querySelectorAll('#btSessionModalOverlay select').forEach((select) => {
-    if (select.id !== 'btAsset') select.classList.remove('native-select-hidden');
-  });
   const title = document.getElementById('btSessionModalTitle');
   const hid = document.getElementById('btSessionEditId');
   if (sessionId) {
@@ -12349,6 +12357,11 @@ function openBacktestingSessionModal(sessionId) {
     document.getElementById('btSessionPairMultiSelect')?.classList.remove('open');
     applyBacktestingSessionQuickRange('1m');
   }
+  // Estrategia/Estado usan el mismo desplegable "custom-select" que el resto de la app (antes
+  // este modal los excluía explícitamente y se veían como <select> nativos sin estilo). Se
+  // refresca aquí, después de poblar opciones y valores, para reflejar el estado actual.
+  refreshCustomSelectForNative(document.getElementById('btSessionStrategy'));
+  refreshCustomSelectForNative(document.getElementById('btSessionStatus'));
   ov.classList.add('active');
   void refreshLucideIcons();
 }

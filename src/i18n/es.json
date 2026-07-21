@@ -385,6 +385,7 @@
   "expenses_account_size": "Tamaño de cuenta (opcional)",
   "expenses_account_size_placeholder": "Selecciona tamaño",
   "expenses_by_prop": "Por prop",
+  "expenses_by_month": "Gastos por mes",
   "expenses_by_category": "Por categoría",
   "expenses_saved": "Gasto guardado",
   "expenses_deleted": "Gasto eliminado",
