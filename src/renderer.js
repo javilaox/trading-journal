@@ -12310,7 +12310,24 @@ function initBacktestingModeToggles() {
           toggle.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
           btn.classList.add('active');
           if (hidden) {
-            hidden.value = btn.dataset.value;
+            const prevMode = hidden.value;
+            const nextMode = btn.dataset.value;
+            // Al cambiar € <-> % en el PnL estimado hay que convertir el número que ya hay en el
+            // campo, no solo la etiqueta del modo: si no, 500€ (1% de 50.000€) se queda como
+            // "500" al pasar a %, que se interpretaría como un 500% en vez de un 1%.
+            if (hidden.id === 'btPnlMode' && prevMode !== nextMode) {
+              const pnlInput = getBacktestingPnlInputElement();
+              const capital = getActiveBacktestingSessionCapital();
+              if (pnlInput && capital > 0) {
+                const raw = parseBacktestingNumber(pnlInput.value);
+                if (raw) {
+                  const converted =
+                    nextMode === 'percent' ? (raw / capital) * 100 : (raw * capital) / 100;
+                  pnlInput.value = String(Math.round(converted * 100) / 100);
+                }
+              }
+            }
+            hidden.value = nextMode;
             hidden.dispatchEvent(new Event('change', { bubbles: true }));
           }
           updateBacktestingPnlConversionHint();
