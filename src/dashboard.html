@@ -91,6 +91,13 @@
         color: var(--text);
         font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
         overflow-x: hidden;
+        /* El desplegable nativo de <input type="date"/time"> (Chromium) usa su propio tema
+           claro/oscuro según color-scheme, independientemente del CSS del propio input; sin
+           esto, el popup del calendario se veía siempre blanco/sin tematizar. */
+        color-scheme: dark;
+      }
+      body.light {
+        color-scheme: light;
       }
       .sidebar {
         position: fixed;
@@ -1084,6 +1091,16 @@
       }
       .kpi-value.positive { color: var(--green); }
       .kpi-value.negative { color: var(--red); }
+      /* stat-box/advanced-item/insights-card usan .positive/.negative sin que hasta ahora
+         hubiera ninguna regla que los coloreara (quedaban con el color de texto por defecto,
+         p. ej. "Comisiones pagadas" se veía en el mismo tono que el resto pese a llevar
+         class="negative"). */
+      .stat-box .positive, .advanced-item .positive, .insights-card .positive {
+        color: var(--green);
+      }
+      .stat-box .negative, .advanced-item .negative, .insights-card .negative {
+        color: var(--red);
+      }
       .kpi-header-row {
         height: 30px;
         display: flex;
@@ -1530,7 +1547,19 @@
       }
       .withdrawals-table tbody tr { transition: background 0.15s ease; }
       .withdrawals-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
-      .withdrawals-table .wd-amount { font-weight: 700; color: #f87171; white-space: nowrap; }
+      .withdrawals-table .wd-amount { font-weight: 700; white-space: nowrap; }
+      .withdrawals-table .wd-amount.wd-amount-withdrawal { color: var(--green); }
+      .withdrawals-table .wd-amount.wd-amount-expense { color: var(--red); }
+      /* Retiros = dinero recuperado (verde); Gastos = salida de dinero (rojo). */
+      #withdrawalSummaryTotal, #withdrawalSummaryAvg, #withdrawalSummaryLast,
+      #withdrawalAnalyticsByAccount strong, #withdrawalAnalyticsByMonth strong,
+      #withdrawalAnalyticsTopAccount, #withdrawalAnalyticsWithdrawnTotal {
+        color: var(--green);
+      }
+      #expenseSummaryTotal, #expenseSummaryAvg, #expenseSummaryLast,
+      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong, #expenseAnalyticsByCategory strong {
+        color: var(--red);
+      }
       .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
       .withdrawals-action-btn {
         height: 28px;
@@ -1751,23 +1780,79 @@
         color: var(--text-color, #fff);
         border-bottom-color: var(--accent, #4f8cff);
       }
-      #managementView .mgmt-balance-banner {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 24px;
-        align-items: center;
-        padding: 14px 18px;
-        margin-bottom: 16px;
+      #managementView .mgmt-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(200px, 1fr));
+        gap: 16px;
+        width: 100%;
+        margin-bottom: 20px;
       }
-      #managementView .mgmt-balance-item span {
-        display: block;
+      @media (max-width: 900px) {
+        #managementView .mgmt-kpi-row {
+          grid-template-columns: 1fr;
+        }
+      }
+      #managementView .mgmt-kpi-card {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: var(--shadow-xs);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      #managementView .mgmt-kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+      #managementView .mgmt-kpi-icon {
+        flex: 0 0 auto;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #managementView .mgmt-kpi-icon svg,
+      #managementView .mgmt-kpi-icon i {
+        width: 20px;
+        height: 20px;
+      }
+      #managementView .mgmt-kpi-withdrawn .mgmt-kpi-icon {
+        background: rgba(34, 197, 94, 0.14);
+        color: var(--green);
+      }
+      #managementView .mgmt-kpi-spent .mgmt-kpi-icon {
+        background: rgba(239, 68, 68, 0.14);
+        color: var(--red);
+      }
+      #managementView .mgmt-kpi-net .mgmt-kpi-icon {
+        background: rgba(96, 165, 250, 0.14);
+        color: #60a5fa;
+      }
+      #managementView .mgmt-kpi-body {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      #managementView .mgmt-kpi-label {
         font-size: 0.78rem;
         color: var(--text-muted);
-        margin-bottom: 2px;
+        opacity: 0.85;
       }
-      #managementView .mgmt-balance-item strong {
-        font-size: 1.05rem;
+      #managementView .mgmt-kpi-value {
+        font-size: 1.3rem;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
+      #managementView .mgmt-kpi-value.positive { color: var(--green); }
+      #managementView .mgmt-kpi-value.negative { color: var(--red); }
       #managementView .management-tab-panel {
         display: flex;
         flex-direction: column;
@@ -2063,6 +2148,23 @@
       #strategyDetailModalOverlay .modal {
         width: min(520px, 100%);
         max-height: min(90vh, 680px);
+        display: flex;
+        flex-direction: column;
+      }
+      #accountDetailModalOverlay .modal-header.app-modal-header,
+      #strategyDetailModalOverlay .modal-header.app-modal-header {
+        flex-shrink: 0;
+      }
+      #accountDetailModalOverlay .entity-detail-form,
+      #strategyDetailModalOverlay .entity-detail-form {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      #accountDetailModalOverlay .entity-detail-actions,
+      #strategyDetailModalOverlay .entity-detail-actions {
+        flex-shrink: 0;
       }
       .entity-detail-summary {
         margin: 12px 0 0;
@@ -3644,6 +3746,132 @@
         font-size: 12px;
         font-weight: 600;
       }
+      /* Selector de hora propio (mismo lenguaje visual que el custom-datepicker), usado en
+         Backtesting (Hora de entrada / Hora de salida) en vez del picker nativo del navegador. */
+      .custom-timepicker {
+        position: relative;
+        width: 100%;
+      }
+      .timepicker-trigger {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card-bg);
+        color: var(--text);
+        padding: 10px 12px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .timepicker-trigger:hover {
+        border-color: var(--green);
+      }
+      .custom-timepicker.open .timepicker-trigger {
+        border-color: var(--green);
+        box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+      }
+      .timepicker-trigger-label {
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .custom-timepicker.has-value .timepicker-trigger-label {
+        color: var(--text);
+      }
+      .timepicker-trigger-icon {
+        opacity: 0.7;
+        display: flex;
+        align-items: center;
+      }
+      .timepicker-trigger-icon svg {
+        width: 15px;
+        height: 15px;
+      }
+      .timepicker-popup {
+        /* position: fixed (no absolute): el formulario de "Nueva operación" en Backtesting
+           tiene overflow:hidden en su tarjeta contenedora (.bt-operation-card), así que un
+           popup absoluto quedaría recortado/invisible. La posición real (top/left) la calcula
+           initTradeTimepicker en JS a partir de getBoundingClientRect() del trigger. */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 190px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+        padding: 10px;
+        z-index: 2000;
+        display: none;
+      }
+      .custom-timepicker.open .timepicker-popup {
+        display: block;
+      }
+      .timepicker-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        height: 180px;
+      }
+      .timepicker-col {
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .timepicker-option {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        border-radius: 8px;
+        height: 30px;
+        flex-shrink: 0;
+        cursor: pointer;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .timepicker-option:hover {
+        background: var(--hover-soft);
+      }
+      .timepicker-option.selected {
+        background: rgba(22, 163, 74, 0.2);
+        border-color: rgba(22, 163, 74, 0.45);
+        color: var(--green);
+        font-weight: 700;
+      }
+      .timepicker-actions {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .timepicker-action-btn {
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--text);
+        border-radius: 8px;
+        cursor: pointer;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .timepicker-action-btn:hover {
+        filter: brightness(1.08);
+      }
+      .native-time-hidden {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+        pointer-events: none !important;
+      }
       .form-group,
       .field {
         display: flex;
@@ -4341,6 +4569,34 @@
       }
       #backtestingView .dashboard-container .section.card > .bt-section:first-of-type {
         margin-top: 0;
+      }
+      /* Pestañas Trades / Estadísticas dentro de una sesión de backtesting: separan el
+         calendario + registro de operaciones (mucho ruido visual si van todo seguido) de los
+         KPIs, disciplina por horario, análisis y simulaciones. */
+      #backtestingView .bt-view-tabs {
+        display: flex;
+        gap: 8px;
+        margin: clamp(24px, 2.8vw, 32px) 0 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      #backtestingView .bt-view-tab-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        font-weight: 700;
+        padding: 10px 6px;
+        margin-bottom: -1px;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      #backtestingView .bt-view-tab-btn:hover {
+        color: var(--text);
+      }
+      #backtestingView .bt-view-tab-btn.active {
+        color: var(--text);
+        border-bottom-color: var(--green);
       }
       #backtestingView .bt-section-title {
         display: flex;
@@ -6249,18 +6505,27 @@
               </div>
             </header>
 
-            <div class="card mgmt-balance-banner">
-              <div class="mgmt-balance-item">
-                <span data-i18n="management_balance_global">Balance global estimado</span>
-                <strong id="managementBalanceGlobal">0.00€</strong>
+            <div class="mgmt-kpi-row">
+              <div class="mgmt-kpi-card mgmt-kpi-withdrawn">
+                <div class="mgmt-kpi-icon"><i data-lucide="arrow-down-to-line"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="withdrawals_total">Total retirado</span>
+                  <strong id="managementBalanceWithdrawn" class="mgmt-kpi-value positive">0.00€</strong>
+                </div>
               </div>
-              <div class="mgmt-balance-item">
-                <span data-i18n="withdrawals_total">Total retirado</span>
-                <strong id="managementBalanceWithdrawn">0.00€</strong>
+              <div class="mgmt-kpi-card mgmt-kpi-spent">
+                <div class="mgmt-kpi-icon"><i data-lucide="arrow-up-from-line"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="expenses_total">Total gastado</span>
+                  <strong id="managementBalanceSpent" class="mgmt-kpi-value negative">0.00€</strong>
+                </div>
               </div>
-              <div class="mgmt-balance-item">
-                <span data-i18n="expenses_total">Total gastado</span>
-                <strong id="managementBalanceSpent">0.00€</strong>
+              <div class="mgmt-kpi-card mgmt-kpi-net">
+                <div class="mgmt-kpi-icon"><i data-lucide="scale"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="management_balance_net">Retirado - Gastado</span>
+                  <strong id="managementBalanceNet" class="mgmt-kpi-value">0.00€</strong>
+                </div>
               </div>
             </div>
 
@@ -6296,8 +6561,8 @@
 
               <div class="card wd-filter-bar">
                 <div class="wd-filter-field">
-                  <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
-                  <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+                  <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Prop</label>
+                  <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="withdrawals_all_props">Todas las props</option></select>
                 </div>
                 <div class="wd-filter-field">
                   <label for="withdrawalFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
@@ -6325,7 +6590,7 @@
                       <thead>
                         <tr>
                           <th data-i18n="withdrawals_col_date">Fecha</th>
-                          <th data-i18n="withdrawals_col_account">Cuenta</th>
+                          <th data-i18n="withdrawals_col_account">Prop</th>
                           <th data-i18n="withdrawals_col_amount">Importe</th>
                           <th data-i18n="withdrawals_col_note">Nota</th>
                           <th></th>
@@ -6340,7 +6605,7 @@
                   <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
                   <div class="wd-analytics-stack">
                     <div class="wd-analytics-block">
-                      <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                      <h3 data-i18n="withdrawals_by_account">Por prop</h3>
                       <ul id="withdrawalAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
                     </div>
                     <div class="wd-analytics-block">
@@ -6446,7 +6711,7 @@
                       <ul id="expenseAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
                     </div>
                     <div class="wd-analytics-block">
-                      <h3 data-i18n="withdrawals_by_month">Por mes</h3>
+                      <h3 data-i18n="expenses_by_month">Por mes</h3>
                       <ul id="expenseAnalyticsByMonth" class="withdrawal-report-list"><li>—</li></ul>
                     </div>
                     <div class="wd-analytics-block">
@@ -6826,6 +7091,25 @@
               <p class="backtesting-intro">Simula y registra operaciones sin mezclarlas con tu cuenta real.</p>
             </div>
 
+            <div class="bt-section bt-sessions-panel backtesting-sessions-section pro-section">
+              <div class="pro-card">
+              <div class="bt-section-title">
+                <div>
+                  <h3>Sesiones</h3>
+                  <p>Gestiona y filtra tus sesiones de prueba.</p>
+                </div>
+                <button type="button" id="btNewSessionBtn" class="btn btn-primary">Nueva sesión</button>
+              </div>
+              <div id="backtestingSessionsCards" class="bt-sessions-grid backtesting-session-cards"></div>
+              </div>
+            </div>
+
+            <div class="bt-view-tabs" role="tablist">
+              <button type="button" class="bt-view-tab-btn active" id="btViewTabBtnTrades" data-bt-view-tab="trades" role="tab" aria-selected="true" data-i18n="bt_view_tab_trades">Trades</button>
+              <button type="button" class="bt-view-tab-btn" id="btViewTabBtnStats" data-bt-view-tab="stats" role="tab" aria-selected="false" data-i18n="bt_view_tab_stats">Estadísticas</button>
+            </div>
+
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelKpi">
             <div class="bt-section pro-section">
               <div class="pro-card pro-card--compact">
                 <h3 class="pro-section-title">Filtro de sesión</h3>
@@ -6852,20 +7136,6 @@
                 </div>
               </div>
             </div>
-
-            <div class="bt-section bt-sessions-panel backtesting-sessions-section pro-section">
-              <div class="pro-card">
-              <div class="bt-section-title">
-                <div>
-                  <h3>Sesiones</h3>
-                  <p>Gestiona y filtra tus sesiones de prueba.</p>
-                </div>
-                <button type="button" id="btNewSessionBtn" class="btn btn-primary">Nueva sesión</button>
-              </div>
-              <div id="backtestingSessionsCards" class="bt-sessions-grid backtesting-session-cards"></div>
-              </div>
-            </div>
-
             <div class="bt-section pro-section">
               <section class="bt-kpi-section pro-card open" id="btKpiSection">
                 <button type="button" class="bt-section-toggle" id="btKpiToggle" aria-expanded="true">
@@ -7005,7 +7275,9 @@
                 </div>
               </div>
             </section>
+            </div>
 
+            <div class="bt-tab-panel bt-tab-panel-trades" id="btTradesPanel">
             <div class="bt-section pro-section">
               <div class="pro-card">
               <div class="bt-section-title">
@@ -7086,6 +7358,30 @@
                       </div>
                     </div>
 
+                    <div class="bt-operation-form-section bt-form-accordion open" data-section="result">
+                      <button type="button" class="bt-form-accordion-header">
+                        <span data-i18n="result">Resultado</span>
+                        <i data-lucide="chevron-down" aria-hidden="true"></i>
+                      </button>
+                      <div class="bt-form-accordion-body">
+                        <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
+                          <div class="field"><label for="btResult" data-i18n="label_result">Resultado</label><select id="btResult" class="input"><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option></select></div>
+                          <div class="field field-full bt-pnl-field-wrap">
+                            <label for="btPnl" data-i18n="estimated_pnl">PnL estimado</label>
+                            <input type="hidden" id="btPnlMode" value="money" />
+                            <div class="bt-input-with-mode">
+                              <input id="btPnl" class="input" type="number" step="any" />
+                              <div class="bt-mode-toggle" data-target="btPnlMode">
+                                <button type="button" class="active" data-value="money" data-i18n="money">€</button>
+                                <button type="button" data-value="percent" data-i18n="percent">%</button>
+                              </div>
+                            </div>
+                            <div id="btPnlConvertedHint" class="bt-converted-hint" aria-live="polite"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div class="bt-operation-form-section bt-form-accordion" data-section="management">
                       <button type="button" class="bt-form-accordion-header">
                         <span data-i18n="management">Gestión</span>
@@ -7121,33 +7417,14 @@
                       </div>
                     </div>
 
-                    <div class="bt-operation-form-section bt-form-accordion" data-section="result">
+                    <div class="bt-operation-form-section bt-form-accordion" id="btCustomMetricsBlock" data-section="custom-metrics">
                       <button type="button" class="bt-form-accordion-header">
-                        <span data-i18n="result">Resultado</span>
+                        <span data-i18n="bt_custom_metrics_section">Métricas personalizadas</span>
                         <i data-lucide="chevron-down" aria-hidden="true"></i>
                       </button>
                       <div class="bt-form-accordion-body">
-                        <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
-                          <div class="field"><label for="btResult" data-i18n="label_result">Resultado</label><select id="btResult" class="input"><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option></select></div>
-                          <div class="field field-full bt-pnl-field-wrap">
-                            <label for="btPnl" data-i18n="estimated_pnl">PnL estimado</label>
-                            <input type="hidden" id="btPnlMode" value="money" />
-                            <div class="bt-input-with-mode">
-                              <input id="btPnl" class="input" type="number" step="any" />
-                              <div class="bt-mode-toggle" data-target="btPnlMode">
-                                <button type="button" class="active" data-value="money" data-i18n="money">€</button>
-                                <button type="button" data-value="percent" data-i18n="percent">%</button>
-                              </div>
-                            </div>
-                            <div id="btPnlConvertedHint" class="bt-converted-hint" aria-live="polite"></div>
-                          </div>
-                        </div>
+                        <div id="btCustomMetricsFields" class="bt-metrics-fields bt-custom-metrics"></div>
                       </div>
-                    </div>
-
-                    <div class="bt-operation-form-section" id="btCustomMetricsBlock">
-                      <h4 class="subsection-title bt-form-section-heading" data-i18n="bt_custom_metrics_section">Métricas personalizadas</h4>
-                      <div id="btCustomMetricsFields" class="bt-metrics-fields bt-custom-metrics"></div>
                     </div>
 
                     <div class="bt-operation-form-section">
@@ -7166,7 +7443,9 @@
               </div>
               </div>
             </div>
+            </div>
 
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelAnalysis">
             <div class="bt-section pro-section">
               <div class="pro-card">
               <div class="bt-section-title">
@@ -7223,6 +7502,7 @@
                   <div id="btRrCompare" class="backtesting-placeholder-box">—</div>
                 </div>
               </div>
+            </div>
             </div>
             </section>
           </div>
@@ -7338,6 +7618,7 @@
                   <button type="button" data-unit="percent">%</button>
                 </div>
               </div>
+              <p id="btStrategyRiskEuroHint" class="form-hint" hidden></p>
             </label>
 
             <label class="field">
@@ -7697,6 +7978,13 @@
             <input id="accountModalName" class="input" data-i18n-placeholder="placeholder_account_name" placeholder="Nombre de cuenta" />
           </div>
           <div class="field">
+            <label for="accountModalProp" data-i18n="account_prop_label">Prop (opcional)</label>
+            <div class="suggest-wrap">
+              <input id="accountModalProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="account_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="accountModalPropSuggest" class="suggest-panel" hidden></div>
+            </div>
+          </div>
+          <div class="field">
             <label for="accountModalCapital" data-i18n="label_capital_info">Capital</label>
             <input id="accountModalCapital" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_capital" placeholder="Capital (ej: 10000)" />
           </div>
@@ -7770,8 +8058,15 @@
         </div>
         <div class="withdrawal-modal-form">
           <div class="field">
-            <label for="withdrawalFormAccount" data-i18n="label_select_account_settings">Cuenta</label>
-            <select id="withdrawalFormAccount" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
+            <label for="withdrawalFormProp" data-i18n="withdrawals_prop">Prop</label>
+            <div class="suggest-wrap">
+              <input id="withdrawalFormProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="withdrawals_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="withdrawalFormPropSuggest" class="suggest-panel" hidden></div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="withdrawalFormAccount" data-i18n="withdrawals_account_optional">Cuenta (opcional)</label>
+            <select id="withdrawalFormAccount" class="input"><option value="" data-i18n="withdrawals_account_optional_placeholder">Sin vincular a una cuenta</option></select>
           </div>
           <div class="field">
             <label for="withdrawalFormDate" data-i18n="withdrawals_date">Fecha</label>

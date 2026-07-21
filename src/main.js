@@ -687,15 +687,18 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
       ? 'update'
       : 'create';
 
+  const propName = account?.prop_name != null ? String(account.prop_name).trim() : '';
+
   db.prepare(`
     INSERT INTO real_accounts
-    (user_id, client_uuid, remote_id, name, balance, commission_per_lot, free_swap, is_active, created_at, updated_at, sync_status, deleted_at)
-    VALUES (?, ?, NULL, ?, ?, ?, ?, 1, ?, ?, 'pending_create', NULL)
+    (user_id, client_uuid, remote_id, name, balance, commission_per_lot, free_swap, prop_name, is_active, created_at, updated_at, sync_status, deleted_at)
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, 'pending_create', NULL)
     ON CONFLICT(user_id, client_uuid) DO UPDATE SET
       name = excluded.name,
       balance = excluded.balance,
       commission_per_lot = excluded.commission_per_lot,
       free_swap = excluded.free_swap,
+      prop_name = excluded.prop_name,
       updated_at = excluded.updated_at,
       sync_status = CASE
         WHEN real_accounts.sync_status LIKE 'pending_%' THEN real_accounts.sync_status
@@ -709,6 +712,7 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
     Number(account?.capital ?? account?.balance ?? 0) || 0,
     Number(account?.commissionPerLot ?? account?.commission_per_lot ?? 0) || 0,
     normalizeBoolInt(Boolean(account?.freeSwap ?? account?.free_swap)),
+    propName || null,
     ts,
     ts
   );
@@ -724,6 +728,7 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
       client_uuid: clientUuid,
       name,
       balance: Number(account?.capital ?? account?.balance ?? 0) || 0,
+      prop_name: propName || null,
     }
   });
 
@@ -857,6 +862,7 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
   const balance = Number(account?.capital ?? account?.balance ?? 0) || 0;
   const commission = Number(account?.commissionPerLot ?? account?.commission_per_lot ?? 0) || 0;
   const freeSwap = normalizeBoolInt(Boolean(account?.freeSwap ?? account?.free_swap));
+  const propName = account?.prop_name != null ? String(account.prop_name).trim() : '';
 
   const syncAction =
     String(row.sync_status || '') === 'pending_create' && !row.remote_id ? 'create' : 'update';
@@ -867,6 +873,7 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       balance = ?,
       commission_per_lot = ?,
       free_swap = ?,
+      prop_name = ?,
       updated_at = ?,
       sync_status = CASE
         WHEN sync_status = 'pending_create' THEN 'pending_create'
@@ -874,7 +881,7 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       END,
       deleted_at = NULL
      WHERE user_id = ? AND client_uuid = ?`
-  ).run(name, balance, commission, freeSwap, ts, String(userId), finalUuid);
+  ).run(name, balance, commission, freeSwap, propName || null, ts, String(userId), finalUuid);
 
   enqueueSyncItem({
     userId,
@@ -889,6 +896,7 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       balance,
       commission_per_lot: commission,
       free_swap: freeSwap,
+      prop_name: propName || null,
     },
   });
 
@@ -1061,7 +1069,10 @@ ipcMain.handle('add-withdrawal-local', async (_event, raw) => {
   const normalized = normalizeWithdrawalInput({ ...raw, client_uuid: clientUuid }, userId);
   if (normalized.error) return { success: false, error: normalized.error };
 
-  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, normalized.account_name);
+  // account_name es ahora la PROP (texto libre); el vínculo opcional a una cuenta real
+  // configurada se resuelve aparte, a partir del nombre elegido en el select opcional.
+  const linkedAccountName = String(raw?.linked_account_name || '').trim();
+  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, linkedAccountName);
   const ts = nowIso();
 
   const info = db
@@ -1140,7 +1151,8 @@ ipcMain.handle('update-withdrawal-local', async (_event, raw) => {
   );
   if (normalized.error) return { success: false, error: normalized.error };
 
-  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, normalized.account_name);
+  const linkedAccountName = String(raw?.linked_account_name || '').trim();
+  const accountMeta = resolveRealAccountMetaForWithdrawal(userId, linkedAccountName);
   const ts = nowIso();
 
   db.prepare(
@@ -1932,9 +1944,16 @@ async function syncPendingChanges(userId) {
         const payloadName = String(payload?.name || '').trim();
         const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
         const payloadBalance = Number(payload?.balance ?? 0) || 0;
+        const payloadPropName = payload?.prop_name != null ? String(payload.prop_name).trim() : '';
 
         if (action === 'create') {
-          const row = { user_id: String(userId), client_uuid: payloadUuid, name: payloadName, balance: payloadBalance };
+          const row = {
+            user_id: String(userId),
+            client_uuid: payloadUuid,
+            name: payloadName,
+            balance: payloadBalance,
+            prop_name: payloadPropName || null,
+          };
           const ins = await supabase.from('real_accounts').insert(row).select('id, client_uuid').single();
           if (ins.error) {
             const msg = String(ins.error?.message || '').toLowerCase();
@@ -1974,6 +1993,7 @@ async function syncPendingChanges(userId) {
           const patch = {
             name: payloadName || undefined,
             balance: payloadBalance,
+            prop_name: payloadPropName || null,
           };
           if (remoteId) {
             const upd = await supabase
@@ -1994,10 +2014,11 @@ async function syncPendingChanges(userId) {
             `UPDATE real_accounts
              SET name = COALESCE(?, name),
                  balance = ?,
+                 prop_name = ?,
                  sync_status = 'synced',
                  updated_at = ?
              WHERE user_id = ? AND client_uuid = ?`
-          ).run(payloadName || null, payloadBalance, nowIso(), String(userId), payloadUuid);
+          ).run(payloadName || null, payloadBalance, payloadPropName || null, nowIso(), String(userId), payloadUuid);
           markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
           ok += 1;
           continue;
@@ -2545,7 +2566,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     tradesService.getTrades().catch((err) => ({ success: false, error: err })),
     supabase
       .from('real_accounts')
-      .select('id, user_id, name, balance, client_uuid, created_at')
+      .select('id, user_id, name, balance, prop_name, client_uuid, created_at')
       .eq('user_id', String(userId)),
     supabase
       .from('real_strategies')
@@ -2591,8 +2612,8 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
 
     const insert = db.prepare(`
       INSERT INTO ${localTable}
-      (user_id, client_uuid, remote_id, name, balance, created_at, updated_at, sync_status, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
+      (user_id, client_uuid, remote_id, name, balance, prop_name, created_at, updated_at, sync_status, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
       ON CONFLICT(user_id, client_uuid) DO NOTHING
     `);
 
@@ -2601,6 +2622,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       SET remote_id = COALESCE(?, remote_id),
           name = ?,
           balance = ?,
+          prop_name = ?,
           updated_at = ?,
           sync_status = CASE
             WHEN sync_status LIKE 'pending_%' THEN sync_status
@@ -2630,6 +2652,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             remoteId,
             mapped.name || '',
             Number(mapped.balance ?? 0) || 0,
+            mapped.prop_name || null,
             mapped.created_at || nowIso(),
             mapped.updated_at || nowIso()
           );
@@ -2638,6 +2661,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             remoteId,
             mapped.name || '',
             Number(mapped.balance ?? 0) || 0,
+            mapped.prop_name || null,
             mapped.updated_at || nowIso(),
             uid,
             clientUuid || String(localHit.client_uuid)
@@ -2659,6 +2683,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
         client_uuid: r?.client_uuid ? String(r.client_uuid) : null,
         name: r?.name ?? '',
         balance: Number(r?.balance ?? 0) || 0,
+        prop_name: r?.prop_name != null ? String(r.prop_name) : null,
         created_at: r?.created_at ? String(r.created_at) : null,
         updated_at: nowIso(),
       })

@@ -1,5 +1,6 @@
 const { supabase } = require('./supabaseClient');
 const { getCurrentUserId } = require('./supabaseAuth');
+const { ensureFreshSupabaseSession, friendlyServiceError } = require('./supabaseWriteHelpers');
 
 function parseJsonArray(val) {
   if (Array.isArray(val)) return val.map(String).filter(Boolean);
@@ -47,7 +48,7 @@ async function getBacktestingSettings() {
   const userId = await getCurrentUserId();
   console.log('Current user id:', userId);
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const { data, error } = await supabase
@@ -56,7 +57,7 @@ async function getBacktestingSettings() {
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (error) return { success: false, error };
+  if (error) return { success: false, error: friendlyServiceError(error) };
 
   return { success: true, data: data ? normalizeRow(data) : null };
 }
@@ -64,7 +65,7 @@ async function getBacktestingSettings() {
 async function upsertBacktestingSettings(settings) {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const payload = {
@@ -81,15 +82,27 @@ async function upsertBacktestingSettings(settings) {
     updated_at: new Date().toISOString()
   };
 
-  const { data, error } = await supabase
+  const sessionOk = await ensureFreshSupabaseSession();
+  if (!sessionOk) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
+
+  // Nota: antes se encadenaba .select().maybeSingle() tras el upsert para devolver la fila
+  // actualizada. Si esa lectura de confirmación fallaba (p. ej. por un hipo de red o de RLS
+  // en la réplica de lectura) se reportaba como error aunque la escritura ya se hubiera
+  // guardado correctamente -- el usuario veía "no se pudo guardar" pero al recargar la
+  // estrategia/ajuste sí estaba ahí. Separamos ambos pasos: el éxito depende solo de que el
+  // upsert (la escritura) no haya devuelto error; la lectura de confirmación es best-effort.
+  const { error: upsertError } = await supabase
     .from('backtesting_settings')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select()
-    .maybeSingle();
+    .upsert(payload, { onConflict: 'user_id' });
 
-  if (error) return { success: false, error };
+  if (upsertError) {
+    console.error('❌ upsertBacktestingSettings:', upsertError);
+    return { success: false, error: friendlyServiceError(upsertError) };
+  }
 
-  return { success: true, data: data ? normalizeRow(data) : null };
+  return { success: true, data: normalizeRow(payload) };
 }
 
 module.exports = {

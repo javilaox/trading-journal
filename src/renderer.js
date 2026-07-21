@@ -790,8 +790,10 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-result-badge.tp{color:var(--green);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
 #backtestingView .bt-result-badge.sl{color:#ef4444;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28)}
 #backtestingView .bt-result-badge.be{color:var(--text-muted);background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.24)}
-#backtestingView .bt-day-trade-actions{display:flex;justify-content:flex-end;margin-top:10px}
+#backtestingView .bt-day-trade-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 #backtestingView .bt-day-trade-edit{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.10);color:var(--green);font-weight:800;cursor:pointer}
+#backtestingView .bt-day-trade-delete{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(239,68,68,.28);background:rgba(239,68,68,.10);color:#ef4444;font-weight:800;cursor:pointer}
+#backtestingView .bt-day-trade-delete:hover{background:rgba(239,68,68,.18)}
 `;
   document.head.appendChild(style);
 }
@@ -2616,6 +2618,7 @@ const {
   buildStrategyByNameMap,
   formatOperatingHoursSummary,
   getTradeScheduleStatus,
+  formatMinutesAsHm,
 } = require('./services/scheduleUtils');
 const {
   parsePositionLegs,
@@ -3252,7 +3255,7 @@ let backtestingCurrentYear = new Date().getFullYear();
 let selectedBacktestingDate = '';
 let editingBacktestingTradeId = null;
 let btManagementCollapsed = true;
-let btResultCollapsed = true;
+let btResultCollapsed = false;
 /** Unidad de riesgo en el modal Nueva/Editar estrategia (`'eur'` | `'percent'`). */
 let btStrategyRiskUnit = 'eur';
 const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
@@ -4179,14 +4182,183 @@ function initTradeDatepicker(inputId = 'date') {
   if (clearBtn) clearBtn.textContent = t('clear');
 }
 
+let tradeTimepickerRoots = [];
+
+function closeTradeTimepickers(exceptElement = null) {
+  tradeTimepickerRoots.forEach((root) => {
+    if (!exceptElement || root !== exceptElement) {
+      root.classList.remove('open');
+    }
+  });
+}
+
+/** Selector de hora propio (mismo patrón que initTradeDatepicker): sustituye el picker nativo
+ * del navegador por columnas de horas/minutos con el estilo de la app. El <input type="time">
+ * original se mantiene oculto como fuente de verdad del valor (formato HH:MM) para no romper
+ * el resto de lógica (validaciones de horario, cálculos de duración, etc.) que ya lee/escribe
+ * ese input directamente. */
+function initTradeTimepicker(inputId) {
+  const nativeInput = document.getElementById(inputId);
+  if (!nativeInput || nativeInput.dataset.customTimepickerBound === 'true') return;
+
+  nativeInput.dataset.customTimepickerBound = 'true';
+  nativeInput.classList.add('native-time-hidden');
+
+  const custom = document.createElement('div');
+  custom.className = 'custom-timepicker';
+  custom.innerHTML = `
+    <button type="button" class="timepicker-trigger">
+      <span class="timepicker-trigger-label"></span>
+      <span class="timepicker-trigger-icon"><i data-lucide="clock"></i></span>
+    </button>
+    <div class="timepicker-popup">
+      <div class="timepicker-columns">
+        <div class="timepicker-col timepicker-col-hours"></div>
+        <div class="timepicker-col timepicker-col-minutes"></div>
+      </div>
+      <div class="timepicker-actions">
+        <button type="button" class="timepicker-action-btn now-btn"></button>
+        <button type="button" class="timepicker-action-btn clear-btn"></button>
+      </div>
+    </div>
+  `;
+  nativeInput.insertAdjacentElement('afterend', custom);
+  tradeTimepickerRoots.push(custom);
+
+  const trigger = custom.querySelector('.timepicker-trigger');
+  const triggerLabel = custom.querySelector('.timepicker-trigger-label');
+  const popup = custom.querySelector('.timepicker-popup');
+  const hoursCol = custom.querySelector('.timepicker-col-hours');
+  const minutesCol = custom.querySelector('.timepicker-col-minutes');
+  const nowBtn = custom.querySelector('.now-btn');
+  const clearBtn = custom.querySelector('.clear-btn');
+
+  // El popup usa position:fixed (ver comentario en el CSS de .timepicker-popup), así que hay
+  // que posicionarlo a mano con las coordenadas reales del trigger en pantalla.
+  const positionPopup = () => {
+    if (!popup) return;
+    const rect = trigger.getBoundingClientRect();
+    const popupWidth = 190;
+    const estimatedPopupHeight = 260;
+    const left = Math.min(rect.left, window.innerWidth - popupWidth - 12);
+    const fitsBelow = rect.bottom + 8 + estimatedPopupHeight <= window.innerHeight;
+    const top = fitsBelow ? rect.bottom + 8 : Math.max(8, rect.top - estimatedPopupHeight - 8);
+    popup.style.top = `${top}px`;
+    popup.style.left = `${Math.max(8, left)}px`;
+  };
+
+  const parseValue = () => {
+    const m = /^(\d{2}):(\d{2})$/.exec(String(nativeInput.value || ''));
+    return m ? { h: Number(m[1]), m: Number(m[2]) } : null;
+  };
+
+  const syncLabel = () => {
+    const value = nativeInput.value || '';
+    triggerLabel.textContent = value || t('select_time', 'Selecciona hora');
+    custom.classList.toggle('has-value', Boolean(value));
+  };
+
+  const renderColumns = () => {
+    const parsed = parseValue();
+    hoursCol.innerHTML = '';
+    for (let h = 0; h < 24; h += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'timepicker-option';
+      btn.textContent = String(h).padStart(2, '0');
+      if (parsed && parsed.h === h) btn.classList.add('selected');
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const current = parseValue();
+        selectTime(h, current ? current.m : 0);
+      });
+      hoursCol.appendChild(btn);
+    }
+    minutesCol.innerHTML = '';
+    for (let m = 0; m < 60; m += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'timepicker-option';
+      btn.textContent = String(m).padStart(2, '0');
+      if (parsed && parsed.m === m) btn.classList.add('selected');
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const current = parseValue();
+        selectTime(current ? current.h : 0, m);
+      });
+      minutesCol.appendChild(btn);
+    }
+  };
+
+  function selectTime(h, m) {
+    nativeInput.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    syncLabel();
+    renderColumns();
+  }
+
+  const scrollSelectedIntoView = () => {
+    [hoursCol, minutesCol].forEach((col) => {
+      const sel = col.querySelector('.timepicker-option.selected');
+      if (sel) sel.scrollIntoView({ block: 'center' });
+      else col.scrollTop = 0;
+    });
+  };
+
+  trigger?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const willOpen = !custom.classList.contains('open');
+    closeAllCustomSelects();
+    closeTradeDatepicker();
+    closeTradeTimepickers();
+    if (!willOpen) return;
+    renderColumns();
+    positionPopup();
+    custom.classList.add('open');
+    scrollSelectedIntoView();
+  });
+
+  nowBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const now = new Date();
+    selectTime(now.getHours(), now.getMinutes());
+    scrollSelectedIntoView();
+  });
+
+  clearBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    nativeInput.value = '';
+    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    syncLabel();
+    renderColumns();
+    custom.classList.remove('open');
+  });
+
+  nativeInput.addEventListener('change', () => {
+    syncLabel();
+    if (custom.classList.contains('open')) renderColumns();
+  });
+
+  const refreshTimepickerI18n = () => {
+    if (nowBtn) nowBtn.textContent = t('time_now', 'Ahora');
+    if (clearBtn) clearBtn.textContent = t('clear');
+    syncLabel();
+  };
+  custom.refreshTimepickerI18n = refreshTimepickerI18n;
+
+  syncLabel();
+  if (nowBtn) nowBtn.textContent = t('time_now', 'Ahora');
+  if (clearBtn) clearBtn.textContent = t('clear');
+  refreshLucideIcons();
+}
+
 function refreshCustomSelectForNative(nativeSelect) {
   if (!nativeSelect || nativeSelect.tagName !== 'SELECT') return;
   if (
     nativeSelect.id === 'asset' ||
     nativeSelect.id === 'btAsset' ||
     nativeSelect.id === 'btDirection' ||
-    nativeSelect.id === 'btAccount' ||
-    nativeSelect.closest('#btSessionModalOverlay')
+    nativeSelect.id === 'btAccount'
   ) {
     return;
   }
@@ -4235,6 +4407,13 @@ function refreshCustomSelectForNative(nativeSelect) {
     if (option.disabled) optionElement.classList.add('disabled');
 
     optionElement.addEventListener('click', (event) => {
+      // preventDefault() además de stopPropagation(): en algunos formularios (p. ej. el modal
+      // de sesión de backtesting) el <select> nativo está envuelto en un <label>, y el propio
+      // <select> (aunque oculto por .native-select-hidden) sigue siendo su control asociado.
+      // Sin preventDefault(), el navegador reenvía el click del label al <select> oculto
+      // (comportamiento nativo de <label>), lo que puede "tragarse" el click y hacer que el
+      // desplegable no llegue a abrirse o se cierre inmediatamente.
+      event.preventDefault();
       event.stopPropagation();
       if (option.disabled) return;
       nativeSelect.value = option.value;
@@ -4249,6 +4428,9 @@ function refreshCustomSelectForNative(nativeSelect) {
   });
 
   selected.onclick = (event) => {
+    // Ver comentario arriba: preventDefault() evita que un <label> ancestro reenvíe el click
+    // al <select> nativo oculto.
+    event.preventDefault();
     event.stopPropagation();
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects(custom);
@@ -4281,9 +4463,7 @@ function initCustomSelects(root = document) {
       select.id === 'asset' ||
       select.id === 'btAsset' ||
       select.id === 'btDirection' ||
-      select.id === 'btAccount' ||
-      select.closest('#btSessionModalOverlay') ||
-      select.closest('#btStrategyModalOverlay')
+      select.id === 'btAccount'
     ) {
       return;
     }
@@ -4342,17 +4522,20 @@ function normalizeAccount(account) {
       capital: 0,
       commissionPerLot: 0,
       freeSwap: false,
+      prop_name: null,
       client_uuid: null,
       remote_id: null,
       id: null,
       previous_names: [],
     };
   }
+  const propName = String(account?.prop_name ?? '').trim();
   return {
     name: (account?.name || '').trim(),
     capital: Number(account?.capital ?? account?.balance) || 0,
     commissionPerLot: resolveAccountCommissionPerLot(account),
     freeSwap: Boolean(account?.freeSwap ?? account?.free_swap),
+    prop_name: propName || null,
     client_uuid: account?.client_uuid ? String(account.client_uuid) : null,
     remote_id: account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id) : null,
     id: account?.id != null && account.id !== '' ? account.id : null,
@@ -5249,28 +5432,50 @@ async function loadWithdrawalsCache() {
   }
 }
 
+// El filtro de Retiros funciona por PROP (compartida con Gastos); el select del formulario
+// es un vínculo OPCIONAL a una cuenta real configurada (independiente de la prop escrita).
 function fillWithdrawalAccountSelects() {
-  const names = getAccounts().map((account) => account.name);
-  const filterPlaceholder = t('all_accounts', 'Todas las cuentas');
-  const formPlaceholder = t('placeholder_select_account', 'Selecciona cuenta');
-  ['withdrawalFilterAccount', 'withdrawalFormAccount'].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const prev = sel.value;
-    const isFilter = id === 'withdrawalFilterAccount';
-    sel.innerHTML = '';
+  const props = getKnownExpenseProps();
+  const filterSel = document.getElementById('withdrawalFilterAccount');
+  if (filterSel) {
+    const prev = filterSel.value;
+    filterSel.innerHTML = '';
     const base = document.createElement('option');
     base.value = '';
-    base.textContent = isFilter ? filterPlaceholder : formPlaceholder;
-    sel.appendChild(base);
+    base.textContent = t('withdrawals_all_props', 'Todas las props');
+    filterSel.appendChild(base);
+    props.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      filterSel.appendChild(opt);
+    });
+    if (prev && props.includes(prev)) filterSel.value = prev;
+  }
+
+  const names = getAccounts().map((account) => account.name);
+  const formSel = document.getElementById('withdrawalFormAccount');
+  if (formSel) {
+    const prev = formSel.value;
+    formSel.innerHTML = '';
+    const base = document.createElement('option');
+    base.value = '';
+    base.textContent = t('withdrawals_account_optional_placeholder', 'Sin vincular a una cuenta');
+    formSel.appendChild(base);
     names.forEach((name) => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
-      sel.appendChild(opt);
+      formSel.appendChild(opt);
     });
-    if (prev && names.includes(prev)) sel.value = prev;
-  });
+    if (prev && names.includes(prev)) formSel.value = prev;
+  }
+
+  // Estos selects reconstruyen su innerHTML aquí; sin refrescar el "custom-select" que los
+  // envuelve, su etiqueta visible se queda desactualizada (options viejas o valor no reflejado)
+  // aunque el <select> nativo subyacente sí tenga el valor correcto.
+  refreshCustomSelectForNative(filterSel);
+  refreshCustomSelectForNative(formSel);
 }
 
 function getFilteredWithdrawalsList() {
@@ -5285,10 +5490,17 @@ function getFilteredWithdrawalsList() {
   });
 }
 
+// El filtro es una prop, no una cuenta real; el scope de trades se calcula a partir de las
+// cuentas reales vinculadas a esa prop (por account.prop_name) o cuyo propio nombre coincida
+// (compatibilidad con retiros antiguos, que usaban el nombre de cuenta como "prop").
 function getWithdrawalTradeScope() {
-  const account = document.getElementById('withdrawalFilterAccount')?.value || '';
-  if (!account) return cachedTrades;
-  return cachedTrades.filter((trade) => String(trade.account || '') === account);
+  const propFilter = document.getElementById('withdrawalFilterAccount')?.value || '';
+  if (!propFilter) return cachedTrades;
+  const matchingAccountNames = getAccounts()
+    .filter((acc) => acc.name === propFilter || String(acc.prop_name || '').trim() === propFilter)
+    .map((acc) => acc.name);
+  if (!matchingAccountNames.length) return [];
+  return cachedTrades.filter((trade) => matchingAccountNames.includes(String(trade.account || '')));
 }
 
 function renderWithdrawalsSummary(list, globalMetrics) {
@@ -5303,7 +5515,7 @@ function renderWithdrawalsSummary(list, globalMetrics) {
   set('withdrawalSummaryTotal', formatWithdrawalEuro(total));
   set('withdrawalSummaryCount', String(count));
   set('withdrawalSummaryAvg', formatWithdrawalEuro(avg));
-  set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${last.date}` : '—');
+  set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${formatDateEs(last.date)}` : '—');
   // Nota: el balance global ahora se muestra en el banner compartido de #managementView
   // (ver renderManagementBalanceBanner), no aquí; globalMetrics se conserva por compatibilidad de firma.
   void globalMetrics;
@@ -5375,9 +5587,9 @@ function renderWithdrawalsTable(list) {
   list.forEach((w) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtmlChipText(w.date || '')}</td>
+      <td>${escapeHtmlChipText(formatDateEs(w.date))}</td>
       <td>${escapeHtmlChipText(w.account_name || w.accountName || '')}</td>
-      <td class="wd-amount">${formatWithdrawalEuro(w.amount)}</td>
+      <td class="wd-amount wd-amount-withdrawal">${formatWithdrawalEuro(w.amount)}</td>
       <td>${escapeHtmlChipText(w.note || '—')}</td>
       <td class="withdrawals-actions">
         <button type="button" class="withdrawals-action-btn" data-withdrawal-edit="${w.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
@@ -5395,12 +5607,13 @@ function renderWithdrawalsTable(list) {
 
 async function refreshWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
-  await loadWithdrawalsCache();
+  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache()]);
   fillWithdrawalAccountSelects();
   const filtered = getFilteredWithdrawalsList();
   const accounts = getAccounts().map((account) => ({
     name: account.name,
     capital: Number(account.capital ?? 0) || 0,
+    prop_name: account.prop_name || null,
   }));
   const globalMetrics = calculateWithdrawalMetrics(withdrawalsCache, cachedTrades, accounts);
   const filteredMetrics = calculateWithdrawalMetrics(filtered, getWithdrawalTradeScope(), accounts);
@@ -5431,6 +5644,22 @@ function setWithdrawalModalTitle(isEdit) {
     : t('withdrawals_modal_title_new', 'Nuevo retiro');
 }
 
+// Resuelve el nombre de la cuenta real vinculada (opcional) a un retiro existente, a partir
+// de account_client_uuid/account_id, para poder preseleccionarla al editar.
+function findLinkedAccountNameForWithdrawal(w) {
+  if (!w) return '';
+  const accounts = getAccounts();
+  if (w.account_client_uuid) {
+    const hit = accounts.find((a) => a.client_uuid && a.client_uuid === w.account_client_uuid);
+    if (hit) return hit.name;
+  }
+  if (w.account_id) {
+    const hit = accounts.find((a) => a.remote_id && String(a.remote_id) === String(w.account_id));
+    if (hit) return hit.name;
+  }
+  return '';
+}
+
 function openWithdrawalModal({ editId = null } = {}) {
   const overlay = document.getElementById('withdrawalModalOverlay');
   if (!overlay) return;
@@ -5440,11 +5669,13 @@ function openWithdrawalModal({ editId = null } = {}) {
     const w = withdrawalsCache.find((row) => row.id === editId);
     if (!w) return;
     editingWithdrawalId = editId;
-    const accountInput = document.getElementById('withdrawalFormAccount');
+    const propInput = document.getElementById('withdrawalFormProp');
+    const accountLinkSelect = document.getElementById('withdrawalFormAccount');
     const dateInput = document.getElementById('withdrawalFormDate');
     const amountInput = document.getElementById('withdrawalFormAmount');
     const noteInput = document.getElementById('withdrawalFormNote');
-    if (accountInput) accountInput.value = w.account_name || w.accountName || '';
+    if (propInput) propInput.value = w.account_name || w.accountName || '';
+    if (accountLinkSelect) accountLinkSelect.value = findLinkedAccountNameForWithdrawal(w);
     if (dateInput) dateInput.value = w.date || '';
     if (amountInput) amountInput.value = String(w.amount ?? '');
     if (noteInput) noteInput.value = w.note || '';
@@ -5456,8 +5687,11 @@ function openWithdrawalModal({ editId = null } = {}) {
     const saveBtn = document.getElementById('saveWithdrawalBtn');
     if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
   }
+  // El valor de "Cuenta (opcional)" se asigna arriba con .value = ... directamente (sin evento
+  // change), así que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
+  refreshCustomSelectForNative(document.getElementById('withdrawalFormAccount'));
   overlay.classList.add('active');
-  document.getElementById('withdrawalFormAccount')?.focus();
+  document.getElementById('withdrawalFormProp')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -5475,8 +5709,10 @@ function resetWithdrawalForm({ keepEditingId = false } = {}) {
   if (amountInput) amountInput.value = '';
   const noteInput = document.getElementById('withdrawalFormNote');
   if (noteInput) noteInput.value = '';
-  const accountInput = document.getElementById('withdrawalFormAccount');
-  if (accountInput) accountInput.value = '';
+  const propInput = document.getElementById('withdrawalFormProp');
+  if (propInput) propInput.value = '';
+  const accountLinkSelect = document.getElementById('withdrawalFormAccount');
+  if (accountLinkSelect) accountLinkSelect.value = '';
   const saveBtn = document.getElementById('saveWithdrawalBtn');
   if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
   setWithdrawalModalTitle(false);
@@ -5487,17 +5723,18 @@ function startEditWithdrawal(id) {
 }
 
 async function saveWithdrawalAction() {
-  const account = document.getElementById('withdrawalFormAccount')?.value?.trim();
+  const prop = document.getElementById('withdrawalFormProp')?.value?.trim();
+  const linkedAccountName = document.getElementById('withdrawalFormAccount')?.value?.trim() || '';
   const date = document.getElementById('withdrawalFormDate')?.value;
   const amount = Number(document.getElementById('withdrawalFormAmount')?.value);
   const note = document.getElementById('withdrawalFormNote')?.value?.trim() || '';
-  if (!account || !date || !Number.isFinite(amount) || amount <= 0) {
-    showToast(t('withdrawals_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
+  if (!prop || !date || !Number.isFinite(amount) || amount <= 0) {
+    showToast(t('withdrawals_validation_error', 'Completa la prop, fecha e importe válido'), 'error');
     return;
   }
   const backend = getBackendApi();
   if (!backend) return;
-  const payload = { account_name: account, date, amount, note };
+  const payload = { account_name: prop, linked_account_name: linkedAccountName, date, amount, note };
   let res;
   if (editingWithdrawalId) {
     const existing = withdrawalsCache.find((w) => w.id === editingWithdrawalId);
@@ -5514,8 +5751,10 @@ async function saveWithdrawalAction() {
     return;
   }
   closeWithdrawalModal();
+  await registerExpensePropIfNew(prop);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshWithdrawalsUI();
+  renderManagementBalanceBanner();
   showToast(t('withdrawals_saved', 'Retiro guardado'), 'success');
 }
 
@@ -5536,11 +5775,13 @@ async function deleteWithdrawalAction(id) {
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   if (editingWithdrawalId === id) closeWithdrawalModal();
   await refreshWithdrawalsUI();
+  renderManagementBalanceBanner();
   showToast(t('withdrawals_deleted', 'Retiro eliminado'));
 }
 
 function initWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
+  attachSuggestDropdown('withdrawalFormProp', 'withdrawalFormPropSuggest', getKnownExpenseProps);
   const openModal = () => openWithdrawalModal();
   document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
   document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
@@ -5625,9 +5866,10 @@ async function registerExpensePropIfNew(name) {
   }
 }
 
-// Las props de gastos no dependen de las cuentas reales configuradas: el usuario las escribe
-// libremente en el campo "Prop". Se sugieren a partir de la lista persistida, más el histórico
-// de gastos ya guardados (por si hay datos previos a la existencia de la lista persistida).
+// Las props no dependen de las cuentas reales configuradas: el usuario las escribe libremente
+// en el campo "Prop" (compartido entre Gastos y Retiros). Se sugieren a partir de la lista
+// persistida, más el histórico de gastos y retiros ya guardados (por si hay datos previos a la
+// existencia de la lista persistida, o retiros antiguos que usaban el nombre de una cuenta real).
 function getKnownExpenseProps() {
   const names = new Set();
   expensePropsCache.forEach((p) => {
@@ -5636,6 +5878,10 @@ function getKnownExpenseProps() {
   });
   expensesCache.forEach((e) => {
     const name = String(e.account_name || e.accountName || '').trim();
+    if (name) names.add(name);
+  });
+  withdrawalsCache.forEach((w) => {
+    const name = String(w.account_name || w.accountName || '').trim();
     if (name) names.add(name);
   });
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -5661,6 +5907,9 @@ function fillExpenseAccountSelects() {
     });
     if (prev && names.includes(prev)) filterSel.value = prev;
   }
+  // Igual que en fillWithdrawalAccountSelects: refrescamos el custom-select tras reconstruir
+  // las opciones del <select> nativo para que la etiqueta visible no quede desactualizada.
+  refreshCustomSelectForNative(filterSel);
 
   // El campo del formulario usa el panel de sugerencias propio (ver attachSuggestDropdown),
   // que lee getKnownExpenseProps() en caliente; no necesita repoblarse aquí.
@@ -5690,7 +5939,7 @@ function renderExpensesSummary(list) {
   set('expenseSummaryTotal', formatExpenseEuro(total));
   set('expenseSummaryCount', String(count));
   set('expenseSummaryAvg', formatExpenseEuro(avg));
-  set('expenseSummaryLast', last ? `${formatExpenseEuro(last.amount)} · ${last.date}` : '—');
+  set('expenseSummaryLast', last ? `${formatExpenseEuro(last.amount)} · ${formatDateEs(last.date)}` : '—');
 }
 
 function renderExpensesAnalytics(metrics) {
@@ -5758,11 +6007,11 @@ function renderExpensesTable(list) {
   list.forEach((e) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtmlChipText(e.date || '')}</td>
+      <td>${escapeHtmlChipText(formatDateEs(e.date))}</td>
       <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
       <td>${escapeHtmlChipText(e.account_size || '—')}</td>
       <td>${escapeHtmlChipText(e.category || '—')}</td>
-      <td class="wd-amount">${formatExpenseEuro(e.amount)}</td>
+      <td class="wd-amount wd-amount-expense">${formatExpenseEuro(e.amount)}</td>
       <td>${escapeHtmlChipText(e.note || '—')}</td>
       <td class="withdrawals-actions">
         <button type="button" class="withdrawals-action-btn" data-expense-edit="${e.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
@@ -5840,6 +6089,9 @@ function openExpenseModal({ editId = null } = {}) {
     const saveBtn = document.getElementById('saveExpenseBtn');
     if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
   }
+  // "Tamaño de cuenta" se asigna arriba con .value = ... directamente (sin evento change), así
+  // que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
+  refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
   overlay.classList.add('active');
   document.getElementById('expenseFormAccount')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -6034,24 +6286,54 @@ function switchManagementTab(tab) {
   document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
 }
 
+let backtestingViewActiveTab = 'trades';
+
+/** Pestañas dentro de una sesión de backtesting: "Trades" (calendario + registro de
+ * operaciones del día) vs "Estadísticas" (KPIs, disciplina por horario, análisis, simulaciones).
+ * Separadas para reducir ruido visual; antes iba todo seguido en una sola vista muy larga. */
+function switchBacktestingViewTab(tab) {
+  backtestingViewActiveTab = tab === 'stats' ? 'stats' : 'trades';
+  const showTrades = backtestingViewActiveTab === 'trades';
+  document.querySelectorAll('.bt-tab-panel-trades').forEach((el) => {
+    el.hidden = !showTrades;
+  });
+  document.querySelectorAll('.bt-tab-panel-stats').forEach((el) => {
+    el.hidden = showTrades;
+  });
+  document.getElementById('btViewTabBtnTrades')?.classList.toggle('active', showTrades);
+  document.getElementById('btViewTabBtnTrades')?.setAttribute('aria-selected', String(showTrades));
+  document.getElementById('btViewTabBtnStats')?.classList.toggle('active', !showTrades);
+  document.getElementById('btViewTabBtnStats')?.setAttribute('aria-selected', String(!showTrades));
+}
+
+function initBacktestingViewTabs() {
+  if (!document.getElementById('backtestingView')) return;
+  document.getElementById('btViewTabBtnTrades')?.addEventListener('click', () => switchBacktestingViewTab('trades'));
+  document.getElementById('btViewTabBtnStats')?.addEventListener('click', () => switchBacktestingViewTab('stats'));
+  switchBacktestingViewTab('trades');
+}
+
 function renderManagementBalanceBanner() {
-  const accounts = getAccounts().map((account) => ({
-    name: account.name,
-    capital: Number(account.capital ?? 0) || 0,
-  }));
-  const operationalNet = cachedTrades.reduce((sum, t) => sum + tradeOperationalNet(t), 0);
-  const totalCapital = accounts.reduce((sum, a) => sum + a.capital, 0);
+  // Nota: se eliminó el antiguo "Balance global estimado" (capital + PnL operativo - retiros -
+  // gastos) porque mezclaba conceptos y confundía al usuario; el banner de Gestión ahora se
+  // centra solo en el propio flujo de retiros/gastos (total retirado, total gastado y su neto).
   const totalWithdrawn = withdrawalsCache.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const totalSpent = expensesCache.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const globalBalance = totalCapital + operationalNet - totalWithdrawn - totalSpent;
+  const netWithdrawalVsExpense = totalWithdrawn - totalSpent;
 
   const set = (id, text) => {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
-  set('managementBalanceGlobal', formatWithdrawalEuro(globalBalance));
+
   set('managementBalanceWithdrawn', formatWithdrawalEuro(totalWithdrawn));
   set('managementBalanceSpent', formatNegativeEuro(totalSpent));
+  set('managementBalanceNet', formatWithdrawalEuro(netWithdrawalVsExpense));
+  const netEl = document.getElementById('managementBalanceNet');
+  if (netEl) {
+    netEl.classList.toggle('positive', netWithdrawalVsExpense >= 0);
+    netEl.classList.toggle('negative', netWithdrawalVsExpense < 0);
+  }
 }
 
 async function refreshManagementUI() {
@@ -6080,16 +6362,31 @@ function countTradesForAccount(account) {
   return cachedTrades.filter((t) => names.has(String(t.account || ''))).length;
 }
 
-function getAccountWithdrawalStats(accountName) {
-  const list = withdrawalsCache.filter((w) => String(w.account_name || w.accountName) === accountName);
+// Acepta un nombre de cuenta (string, uso legacy) o el objeto de cuenta completo. Cuando se
+// pasa el objeto, además de por nombre de cuenta (retiros/gastos antiguos que usaban el nombre
+// de cuenta como "prop"), hace match por account.prop_name: así un retiro/gasto registrado con
+// la prop vinculada a esta cuenta cuenta también para su balance estimado, aunque no se haya
+// elegido explícitamente esta cuenta en el campo opcional del formulario.
+function getAccountWithdrawalStats(account) {
+  const name = typeof account === 'string' ? account : String(account?.name || '');
+  const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
+  const list = withdrawalsCache.filter((w) => {
+    const wName = String(w.account_name || w.accountName || '');
+    return wName === name || (propName && wName === propName);
+  });
   const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const count = list.length;
   const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
   return { withdrawn, count, last };
 }
 
-function getAccountExpenseStats(accountName) {
-  const list = expensesCache.filter((e) => String(e.account_name || e.accountName) === accountName);
+function getAccountExpenseStats(account) {
+  const name = typeof account === 'string' ? account : String(account?.name || '');
+  const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
+  const list = expensesCache.filter((e) => {
+    const eName = String(e.account_name || e.accountName || '');
+    return eName === name || (propName && eName === propName);
+  });
   const spent = list.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const count = list.length;
   const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
@@ -6098,8 +6395,8 @@ function getAccountExpenseStats(accountName) {
 
 function getAccountEstimatedBalance(account) {
   const names = getAccountTradeNames(account);
-  const stats = getAccountWithdrawalStats(account.name);
-  const expenseStats = getAccountExpenseStats(account.name);
+  const stats = getAccountWithdrawalStats(account);
+  const expenseStats = getAccountExpenseStats(account);
   const operationalNet = cachedTrades
     .filter((t) => names.has(String(t.account || '')))
     .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
@@ -6175,12 +6472,13 @@ function renderSettingsAccountsList() {
   }
   listEl.innerHTML = accounts
     .map((account) => {
-      const stats = getAccountWithdrawalStats(account.name);
-      const expenseStats = getAccountExpenseStats(account.name);
+      const stats = getAccountWithdrawalStats(account);
+      const expenseStats = getAccountExpenseStats(account);
       const balance = getAccountEstimatedBalance(account);
       const tradeCount = countTradesForAccount(account);
       const badges = [];
       if (account.freeSwap) badges.push(`<span class="settings-entity-badge">Free Swap</span>`);
+      if (account.prop_name) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(account.prop_name)}</span>`);
       return `
         <article class="settings-entity-card" role="listitem" ${buildAccountCardDataAttrs(account)}>
           <div class="settings-entity-card-main">
@@ -6250,15 +6548,15 @@ function updateAccountModalSummary(account) {
     if (summaryEl) summaryEl.hidden = true;
     return;
   }
-  const stats = getAccountWithdrawalStats(account.name);
-  const expenseStats = getAccountExpenseStats(account.name);
+  const stats = getAccountWithdrawalStats(account);
+  const expenseStats = getAccountExpenseStats(account);
   const balance = getAccountEstimatedBalance(account);
   const tradeCount = countTradesForAccount(account);
   summaryEl.hidden = false;
   summaryEl.innerHTML = `
     <div><strong>Resumen</strong></div>
     <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
-    <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${stats.last.date})` : '—'}</strong></div>
+    <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${formatDateEs(stats.last.date)})` : '—'}</strong></div>
     <div>Total gastado: <strong>${formatNegativeEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
     <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
     <div>Trades asociados: <strong>${tradeCount}</strong></div>`;
@@ -6292,12 +6590,14 @@ function openAccountDetailModal(account = null) {
   if (deleteBtn) deleteBtn.hidden = !isEdit;
   if (account) {
     document.getElementById('accountModalName').value = account.name || '';
+    document.getElementById('accountModalProp').value = account.prop_name || '';
     document.getElementById('accountModalCapital').value = String(account.capital ?? '');
     document.getElementById('accountModalCommission').value = String(account.commissionPerLot ?? '');
     document.getElementById('accountModalFreeSwap').checked = Boolean(account.freeSwap);
     updateAccountModalSummary(account);
   } else {
     document.getElementById('accountModalName').value = '';
+    document.getElementById('accountModalProp').value = '';
     document.getElementById('accountModalCapital').value = '';
     document.getElementById('accountModalCommission').value = '';
     document.getElementById('accountModalFreeSwap').checked = false;
@@ -6344,6 +6644,7 @@ async function saveAccountFromModal() {
   clearAccountModalFeedback();
 
   const name = String(document.getElementById('accountModalName')?.value || '').trim();
+  const propName = String(document.getElementById('accountModalProp')?.value || '').trim();
   const capital = parseNumericField(document.getElementById('accountModalCapital')?.value, 0);
   const commissionPerLot = parseNumericField(document.getElementById('accountModalCommission')?.value, 0);
   const freeSwap = Boolean(document.getElementById('accountModalFreeSwap')?.checked);
@@ -6361,7 +6662,7 @@ async function saveAccountFromModal() {
     return;
   }
 
-  const payload = { name, capital, commissionPerLot, freeSwap };
+  const payload = { name, prop_name: propName || null, capital, commissionPerLot, freeSwap };
   const isEdit = hasStableIdentity(accountModalIdentity);
   const existing = isEdit ? findAccountByIdentity(accountModalIdentity) : null;
   const originalName = accountModalIdentity?.originalName || existing?.name || null;
@@ -6457,6 +6758,7 @@ async function saveAccountFromModal() {
     }
   }
 
+  await registerExpensePropIfNew(propName);
   await syncRealListsFromStorage();
   setAccountModalSuccess(t('account_saved_ok', 'Cuenta actualizada correctamente'));
   await loadAccounts();
@@ -6471,8 +6773,8 @@ async function deleteAccountWithConfirmation(account, identity) {
   if (!account) return false;
   const id = identity || identityFromAccount(account);
   const tradeCount = countTradesForAccount(account);
-  const withdrawalCount = getAccountWithdrawalStats(account.name).count;
-  const expenseCount = getAccountExpenseStats(account.name).count;
+  const withdrawalCount = getAccountWithdrawalStats(account).count;
+  const expenseCount = getAccountExpenseStats(account).count;
   const statsLines = [`Trades asociados: <strong>${tradeCount}</strong>`];
   if (withdrawalCount > 0) {
     statsLines.push(`Retiros asociados: <strong>${withdrawalCount}</strong>`);
@@ -6686,6 +6988,7 @@ function initSettingsEntityListDelegation() {
 
 function initAccountStrategyModals() {
   initSettingsEntityListDelegation();
+  attachSuggestDropdown('accountModalProp', 'accountModalPropSuggest', getKnownExpenseProps);
   document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
   document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());
   document.getElementById('saveAccountDetailModalBtn')?.addEventListener('click', () => {
@@ -9960,6 +10263,101 @@ function computeSessionProgress(session, tradesForSession) {
   return { total_days, tested_days, pending_days, progress_percent };
 }
 
+/** Aplica al formulario de "Nueva operación" el contexto de la sesión activa (par permitido,
+ * estrategia y riesgo € de esa estrategia), y deja el PnL auto-calculado listo si Resultado ya
+ * tiene un valor (normalmente TP por defecto). Se usa tanto al pulsar "Trabajar" en una sesión
+ * como después de guardar cada trade, para que la sesión activa se mantenga entre operaciones
+ * y no haya que volver a pulsar "Trabajar" para cada trade nuevo. */
+function applyActiveBacktestingSessionToTradeForm(opts = {}) {
+  const { jumpToStartDate = false } = opts;
+  const id = Number(activeBacktestingSessionId);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  const session = cachedBacktestingSessions.find((s) => Number(s.id) === id);
+  if (!session) return;
+
+  if (jumpToStartDate) {
+    const startKey = (session.start_date || '').slice(0, 10);
+    selectedBacktestingDate = startKey;
+    const dateInput = document.getElementById('btDate');
+    if (dateInput && startKey) dateInput.value = startKey;
+  }
+
+  const assetInput = document.getElementById('btAsset');
+  const allowedPairs = getSessionPairs(session);
+
+  if (assetInput) {
+    if (typeof backtestingAssetComboboxState?.rebuildFromSettings === 'function') {
+      backtestingAssetComboboxState.rebuildFromSettings();
+    }
+
+    if (allowedPairs.length === 1) {
+      const only = allowedPairs[0];
+      ensureSelectHasValue(assetInput, only);
+      assetInput.value = only;
+      assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      if (backtestingAssetComboboxState) {
+        backtestingAssetComboboxState.selectedValue = only;
+        backtestingAssetComboboxState.value = only;
+        if (typeof backtestingAssetComboboxState.setValue === 'function') {
+          backtestingAssetComboboxState.setValue(only);
+        }
+      }
+    } else if (allowedPairs.length > 1) {
+      const cur = String(assetInput.value || '').trim();
+      if (cur && allowedPairs.includes(cur)) {
+        ensureSelectHasValue(assetInput, cur);
+        assetInput.value = cur;
+        assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+        if (backtestingAssetComboboxState) {
+          backtestingAssetComboboxState.selectedValue = cur;
+          backtestingAssetComboboxState.value = cur;
+          if (typeof backtestingAssetComboboxState.setValue === 'function') {
+            backtestingAssetComboboxState.setValue(cur);
+          }
+        }
+      } else if (typeof backtestingAssetComboboxState?.setValue === 'function') {
+        backtestingAssetComboboxState.setValue('');
+      } else {
+        assetInput.value = '';
+        assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+
+  const strategyInput = document.getElementById('btStrategy');
+  if (strategyInput && session.strategy) {
+    ensureSelectHasValue(strategyInput, session.strategy);
+    strategyInput.value = session.strategy;
+    refreshBacktestingCustomSelect(strategyInput);
+  }
+
+  const strategyConfig = getBacktestingStrategies().find((s) => s.name === session.strategy);
+  if (strategyConfig) {
+    const riskInput = document.getElementById('btRisk');
+    if (riskInput && !riskInput.value) {
+      const auto = getBacktestingStrategyRiskEuroForForm(strategyConfig);
+      if (auto !== '') riskInput.value = auto;
+    }
+  }
+
+  refreshBacktestingFormUiWidgets();
+
+  if (jumpToStartDate && session.start_date) {
+    const d = new Date(`${String(session.start_date).slice(0, 10)}T12:00:00`);
+    if (!Number.isNaN(+d)) {
+      backtestingCurrentMonth = d.getMonth();
+      backtestingCurrentYear = d.getFullYear();
+    }
+  }
+
+  // El Resultado ya viene en 'TP' por defecto sin pasar por su listener de 'change' (que es el
+  // que dispara el auto-cálculo del PnL a partir del riesgo%/RR), así que hay que forzarlo aquí
+  // también para que cada trade nuevo dentro de esta sesión ya salga con el PnL correcto.
+  applyBacktestingAutoPnlIfUnset();
+  syncBacktestingPnlFromResult();
+}
+
 function highlightActiveBacktestingSessionCard() {
   document.querySelectorAll('.bt-session-card').forEach((card) => {
     const btn = card.querySelector('.bt-session-work-btn');
@@ -10065,85 +10463,7 @@ function renderBacktestingSessionCards() {
       selectedBacktestingSessionIds = [String(id)];
       initBacktestingSessionFilter();
 
-      const session = cachedBacktestingSessions.find((s) => Number(s.id) === id);
-
-      if (session) {
-        const startKey = (session.start_date || '').slice(0, 10);
-        selectedBacktestingDate = startKey;
-
-        const dateInput = document.getElementById('btDate');
-        if (dateInput && startKey) {
-          dateInput.value = startKey;
-        }
-
-        const assetInput = document.getElementById('btAsset');
-        const allowedPairs = getSessionPairs(session);
-
-        if (assetInput) {
-          if (typeof backtestingAssetComboboxState?.rebuildFromSettings === 'function') {
-            backtestingAssetComboboxState.rebuildFromSettings();
-          }
-
-          if (allowedPairs.length === 1) {
-            const only = allowedPairs[0];
-            ensureSelectHasValue(assetInput, only);
-            assetInput.value = only;
-            assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            if (backtestingAssetComboboxState) {
-              backtestingAssetComboboxState.selectedValue = only;
-              backtestingAssetComboboxState.value = only;
-              if (typeof backtestingAssetComboboxState.setValue === 'function') {
-                backtestingAssetComboboxState.setValue(only);
-              }
-            }
-          } else if (allowedPairs.length > 1) {
-            const cur = String(assetInput.value || '').trim();
-            if (cur && allowedPairs.includes(cur)) {
-              ensureSelectHasValue(assetInput, cur);
-              assetInput.value = cur;
-              assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-              if (backtestingAssetComboboxState) {
-                backtestingAssetComboboxState.selectedValue = cur;
-                backtestingAssetComboboxState.value = cur;
-                if (typeof backtestingAssetComboboxState.setValue === 'function') {
-                  backtestingAssetComboboxState.setValue(cur);
-                }
-              }
-            } else if (typeof backtestingAssetComboboxState?.setValue === 'function') {
-              backtestingAssetComboboxState.setValue('');
-            } else {
-              assetInput.value = '';
-              assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }
-        }
-
-        const strategyInput = document.getElementById('btStrategy');
-        if (strategyInput && session.strategy) {
-          ensureSelectHasValue(strategyInput, session.strategy);
-          strategyInput.value = session.strategy;
-          refreshBacktestingCustomSelect(strategyInput);
-        }
-
-        const strategyConfig = getBacktestingStrategies().find((s) => s.name === session.strategy);
-        if (strategyConfig) {
-          const riskInput = document.getElementById('btRisk');
-          if (riskInput) {
-            const auto = getBacktestingStrategyRiskEuroForForm(strategyConfig);
-            if (auto !== '') riskInput.value = auto;
-          }
-        }
-
-        refreshBacktestingFormUiWidgets();
-
-        if (session.start_date) {
-          const d = new Date(`${String(session.start_date).slice(0, 10)}T12:00:00`);
-          if (!Number.isNaN(+d)) {
-            backtestingCurrentMonth = d.getMonth();
-            backtestingCurrentYear = d.getFullYear();
-          }
-        }
-      }
+      applyActiveBacktestingSessionToTradeForm({ jumpToStartDate: true });
 
       rerenderBacktestingLocal();
       highlightActiveBacktestingSessionCard();
@@ -10591,7 +10911,7 @@ function openBacktestingTradeEditor(trade) {
     btResultCollapsed = false;
   } else {
     btManagementCollapsed = true;
-    btResultCollapsed = true;
+    btResultCollapsed = false;
   }
 
   refreshBacktestingFormUiWidgets();
@@ -10672,11 +10992,74 @@ function renderBacktestingDayTrades() {
     <button type="button" class="bt-day-trade-edit" data-id="${escapeAttrChip(String(tr.id))}">
       Editar
     </button>
+    <button type="button" class="bt-day-trade-delete" data-id="${escapeAttrChip(String(tr.id))}">
+      Eliminar
+    </button>
   </div>`;
     wrap.appendChild(card);
   });
   bindBacktestingDayTradeEditHandlers();
+  bindBacktestingDayTradeDeleteHandlers();
   void refreshLucideIcons();
+}
+
+function bindBacktestingDayTradeDeleteHandlers() {
+  document.querySelectorAll('#backtestingView .bt-day-trade-delete').forEach((btn) => {
+    if (btn.dataset.bound === 'true') return;
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const raw = btn.getAttribute('data-id');
+      void deleteBacktestingDayTrade(raw);
+    });
+  });
+}
+
+async function deleteBacktestingDayTrade(rawId) {
+  const idNum = Number(rawId);
+  const trade =
+    cachedBacktestingTrades.find((t) => Number(t.id) === idNum) ||
+    cachedBacktestingTrades.find((t) => String(t.id) === String(rawId));
+  if (!trade) {
+    showToast('No se encontró la operación', 'error');
+    return;
+  }
+
+  const ok = await showConfirmModal({
+    title: 'Eliminar operación',
+    message: `¿Eliminar la operación de ${trade.asset || 'este activo'} del ${formatDateEs(trade.date)}? Esta acción no se puede deshacer.`,
+    confirmText: 'Eliminar',
+    cancelText: 'Cancelar',
+    danger: true
+  });
+  if (!ok) return;
+
+  const backend = getBackendApi();
+  if (!backend?.deleteBacktestTrade) return;
+
+  const result = await backend.deleteBacktestTrade(trade.id);
+  if (!result?.success) {
+    showToast(
+      typeof result?.error === 'string'
+        ? result.error
+        : result?.error?.message || 'No se pudo eliminar la operación',
+      'error'
+    );
+    return;
+  }
+
+  showToast('Operación eliminada', 'success');
+
+  if (Number(editingBacktestingTradeId) === Number(trade.id)) {
+    clearBacktestForm();
+  }
+
+  const reloaded = await backend.getBacktestTrades();
+  cachedBacktestingTrades = Array.isArray(reloaded) ? reloaded : [];
+  rerenderBacktestingLocal();
+  renderBacktestingSessionCards();
+  await refreshBacktestingView({ skipTradeFetch: true });
 }
 
 function ensureSelectHasValue(selectEl, value) {
@@ -11018,6 +11401,34 @@ function getBacktestingStrategyRiskEuroForForm(strategy) {
   return String(rv);
 }
 
+// Si el riesgo se define en %, muestra cuánto es eso en € para la sesión de backtesting
+// activa (o la única seleccionada en el filtro), usando su capital de cuenta configurado.
+// Así se puede saber el +/- objetivo por operación sin salir del modal de estrategia.
+function updateBtStrategyRiskEuroHint() {
+  const hint = document.getElementById('btStrategyRiskEuroHint');
+  if (!hint) return;
+  if (btStrategyRiskUnit !== 'percent') {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  const riskValue = Number(document.getElementById('btStrategyRiskValue')?.value || 0);
+  const capital = getActiveBacktestingSessionCapital();
+  if (!capital || capital <= 0) {
+    hint.hidden = false;
+    hint.textContent = 'Abre o selecciona una sesión de backtesting para ver el equivalente en €.';
+    return;
+  }
+  if (!riskValue || riskValue <= 0) {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  const euroEquivalent = capital * (riskValue / 100);
+  hint.hidden = false;
+  hint.textContent = `≈ ${euroEquivalent.toFixed(2)}€ por operación (capital de sesión: ${capital.toFixed(2)}€)`;
+}
+
 function syncBtStrategyRiskUnitToggleUi() {
   const toggle = document.getElementById('btStrategyRiskUnitToggle');
   const input = document.getElementById('btStrategyRiskValue');
@@ -11029,19 +11440,22 @@ function syncBtStrategyRiskUnitToggleUi() {
   if (input) {
     input.placeholder = btStrategyRiskUnit === 'percent' ? 'Ej: 1' : 'Ej: 500';
   }
+  updateBtStrategyRiskEuroHint();
 }
 
 function ensureBtStrategyRiskUnitToggleBound() {
   if (document.documentElement.dataset.btStrategyRiskToggleBound === 'true') return;
   document.documentElement.dataset.btStrategyRiskToggleBound = 'true';
   const toggle = document.getElementById('btStrategyRiskUnitToggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-unit]');
-    if (!btn) return;
-    btStrategyRiskUnit = btn.dataset.unit === 'percent' ? 'percent' : 'eur';
-    syncBtStrategyRiskUnitToggleUi();
-  });
+  if (toggle) {
+    toggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-unit]');
+      if (!btn) return;
+      btStrategyRiskUnit = btn.dataset.unit === 'percent' ? 'percent' : 'eur';
+      syncBtStrategyRiskUnitToggleUi();
+    });
+  }
+  document.getElementById('btStrategyRiskValue')?.addEventListener('input', updateBtStrategyRiskEuroHint);
 }
 
 function getBacktestingStrategies() {
@@ -11179,6 +11593,11 @@ function closeBacktestingStrategyModal() {
 }
 
 async function saveBacktestingStrategyFromModal() {
+  if (!(await ensureUserReady())) return;
+  if (!(await syncSupabaseSessionWithMain())) {
+    showToast('Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.', 'error');
+    return;
+  }
   const id = document.getElementById('btStrategyEditId')?.value || '';
   const name = document.getElementById('btStrategyName')?.value?.trim() || '';
   const riskValue = Number(document.getElementById('btStrategyRiskValue')?.value || 0);
@@ -11259,7 +11678,12 @@ async function saveBacktestingStrategyFromModal() {
     const result = await api.saveBacktestingSettings(backtestingSettings);
 
     if (!result?.success) {
-      showToast('No se pudo guardar la estrategia', 'error');
+      showToast(
+        typeof result?.error === 'string'
+          ? result.error
+          : result?.error?.message || 'No se pudo guardar la estrategia',
+        'error'
+      );
       return;
     }
   }
@@ -11295,7 +11719,12 @@ async function deleteBacktestingStrategy(strategyId) {
     const result = await api.saveBacktestingSettings(backtestingSettings);
 
     if (!result?.success) {
-      showToast('No se pudo eliminar la estrategia', 'error');
+      showToast(
+        typeof result?.error === 'string'
+          ? result.error
+          : result?.error?.message || 'No se pudo eliminar la estrategia',
+        'error'
+      );
       return;
     }
   }
@@ -11347,7 +11776,12 @@ async function saveBacktestingSettings() {
   const result = await api.saveBacktestingSettings(backtestingSettings);
 
   if (!result?.success) {
-    showToast('No se pudo guardar configuración backtesting', 'error');
+    showToast(
+      typeof result?.error === 'string'
+        ? result.error
+        : result?.error?.message || 'No se pudo guardar configuración backtesting',
+      'error'
+    );
     return;
   }
 
@@ -11584,6 +12018,51 @@ function normalizeBacktestingPnlByResult(pnlValue, result) {
   return raw;
 }
 
+/** Magnitud de PnL "esperada" para un resultado, a partir del riesgo (€, tomado del campo
+ * Riesgo € o, si está vacío, de la estrategia) y el RR objetivo de la estrategia: TP = riesgo
+ * × RR, SL = riesgo, BE = 0. Se expresa en las mismas unidades que el modo actual de "PnL
+ * estimado" (€ o %), para poder escribirla directamente en ese campo. */
+function computeBacktestingAutoPnlMagnitude(result) {
+  if (result !== 'TP' && result !== 'SL') return 0;
+
+  const strategyName = document.getElementById('btStrategy')?.value || '';
+  const strategy = getBacktestingStrategies().find((s) => s.name === strategyName);
+
+  let riskEuro = Number(document.getElementById('btRisk')?.value);
+  if (!Number.isFinite(riskEuro) || riskEuro <= 0) {
+    riskEuro = Number(getBacktestingStrategyRiskEuroForForm(strategy)) || 0;
+  }
+  if (!riskEuro || riskEuro <= 0) return 0;
+
+  const rr = Number(strategy?.rr) > 0 ? Number(strategy.rr) : 2;
+  const magnitudeEuro = result === 'TP' ? riskEuro * rr : riskEuro;
+
+  const mode = document.getElementById('btPnlMode')?.value || 'money';
+  if (mode === 'percent') {
+    const capital = getActiveBacktestingSessionCapital();
+    return capital > 0 ? (magnitudeEuro / capital) * 100 : 0;
+  }
+  return magnitudeEuro;
+}
+
+/** Rellena "PnL estimado" con la magnitud calculada arriba, solo si el campo sigue "vacío"
+ * (0, sin tocar) para no pisar nunca un valor que el usuario haya escrito a mano. Así, con
+ * Gestión vacía pero una estrategia con riesgo % y RR objetivo configurados, marcar TP/SL basta
+ * para que el PnL (y su sumatoria en € o %) se calcule solo. */
+function applyBacktestingAutoPnlIfUnset() {
+  const pnlInput = getBacktestingPnlInputElement();
+  const resultInput = document.getElementById('btResult');
+  if (!pnlInput || !resultInput) return;
+
+  const result = resultInput.value;
+  if (parseBacktestingNumber(pnlInput.value) !== 0) return;
+
+  const magnitude = computeBacktestingAutoPnlMagnitude(result);
+  if (!magnitude) return;
+
+  pnlInput.value = String(magnitude);
+}
+
 function syncBacktestingResultFromPnl() {
   const pnlInput = getBacktestingPnlInputElement();
   const resultInput = document.getElementById('btResult');
@@ -11640,6 +12119,7 @@ function initBacktestingResultPnlSync() {
     resultInput.dataset.pnlSyncBound = 'true';
 
     resultInput.addEventListener('change', () => {
+      applyBacktestingAutoPnlIfUnset();
       syncBacktestingPnlFromResult();
     });
   }
@@ -11847,7 +12327,24 @@ function initBacktestingModeToggles() {
           toggle.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
           btn.classList.add('active');
           if (hidden) {
-            hidden.value = btn.dataset.value;
+            const prevMode = hidden.value;
+            const nextMode = btn.dataset.value;
+            // Al cambiar € <-> % en el PnL estimado hay que convertir el número que ya hay en el
+            // campo, no solo la etiqueta del modo: si no, 500€ (1% de 50.000€) se queda como
+            // "500" al pasar a %, que se interpretaría como un 500% en vez de un 1%.
+            if (hidden.id === 'btPnlMode' && prevMode !== nextMode) {
+              const pnlInput = getBacktestingPnlInputElement();
+              const capital = getActiveBacktestingSessionCapital();
+              if (pnlInput && capital > 0) {
+                const raw = parseBacktestingNumber(pnlInput.value);
+                if (raw) {
+                  const converted =
+                    nextMode === 'percent' ? (raw / capital) * 100 : (raw * capital) / 100;
+                  pnlInput.value = String(Math.round(converted * 100) / 100);
+                }
+              }
+            }
+            hidden.value = nextMode;
             hidden.dispatchEvent(new Event('change', { bubbles: true }));
           }
           updateBacktestingPnlConversionHint();
@@ -11899,15 +12396,20 @@ function initBacktestingFormCalculationListeners() {
   bindPnlDerived(pnlEl);
   if (pnlEstimated && pnlEstimated !== pnlEl) bindPnlDerived(pnlEstimated);
 
+  const onRiskChange = () => {
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
+    updateBacktestingDerivedRFields();
+  };
   document.getElementById('btPnlMode')?.addEventListener('change', onHintAndR);
-  document.getElementById('btRisk')?.addEventListener('input', updateBacktestingDerivedRFields);
-  document.getElementById('btRisk')?.addEventListener('change', updateBacktestingDerivedRFields);
+  document.getElementById('btRisk')?.addEventListener('input', onRiskChange);
+  document.getElementById('btRisk')?.addEventListener('change', onRiskChange);
 }
 
 function clearBacktestForm() {
   editingBacktestingTradeId = null;
   btManagementCollapsed = true;
-  btResultCollapsed = true;
+  btResultCollapsed = false;
   const hid = document.getElementById('btEditId');
   if (hid) hid.value = '';
   const saveBtn = document.getElementById('btSaveBacktest');
@@ -11930,6 +12432,11 @@ function clearBacktestForm() {
     const el = document.getElementById(id);
     if (el) el.value = val;
   });
+  // btEntryTime/btExitTime tienen un timepicker propio que solo se entera de los cambios de
+  // valor vía el evento 'change' del <input> nativo; sin esto, tras limpiar el formulario la
+  // etiqueta visible del timepicker se quedaría mostrando la hora anterior.
+  document.getElementById('btEntryTime')?.dispatchEvent(new Event('change', { bubbles: true }));
+  document.getElementById('btExitTime')?.dispatchEvent(new Event('change', { bubbles: true }));
   const slMode = document.getElementById('btSlMode');
   const tpMode = document.getElementById('btTpMode');
   const pnlMode = document.getElementById('btPnlMode');
@@ -11969,6 +12476,27 @@ function clearBacktestForm() {
   }
   refreshBacktestingFormUiWidgets();
   updateBacktestingTradeScheduleHints();
+
+  // Si hay una sesión activa ("Trabajar"), re-aplica su par/estrategia/riesgo por encima de los
+  // valores por defecto genéricos de arriba, para que la sesión se mantenga seleccionada trade
+  // tras trade sin tener que volver a pulsar "Trabajar". Esta función también fuerza, en
+  // cualquier caso (con o sin sesión activa), el auto-cálculo del PnL: btResult y btStrategy se
+  // dejan con un valor por defecto ('TP' / estrategia por defecto) sin pasar por sus listeners de
+  // 'change' (los que auto-rellenan Riesgo € y el PnL a partir del riesgo%/RR), así que sin esto
+  // un trade nuevo guardado sin tocar esos campos se quedaría con PnL 0.
+  if (Number(activeBacktestingSessionId) > 0) {
+    applyActiveBacktestingSessionToTradeForm();
+  } else {
+    const riskElAfterClear = document.getElementById('btRisk');
+    const strategyNameAfterClear = document.getElementById('btStrategy')?.value || '';
+    const strategyAfterClear = getBacktestingStrategies().find((s) => s.name === strategyNameAfterClear);
+    if (strategyAfterClear && riskElAfterClear && !riskElAfterClear.value) {
+      const autoRisk = getBacktestingStrategyRiskEuroForForm(strategyAfterClear);
+      if (autoRisk !== '') riskElAfterClear.value = autoRisk;
+    }
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
+  }
 }
 
 async function loadBacktestingSessions() {
@@ -12170,10 +12698,6 @@ function openBacktestingSessionModal(sessionId) {
   const ov = document.getElementById('btSessionModalOverlay');
   if (!ov) return;
   populateBacktestingSessionModalForm();
-  document.querySelectorAll('#btSessionModalOverlay .custom-select').forEach((el) => el.remove());
-  document.querySelectorAll('#btSessionModalOverlay select').forEach((select) => {
-    if (select.id !== 'btAsset') select.classList.remove('native-select-hidden');
-  });
   const title = document.getElementById('btSessionModalTitle');
   const hid = document.getElementById('btSessionEditId');
   if (sessionId) {
@@ -12216,6 +12740,11 @@ function openBacktestingSessionModal(sessionId) {
     document.getElementById('btSessionPairMultiSelect')?.classList.remove('open');
     applyBacktestingSessionQuickRange('1m');
   }
+  // Estrategia/Estado usan el mismo desplegable "custom-select" que el resto de la app (antes
+  // este modal los excluía explícitamente y se veían como <select> nativos sin estilo). Se
+  // refresca aquí, después de poblar opciones y valores, para reflejar el estado actual.
+  refreshCustomSelectForNative(document.getElementById('btSessionStrategy'));
+  refreshCustomSelectForNative(document.getElementById('btSessionStatus'));
   ov.classList.add('active');
   void refreshLucideIcons();
 }
@@ -12226,7 +12755,10 @@ function closeBacktestingSessionModal() {
 
 async function saveBacktestingSessionFromModal() {
   if (!(await ensureUserReady())) return;
-  await syncSupabaseSessionWithMain();
+  if (!(await syncSupabaseSessionWithMain())) {
+    showToast('Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.', 'error');
+    return;
+  }
   const api = getBackendApi();
   if (!api?.addBacktestingSession || !api?.updateBacktestingSession) return;
   const rawId = document.getElementById('btSessionEditId')?.value;
@@ -13139,6 +13671,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initWithdrawalsUI();
   initExpensesUI();
   initManagementTabs();
+  initBacktestingViewTabs();
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
@@ -13256,6 +13789,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (auto !== '') riskInput.value = auto;
     }
 
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
     updateBacktestingDerivedRFields();
   });
   document.getElementById('btNewSessionBtn')?.addEventListener('click', () => {
@@ -13358,7 +13893,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const dirVal = document.getElementById('btDirection')?.value || 'LONG';
     const entryNorm =
       Number(String(document.getElementById('btEntry')?.value ?? '').replace(',', '.')) || 0;
-    syncBacktestingResultFromPnl();
+    // Nota: aquí NO se llama a syncBacktestingResultFromPnl(). Esa función deriva el
+    // Resultado (TP/SL/BE) a partir del PnL estimado, y si el usuario deja "Gestión" vacía
+    // (precio entrada/SL/TP/riesgo) el PnL estimado es 0 -> forzaba el Resultado a BE aunque
+    // el usuario hubiera elegido manualmente TP o SL en el desplegable. "Gestión" es opcional:
+    // el Resultado elegido a mano se respeta tal cual, y solo se normaliza el signo del PnL
+    // para que cuadre con ese resultado (syncBacktestingPnlFromResult).
     syncBacktestingPnlFromResult();
     updateBacktestingDerivedRFields();
     const btResult = document.getElementById('btResult')?.value || 'BE';
@@ -13647,6 +14187,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   initCustomSelects();
   initAssetCombobox();
   initTradeDatepicker('date');
+  initTradeTimepicker('btEntryTime');
+  initTradeTimepicker('btExitTime');
   applyModeUI();
   updateCreateDerivedFields();
   recalculateCreateNetPnl();
@@ -13669,11 +14211,31 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.custom-datepicker')) {
     closeTradeDatepicker();
   }
+  if (!event.target.closest('.custom-timepicker')) {
+    closeTradeTimepickers();
+  }
 });
+
+// El popup del timepicker usa position:fixed (para escapar del overflow:hidden de la tarjeta
+// "Nueva operación"), así que no sigue al trigger si la página hace scroll; lo más simple y
+// robusto es cerrarlo en cuanto haya scroll en cualquier contenedor (capture:true detecta el
+// scroll interno de paneles con su propio overflow, no solo el de la ventana). Importante:
+// excluir el scroll que ocurre DENTRO del propio popup (las columnas de horas/minutos son
+// scrollables), si no, el simple gesto de desplazarse para elegir una hora lo cerraría solo.
+window.addEventListener(
+  'scroll',
+  (event) => {
+    if (event.target instanceof Element && event.target.closest('.custom-timepicker')) return;
+    closeTradeTimepickers();
+  },
+  true
+);
+window.addEventListener('resize', () => closeTradeTimepickers());
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     closeTradeDatepicker();
+    closeTradeTimepickers();
     assetComboboxState?.closePanel?.();
     backtestingAssetComboboxState?.closePanel?.();
     document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
@@ -13685,6 +14247,7 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('app:languagechanged', () => {
   updateWinrateInfoLabel();
   tradeDatepickerRoot?.refreshDatepickerI18n?.();
+  tradeTimepickerRoots.forEach((root) => root.refreshTimepickerI18n?.());
   void (async () => {
     await loadStrategies();
     await loadAccounts();
