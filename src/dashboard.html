@@ -1553,18 +1553,13 @@
       /* Retiros = dinero recuperado (verde); Gastos = salida de dinero (rojo). */
       #withdrawalSummaryTotal, #withdrawalSummaryAvg, #withdrawalSummaryLast,
       #withdrawalAnalyticsByAccount strong, #withdrawalAnalyticsByMonth strong,
-      #withdrawalAnalyticsTopAccount, #withdrawalAnalyticsWithdrawnTotal,
-      #managementBalanceWithdrawn {
+      #withdrawalAnalyticsTopAccount, #withdrawalAnalyticsWithdrawnTotal {
         color: var(--green);
       }
       #expenseSummaryTotal, #expenseSummaryAvg, #expenseSummaryLast,
-      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong, #expenseAnalyticsByCategory strong,
-      #managementBalanceSpent {
+      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong, #expenseAnalyticsByCategory strong {
         color: var(--red);
       }
-      /* Retirado - Gastado: verde si es positivo (más retiros que gastos), rojo si es negativo. */
-      #managementBalanceNet.positive { color: var(--green); }
-      #managementBalanceNet.negative { color: var(--red); }
       .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
       .withdrawals-action-btn {
         height: 28px;
@@ -1785,23 +1780,79 @@
         color: var(--text-color, #fff);
         border-bottom-color: var(--accent, #4f8cff);
       }
-      #managementView .mgmt-balance-banner {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 24px;
-        align-items: center;
-        padding: 14px 18px;
-        margin-bottom: 16px;
+      #managementView .mgmt-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(200px, 1fr));
+        gap: 16px;
+        width: 100%;
+        margin-bottom: 20px;
       }
-      #managementView .mgmt-balance-item span {
-        display: block;
+      @media (max-width: 900px) {
+        #managementView .mgmt-kpi-row {
+          grid-template-columns: 1fr;
+        }
+      }
+      #managementView .mgmt-kpi-card {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: var(--shadow-xs);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      #managementView .mgmt-kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+      #managementView .mgmt-kpi-icon {
+        flex: 0 0 auto;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #managementView .mgmt-kpi-icon svg,
+      #managementView .mgmt-kpi-icon i {
+        width: 20px;
+        height: 20px;
+      }
+      #managementView .mgmt-kpi-withdrawn .mgmt-kpi-icon {
+        background: rgba(34, 197, 94, 0.14);
+        color: var(--green);
+      }
+      #managementView .mgmt-kpi-spent .mgmt-kpi-icon {
+        background: rgba(239, 68, 68, 0.14);
+        color: var(--red);
+      }
+      #managementView .mgmt-kpi-net .mgmt-kpi-icon {
+        background: rgba(96, 165, 250, 0.14);
+        color: #60a5fa;
+      }
+      #managementView .mgmt-kpi-body {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      #managementView .mgmt-kpi-label {
         font-size: 0.78rem;
         color: var(--text-muted);
-        margin-bottom: 2px;
+        opacity: 0.85;
       }
-      #managementView .mgmt-balance-item strong {
-        font-size: 1.05rem;
+      #managementView .mgmt-kpi-value {
+        font-size: 1.3rem;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
+      #managementView .mgmt-kpi-value.positive { color: var(--green); }
+      #managementView .mgmt-kpi-value.negative { color: var(--red); }
       #managementView .management-tab-panel {
         display: flex;
         flex-direction: column;
@@ -6300,22 +6351,27 @@
               </div>
             </header>
 
-            <div class="card mgmt-balance-banner">
-              <div class="mgmt-balance-item">
-                <span data-i18n="management_balance_global">Balance global estimado</span>
-                <strong id="managementBalanceGlobal">0.00€</strong>
+            <div class="mgmt-kpi-row">
+              <div class="mgmt-kpi-card mgmt-kpi-withdrawn">
+                <div class="mgmt-kpi-icon"><i data-lucide="arrow-down-to-line"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="withdrawals_total">Total retirado</span>
+                  <strong id="managementBalanceWithdrawn" class="mgmt-kpi-value positive">0.00€</strong>
+                </div>
               </div>
-              <div class="mgmt-balance-item">
-                <span data-i18n="withdrawals_total">Total retirado</span>
-                <strong id="managementBalanceWithdrawn">0.00€</strong>
+              <div class="mgmt-kpi-card mgmt-kpi-spent">
+                <div class="mgmt-kpi-icon"><i data-lucide="arrow-up-from-line"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="expenses_total">Total gastado</span>
+                  <strong id="managementBalanceSpent" class="mgmt-kpi-value negative">0.00€</strong>
+                </div>
               </div>
-              <div class="mgmt-balance-item">
-                <span data-i18n="expenses_total">Total gastado</span>
-                <strong id="managementBalanceSpent">0.00€</strong>
-              </div>
-              <div class="mgmt-balance-item">
-                <span data-i18n="management_balance_net">Retirado - Gastado</span>
-                <strong id="managementBalanceNet">0.00€</strong>
+              <div class="mgmt-kpi-card mgmt-kpi-net">
+                <div class="mgmt-kpi-icon"><i data-lucide="scale"></i></div>
+                <div class="mgmt-kpi-body">
+                  <span class="mgmt-kpi-label" data-i18n="management_balance_net">Retirado - Gastado</span>
+                  <strong id="managementBalanceNet" class="mgmt-kpi-value">0.00€</strong>
+                </div>
               </div>
             </div>
 

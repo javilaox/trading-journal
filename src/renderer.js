@@ -2616,6 +2616,7 @@ const {
   buildStrategyByNameMap,
   formatOperatingHoursSummary,
   getTradeScheduleStatus,
+  formatMinutesAsHm,
 } = require('./services/scheduleUtils');
 const {
   parsePositionLegs,
@@ -6092,23 +6093,18 @@ function switchManagementTab(tab) {
 }
 
 function renderManagementBalanceBanner() {
-  const accounts = getAccounts().map((account) => ({
-    name: account.name,
-    capital: Number(account.capital ?? 0) || 0,
-  }));
-  const operationalNet = cachedTrades.reduce((sum, t) => sum + tradeOperationalNet(t), 0);
-  const totalCapital = accounts.reduce((sum, a) => sum + a.capital, 0);
+  // Nota: se eliminó el antiguo "Balance global estimado" (capital + PnL operativo - retiros -
+  // gastos) porque mezclaba conceptos y confundía al usuario; el banner de Gestión ahora se
+  // centra solo en el propio flujo de retiros/gastos (total retirado, total gastado y su neto).
   const totalWithdrawn = withdrawalsCache.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const totalSpent = expensesCache.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const globalBalance = totalCapital + operationalNet - totalWithdrawn - totalSpent;
+  const netWithdrawalVsExpense = totalWithdrawn - totalSpent;
 
   const set = (id, text) => {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
-  const netWithdrawalVsExpense = totalWithdrawn - totalSpent;
 
-  set('managementBalanceGlobal', formatWithdrawalEuro(globalBalance));
   set('managementBalanceWithdrawn', formatWithdrawalEuro(totalWithdrawn));
   set('managementBalanceSpent', formatNegativeEuro(totalSpent));
   set('managementBalanceNet', formatWithdrawalEuro(netWithdrawalVsExpense));
