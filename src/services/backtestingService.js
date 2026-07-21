@@ -1,6 +1,7 @@
 const { supabase } = require('./supabaseClient');
 const { getCurrentUserId } = require('./supabaseAuth');
 const { normalizeTimeField } = require('./backtestingScheduleStats');
+const { ensureFreshSupabaseSession, friendlyServiceError } = require('./supabaseWriteHelpers');
 
 function parseCustomMetrics(val) {
   if (val && typeof val === 'object' && !Array.isArray(val)) return val;
@@ -201,6 +202,11 @@ async function deleteBacktestTrade(id) {
     return { success: false, error: 'INVALID_ID' };
   }
 
+  const sessionOk = await ensureFreshSupabaseSession();
+  if (!sessionOk) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
+
   const { error } = await supabase
     .from('backtesting_trades')
     .delete()
@@ -209,7 +215,7 @@ async function deleteBacktestTrade(id) {
 
   if (error) {
     console.error('❌ deleteBacktestTrade:', error);
-    return { success: false, error };
+    return { success: false, error: friendlyServiceError(error) };
   }
 
   return { success: true };

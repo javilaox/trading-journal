@@ -790,8 +790,10 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-result-badge.tp{color:var(--green);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
 #backtestingView .bt-result-badge.sl{color:#ef4444;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28)}
 #backtestingView .bt-result-badge.be{color:var(--text-muted);background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.24)}
-#backtestingView .bt-day-trade-actions{display:flex;justify-content:flex-end;margin-top:10px}
+#backtestingView .bt-day-trade-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 #backtestingView .bt-day-trade-edit{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.10);color:var(--green);font-weight:800;cursor:pointer}
+#backtestingView .bt-day-trade-delete{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(239,68,68,.28);background:rgba(239,68,68,.10);color:#ef4444;font-weight:800;cursor:pointer}
+#backtestingView .bt-day-trade-delete:hover{background:rgba(239,68,68,.18)}
 `;
   document.head.appendChild(style);
 }
@@ -10973,11 +10975,74 @@ function renderBacktestingDayTrades() {
     <button type="button" class="bt-day-trade-edit" data-id="${escapeAttrChip(String(tr.id))}">
       Editar
     </button>
+    <button type="button" class="bt-day-trade-delete" data-id="${escapeAttrChip(String(tr.id))}">
+      Eliminar
+    </button>
   </div>`;
     wrap.appendChild(card);
   });
   bindBacktestingDayTradeEditHandlers();
+  bindBacktestingDayTradeDeleteHandlers();
   void refreshLucideIcons();
+}
+
+function bindBacktestingDayTradeDeleteHandlers() {
+  document.querySelectorAll('#backtestingView .bt-day-trade-delete').forEach((btn) => {
+    if (btn.dataset.bound === 'true') return;
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const raw = btn.getAttribute('data-id');
+      void deleteBacktestingDayTrade(raw);
+    });
+  });
+}
+
+async function deleteBacktestingDayTrade(rawId) {
+  const idNum = Number(rawId);
+  const trade =
+    cachedBacktestingTrades.find((t) => Number(t.id) === idNum) ||
+    cachedBacktestingTrades.find((t) => String(t.id) === String(rawId));
+  if (!trade) {
+    showToast('No se encontró la operación', 'error');
+    return;
+  }
+
+  const ok = await showConfirmModal({
+    title: 'Eliminar operación',
+    message: `¿Eliminar la operación de ${trade.asset || 'este activo'} del ${formatDateEs(trade.date)}? Esta acción no se puede deshacer.`,
+    confirmText: 'Eliminar',
+    cancelText: 'Cancelar',
+    danger: true
+  });
+  if (!ok) return;
+
+  const backend = getBackendApi();
+  if (!backend?.deleteBacktestTrade) return;
+
+  const result = await backend.deleteBacktestTrade(trade.id);
+  if (!result?.success) {
+    showToast(
+      typeof result?.error === 'string'
+        ? result.error
+        : result?.error?.message || 'No se pudo eliminar la operación',
+      'error'
+    );
+    return;
+  }
+
+  showToast('Operación eliminada', 'success');
+
+  if (Number(editingBacktestingTradeId) === Number(trade.id)) {
+    clearBacktestForm();
+  }
+
+  const reloaded = await backend.getBacktestTrades();
+  cachedBacktestingTrades = Array.isArray(reloaded) ? reloaded : [];
+  rerenderBacktestingLocal();
+  renderBacktestingSessionCards();
+  await refreshBacktestingView({ skipTradeFetch: true });
 }
 
 function ensureSelectHasValue(selectEl, value) {
@@ -11936,6 +12001,51 @@ function normalizeBacktestingPnlByResult(pnlValue, result) {
   return raw;
 }
 
+/** Magnitud de PnL "esperada" para un resultado, a partir del riesgo (€, tomado del campo
+ * Riesgo € o, si está vacío, de la estrategia) y el RR objetivo de la estrategia: TP = riesgo
+ * × RR, SL = riesgo, BE = 0. Se expresa en las mismas unidades que el modo actual de "PnL
+ * estimado" (€ o %), para poder escribirla directamente en ese campo. */
+function computeBacktestingAutoPnlMagnitude(result) {
+  if (result !== 'TP' && result !== 'SL') return 0;
+
+  const strategyName = document.getElementById('btStrategy')?.value || '';
+  const strategy = getBacktestingStrategies().find((s) => s.name === strategyName);
+
+  let riskEuro = Number(document.getElementById('btRisk')?.value);
+  if (!Number.isFinite(riskEuro) || riskEuro <= 0) {
+    riskEuro = Number(getBacktestingStrategyRiskEuroForForm(strategy)) || 0;
+  }
+  if (!riskEuro || riskEuro <= 0) return 0;
+
+  const rr = Number(strategy?.rr) > 0 ? Number(strategy.rr) : 2;
+  const magnitudeEuro = result === 'TP' ? riskEuro * rr : riskEuro;
+
+  const mode = document.getElementById('btPnlMode')?.value || 'money';
+  if (mode === 'percent') {
+    const capital = getActiveBacktestingSessionCapital();
+    return capital > 0 ? (magnitudeEuro / capital) * 100 : 0;
+  }
+  return magnitudeEuro;
+}
+
+/** Rellena "PnL estimado" con la magnitud calculada arriba, solo si el campo sigue "vacío"
+ * (0, sin tocar) para no pisar nunca un valor que el usuario haya escrito a mano. Así, con
+ * Gestión vacía pero una estrategia con riesgo % y RR objetivo configurados, marcar TP/SL basta
+ * para que el PnL (y su sumatoria en € o %) se calcule solo. */
+function applyBacktestingAutoPnlIfUnset() {
+  const pnlInput = getBacktestingPnlInputElement();
+  const resultInput = document.getElementById('btResult');
+  if (!pnlInput || !resultInput) return;
+
+  const result = resultInput.value;
+  if (parseBacktestingNumber(pnlInput.value) !== 0) return;
+
+  const magnitude = computeBacktestingAutoPnlMagnitude(result);
+  if (!magnitude) return;
+
+  pnlInput.value = String(magnitude);
+}
+
 function syncBacktestingResultFromPnl() {
   const pnlInput = getBacktestingPnlInputElement();
   const resultInput = document.getElementById('btResult');
@@ -11992,6 +12102,7 @@ function initBacktestingResultPnlSync() {
     resultInput.dataset.pnlSyncBound = 'true';
 
     resultInput.addEventListener('change', () => {
+      applyBacktestingAutoPnlIfUnset();
       syncBacktestingPnlFromResult();
     });
   }
@@ -12251,9 +12362,14 @@ function initBacktestingFormCalculationListeners() {
   bindPnlDerived(pnlEl);
   if (pnlEstimated && pnlEstimated !== pnlEl) bindPnlDerived(pnlEstimated);
 
+  const onRiskChange = () => {
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
+    updateBacktestingDerivedRFields();
+  };
   document.getElementById('btPnlMode')?.addEventListener('change', onHintAndR);
-  document.getElementById('btRisk')?.addEventListener('input', updateBacktestingDerivedRFields);
-  document.getElementById('btRisk')?.addEventListener('change', updateBacktestingDerivedRFields);
+  document.getElementById('btRisk')?.addEventListener('input', onRiskChange);
+  document.getElementById('btRisk')?.addEventListener('change', onRiskChange);
 }
 
 function clearBacktestForm() {
@@ -13618,6 +13734,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (auto !== '') riskInput.value = auto;
     }
 
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
     updateBacktestingDerivedRFields();
   });
   document.getElementById('btNewSessionBtn')?.addEventListener('click', () => {
