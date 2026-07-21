@@ -1,5 +1,6 @@
 const { supabase } = require('./supabaseClient');
 const { getCurrentUserId } = require('./supabaseAuth');
+const { ensureFreshSupabaseSession, friendlyServiceError } = require('./supabaseWriteHelpers');
 
 /** Lista de pares desde `asset` (CSV) o, en memoria, desde `pairs` si viniera sin `asset`. */
 function pairsListFromSession(session = {}) {
@@ -53,7 +54,7 @@ async function getBacktestingSessions() {
   const userId = await getCurrentUserId();
   console.log('Current user id:', userId);
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const { data, error } = await supabase
@@ -64,7 +65,7 @@ async function getBacktestingSessions() {
 
   if (error) {
     console.error('❌ getBacktestingSessions:', error);
-    return { success: false, error };
+    return { success: false, error: friendlyServiceError(error) };
   }
 
   return { success: true, data: (data || []).map(mapSessionRow) };
@@ -73,7 +74,7 @@ async function getBacktestingSessions() {
 async function addBacktestingSession(session) {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const payload = {
@@ -93,6 +94,8 @@ async function addBacktestingSession(session) {
   if (!payload.start_date) return { success: false, error: 'MISSING_START_DATE' };
   if (!payload.end_date) return { success: false, error: 'MISSING_END_DATE' };
 
+  await ensureFreshSupabaseSession();
+
   const { data, error } = await supabase
     .from('backtesting_sessions')
     .insert(payload)
@@ -101,7 +104,7 @@ async function addBacktestingSession(session) {
 
   if (error) {
     console.error('❌ addBacktestingSession:', error);
-    return { success: false, error };
+    return { success: false, error: friendlyServiceError(error) };
   }
 
   return { success: true, data: mapSessionRow(data) };
@@ -110,7 +113,7 @@ async function addBacktestingSession(session) {
 async function updateBacktestingSession(session) {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const id = Number(session.id);
@@ -133,6 +136,8 @@ async function updateBacktestingSession(session) {
   if (!payload.start_date) return { success: false, error: 'MISSING_START_DATE' };
   if (!payload.end_date) return { success: false, error: 'MISSING_END_DATE' };
 
+  await ensureFreshSupabaseSession();
+
   const { data, error } = await supabase
     .from('backtesting_sessions')
     .update(payload)
@@ -143,7 +148,7 @@ async function updateBacktestingSession(session) {
 
   if (error) {
     console.error('❌ updateBacktestingSession:', error);
-    return { success: false, error };
+    return { success: false, error: friendlyServiceError(error) };
   }
 
   return { success: true, data: mapSessionRow(data) };
@@ -152,7 +157,7 @@ async function updateBacktestingSession(session) {
 async function deleteBacktestingSession(sessionId) {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { success: false, error: 'NO_AUTH' };
+    return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
   const id = Number(sessionId);
@@ -160,6 +165,8 @@ async function deleteBacktestingSession(sessionId) {
   if (!Number.isFinite(id) || id <= 0) {
     return { success: false, error: 'INVALID_SESSION_ID' };
   }
+
+  await ensureFreshSupabaseSession();
 
   const { error } = await supabase
     .from('backtesting_sessions')
@@ -169,7 +176,7 @@ async function deleteBacktestingSession(sessionId) {
 
   if (error) {
     console.error('❌ deleteBacktestingSession:', error);
-    return { success: false, error };
+    return { success: false, error: friendlyServiceError(error) };
   }
 
   return { success: true };

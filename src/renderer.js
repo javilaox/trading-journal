@@ -11257,6 +11257,8 @@ function closeBacktestingStrategyModal() {
 }
 
 async function saveBacktestingStrategyFromModal() {
+  if (!(await ensureUserReady())) return;
+  await syncSupabaseSessionWithMain();
   const id = document.getElementById('btStrategyEditId')?.value || '';
   const name = document.getElementById('btStrategyName')?.value?.trim() || '';
   const riskValue = Number(document.getElementById('btStrategyRiskValue')?.value || 0);
@@ -11337,7 +11339,12 @@ async function saveBacktestingStrategyFromModal() {
     const result = await api.saveBacktestingSettings(backtestingSettings);
 
     if (!result?.success) {
-      showToast('No se pudo guardar la estrategia', 'error');
+      showToast(
+        typeof result?.error === 'string'
+          ? result.error
+          : result?.error?.message || 'No se pudo guardar la estrategia',
+        'error'
+      );
       return;
     }
   }
@@ -11373,7 +11380,12 @@ async function deleteBacktestingStrategy(strategyId) {
     const result = await api.saveBacktestingSettings(backtestingSettings);
 
     if (!result?.success) {
-      showToast('No se pudo eliminar la estrategia', 'error');
+      showToast(
+        typeof result?.error === 'string'
+          ? result.error
+          : result?.error?.message || 'No se pudo eliminar la estrategia',
+        'error'
+      );
       return;
     }
   }
@@ -11425,7 +11437,12 @@ async function saveBacktestingSettings() {
   const result = await api.saveBacktestingSettings(backtestingSettings);
 
   if (!result?.success) {
-    showToast('No se pudo guardar configuración backtesting', 'error');
+    showToast(
+      typeof result?.error === 'string'
+        ? result.error
+        : result?.error?.message || 'No se pudo guardar configuración backtesting',
+      'error'
+    );
     return;
   }
 
