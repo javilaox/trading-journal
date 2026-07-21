@@ -5329,7 +5329,7 @@ function renderWithdrawalsSummary(list, globalMetrics) {
   set('withdrawalSummaryTotal', formatWithdrawalEuro(total));
   set('withdrawalSummaryCount', String(count));
   set('withdrawalSummaryAvg', formatWithdrawalEuro(avg));
-  set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${last.date}` : '—');
+  set('withdrawalSummaryLast', last ? `${formatWithdrawalEuro(last.amount)} · ${formatDateEs(last.date)}` : '—');
   // Nota: el balance global ahora se muestra en el banner compartido de #managementView
   // (ver renderManagementBalanceBanner), no aquí; globalMetrics se conserva por compatibilidad de firma.
   void globalMetrics;
@@ -5401,7 +5401,7 @@ function renderWithdrawalsTable(list) {
   list.forEach((w) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtmlChipText(w.date || '')}</td>
+      <td>${escapeHtmlChipText(formatDateEs(w.date))}</td>
       <td>${escapeHtmlChipText(w.account_name || w.accountName || '')}</td>
       <td class="wd-amount wd-amount-withdrawal">${formatWithdrawalEuro(w.amount)}</td>
       <td>${escapeHtmlChipText(w.note || '—')}</td>
@@ -5747,7 +5747,7 @@ function renderExpensesSummary(list) {
   set('expenseSummaryTotal', formatExpenseEuro(total));
   set('expenseSummaryCount', String(count));
   set('expenseSummaryAvg', formatExpenseEuro(avg));
-  set('expenseSummaryLast', last ? `${formatExpenseEuro(last.amount)} · ${last.date}` : '—');
+  set('expenseSummaryLast', last ? `${formatExpenseEuro(last.amount)} · ${formatDateEs(last.date)}` : '—');
 }
 
 function renderExpensesAnalytics(metrics) {
@@ -5815,7 +5815,7 @@ function renderExpensesTable(list) {
   list.forEach((e) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtmlChipText(e.date || '')}</td>
+      <td>${escapeHtmlChipText(formatDateEs(e.date))}</td>
       <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
       <td>${escapeHtmlChipText(e.account_size || '—')}</td>
       <td>${escapeHtmlChipText(e.category || '—')}</td>
@@ -6331,7 +6331,7 @@ function updateAccountModalSummary(account) {
   summaryEl.innerHTML = `
     <div><strong>Resumen</strong></div>
     <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
-    <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${stats.last.date})` : '—'}</strong></div>
+    <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${formatDateEs(stats.last.date)})` : '—'}</strong></div>
     <div>Total gastado: <strong>${formatNegativeEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
     <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
     <div>Trades asociados: <strong>${tradeCount}</strong></div>`;

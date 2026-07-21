@@ -1681,7 +1681,7 @@ async function renderWithdrawalStats(trades) {
   set('withdrawalStatAvg', formatWithdrawalEuro(metrics.average));
   set(
     'withdrawalStatLast',
-    metrics.last ? `${formatWithdrawalEuro(metrics.last.amount)} · ${metrics.last.date}` : '—'
+    metrics.last ? `${formatWithdrawalEuro(metrics.last.amount)} · ${formatDateEs(metrics.last.date)}` : '—'
   );
   set('withdrawalStatOperationalPnl', formatWithdrawalEuro(metrics.operationalNet));
   set('withdrawalStatEstimatedBalance', formatWithdrawalEuro(metrics.estimatedBalanceGlobal));
