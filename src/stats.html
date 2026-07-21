@@ -99,6 +99,11 @@
         background: var(--bg);
         color: var(--text);
         overflow-x: hidden;
+        /* Tematiza el popup nativo del calendario de <input type="date"> (Chromium). */
+        color-scheme: dark;
+      }
+      body.light {
+        color-scheme: light;
       }
       /* Crítico: evita flash de layout antes de stats-layout.css (webpack) */
       .app-shell {

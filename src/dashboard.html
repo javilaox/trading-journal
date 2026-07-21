@@ -91,6 +91,13 @@
         color: var(--text);
         font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
         overflow-x: hidden;
+        /* El desplegable nativo de <input type="date"/time"> (Chromium) usa su propio tema
+           claro/oscuro según color-scheme, independientemente del CSS del propio input; sin
+           esto, el popup del calendario se veía siempre blanco/sin tematizar. */
+        color-scheme: dark;
+      }
+      body.light {
+        color-scheme: light;
       }
       .sidebar {
         position: fixed;
