@@ -13720,7 +13720,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const dirVal = document.getElementById('btDirection')?.value || 'LONG';
     const entryNorm =
       Number(String(document.getElementById('btEntry')?.value ?? '').replace(',', '.')) || 0;
-    syncBacktestingResultFromPnl();
+    // Nota: aquí NO se llama a syncBacktestingResultFromPnl(). Esa función deriva el
+    // Resultado (TP/SL/BE) a partir del PnL estimado, y si el usuario deja "Gestión" vacía
+    // (precio entrada/SL/TP/riesgo) el PnL estimado es 0 -> forzaba el Resultado a BE aunque
+    // el usuario hubiera elegido manualmente TP o SL en el desplegable. "Gestión" es opcional:
+    // el Resultado elegido a mano se respeta tal cual, y solo se normaliza el signo del PnL
+    // para que cuadre con ese resultado (syncBacktestingPnlFromResult).
     syncBacktestingPnlFromResult();
     updateBacktestingDerivedRFields();
     const btResult = document.getElementById('btResult')?.value || 'BE';
