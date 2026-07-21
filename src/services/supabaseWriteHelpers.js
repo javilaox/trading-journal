@@ -6,12 +6,27 @@ const { supabase } = require('./supabaseClient');
  * (supabase-js gestiona el refresh_token); si el token estuviera caducado y sin refrescar,
  * cualquier insert/update fallaría la política RLS (auth.uid() no resolvería al usuario)
  * aunque el user_id que enviemos en el payload sea correcto.
+ *
+ * Devuelve true/false para que quien llame pueda abortar la escritura ANTES de intentarla si
+ * no hay sesión utilizable (en vez de dejar que Supabase la rechace por RLS y traducir ese
+ * error a posteriori). Si getSession() no encuentra sesión (p. ej. el refresh_token también
+ * caducó, o main aún no había recibido la sesión en este arranque de la app), se intenta un
+ * refreshSession() explícito como último recurso antes de rendirse.
  */
 async function ensureFreshSupabaseSession() {
   try {
-    await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data?.session) return true;
+
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed?.error) {
+      console.warn('[supabase] refreshSession falló:', refreshed.error.message);
+      return false;
+    }
+    return Boolean(refreshed?.data?.session);
   } catch (err) {
     console.warn('[supabase] no se pudo refrescar la sesión antes de escribir:', err?.message || err);
+    return false;
   }
 }
 

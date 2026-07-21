@@ -6106,9 +6106,17 @@ function renderManagementBalanceBanner() {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
+  const netWithdrawalVsExpense = totalWithdrawn - totalSpent;
+
   set('managementBalanceGlobal', formatWithdrawalEuro(globalBalance));
   set('managementBalanceWithdrawn', formatWithdrawalEuro(totalWithdrawn));
   set('managementBalanceSpent', formatNegativeEuro(totalSpent));
+  set('managementBalanceNet', formatWithdrawalEuro(netWithdrawalVsExpense));
+  const netEl = document.getElementById('managementBalanceNet');
+  if (netEl) {
+    netEl.classList.toggle('positive', netWithdrawalVsExpense >= 0);
+    netEl.classList.toggle('negative', netWithdrawalVsExpense < 0);
+  }
 }
 
 async function refreshManagementUI() {
@@ -11289,7 +11297,10 @@ function closeBacktestingStrategyModal() {
 
 async function saveBacktestingStrategyFromModal() {
   if (!(await ensureUserReady())) return;
-  await syncSupabaseSessionWithMain();
+  if (!(await syncSupabaseSessionWithMain())) {
+    showToast('Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.', 'error');
+    return;
+  }
   const id = document.getElementById('btStrategyEditId')?.value || '';
   const name = document.getElementById('btStrategyName')?.value?.trim() || '';
   const riskValue = Number(document.getElementById('btStrategyRiskValue')?.value || 0);
@@ -12352,7 +12363,10 @@ function closeBacktestingSessionModal() {
 
 async function saveBacktestingSessionFromModal() {
   if (!(await ensureUserReady())) return;
-  await syncSupabaseSessionWithMain();
+  if (!(await syncSupabaseSessionWithMain())) {
+    showToast('Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.', 'error');
+    return;
+  }
   const api = getBackendApi();
   if (!api?.addBacktestingSession || !api?.updateBacktestingSession) return;
   const rawId = document.getElementById('btSessionEditId')?.value;

@@ -355,6 +355,7 @@
   "management_title": "Management",
   "management_subtitle_short": "Withdrawals and expenses by account",
   "management_balance_global": "Estimated global balance",
+  "management_balance_net": "Withdrawn - Spent",
   "management_config_link_desc": "Manage withdrawals and expenses from the dedicated view.",
   "expenses_nav": "Expenses",
   "expenses_new_btn": "New expense",

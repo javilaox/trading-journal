@@ -1562,6 +1562,9 @@
       #managementBalanceSpent {
         color: var(--red);
       }
+      /* Retirado - Gastado: verde si es positivo (más retiros que gastos), rojo si es negativo. */
+      #managementBalanceNet.positive { color: var(--green); }
+      #managementBalanceNet.negative { color: var(--red); }
       .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
       .withdrawals-action-btn {
         height: 28px;
@@ -6309,6 +6312,10 @@
               <div class="mgmt-balance-item">
                 <span data-i18n="expenses_total">Total gastado</span>
                 <strong id="managementBalanceSpent">0.00€</strong>
+              </div>
+              <div class="mgmt-balance-item">
+                <span data-i18n="management_balance_net">Retirado - Gastado</span>
+                <strong id="managementBalanceNet">0.00€</strong>
               </div>
             </div>
 

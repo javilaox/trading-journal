@@ -94,7 +94,10 @@ async function addBacktestingSession(session) {
   if (!payload.start_date) return { success: false, error: 'MISSING_START_DATE' };
   if (!payload.end_date) return { success: false, error: 'MISSING_END_DATE' };
 
-  await ensureFreshSupabaseSession();
+  const sessionOk = await ensureFreshSupabaseSession();
+  if (!sessionOk) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
 
   const { data, error } = await supabase
     .from('backtesting_sessions')
@@ -136,7 +139,10 @@ async function updateBacktestingSession(session) {
   if (!payload.start_date) return { success: false, error: 'MISSING_START_DATE' };
   if (!payload.end_date) return { success: false, error: 'MISSING_END_DATE' };
 
-  await ensureFreshSupabaseSession();
+  const sessionOkUpdate = await ensureFreshSupabaseSession();
+  if (!sessionOkUpdate) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
 
   const { data, error } = await supabase
     .from('backtesting_sessions')
@@ -166,7 +172,10 @@ async function deleteBacktestingSession(sessionId) {
     return { success: false, error: 'INVALID_SESSION_ID' };
   }
 
-  await ensureFreshSupabaseSession();
+  const sessionOkDelete = await ensureFreshSupabaseSession();
+  if (!sessionOkDelete) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
 
   const { error } = await supabase
     .from('backtesting_sessions')

@@ -82,7 +82,10 @@ async function upsertBacktestingSettings(settings) {
     updated_at: new Date().toISOString()
   };
 
-  await ensureFreshSupabaseSession();
+  const sessionOk = await ensureFreshSupabaseSession();
+  if (!sessionOk) {
+    return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
+  }
 
   // Nota: antes se encadenaba .select().maybeSingle() tras el upsert para devolver la fila
   // actualizada. Si esa lectura de confirmación fallaba (p. ej. por un hipo de red o de RLS

@@ -556,6 +556,16 @@
       .negative {
         color: var(--red);
       }
+      /* Sin esto, ".stat-box h2" (color verde por defecto) y ".insights-card strong"
+         (color de texto) ganan por especificidad a la clase ".negative" suelta, así que
+         "Comisiones pagadas" y los datos de la tarjeta de insights se veían siempre en
+         verde/blanco aunque tuvieran class="negative". Mismo fix ya aplicado en dashboard.html. */
+      .stat-box .positive, .advanced-item .positive, .insights-card .positive {
+        color: var(--green);
+      }
+      .stat-box .negative, .advanced-item .negative, .insights-card .negative {
+        color: var(--red);
+      }
       .chart-card {
         display: flex;
         flex-direction: column;
