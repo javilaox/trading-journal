@@ -299,6 +299,8 @@
   "stats_schedule_excluded_count": "{count} trades fuera de horario ocultos.",
   "schedule_discipline_empty": "No hay suficientes trades con horario configurado.",
   "withdrawals_nav": "Retiros",
+  "bt_view_tab_trades": "Trades",
+  "bt_view_tab_stats": "Estadísticas",
   "withdrawals_title": "Retiros",
   "withdrawals_subtitle": "Registro financiero de retiros por cuenta",
   "withdrawals_subtitle_short": "Registro financiero por cuenta",

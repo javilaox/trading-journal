@@ -4444,6 +4444,34 @@
       #backtestingView .dashboard-container .section.card > .bt-section:first-of-type {
         margin-top: 0;
       }
+      /* Pestañas Trades / Estadísticas dentro de una sesión de backtesting: separan el
+         calendario + registro de operaciones (mucho ruido visual si van todo seguido) de los
+         KPIs, disciplina por horario, análisis y simulaciones. */
+      #backtestingView .bt-view-tabs {
+        display: flex;
+        gap: 8px;
+        margin: clamp(24px, 2.8vw, 32px) 0 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      #backtestingView .bt-view-tab-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        font-weight: 700;
+        padding: 10px 6px;
+        margin-bottom: -1px;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      #backtestingView .bt-view-tab-btn:hover {
+        color: var(--text);
+      }
+      #backtestingView .bt-view-tab-btn.active {
+        color: var(--text);
+        border-bottom-color: var(--green);
+      }
       #backtestingView .bt-section-title {
         display: flex;
         align-items: center;
@@ -6977,6 +7005,12 @@
               </div>
             </div>
 
+            <div class="bt-view-tabs" role="tablist">
+              <button type="button" class="bt-view-tab-btn active" id="btViewTabBtnTrades" data-bt-view-tab="trades" role="tab" aria-selected="true" data-i18n="bt_view_tab_trades">Trades</button>
+              <button type="button" class="bt-view-tab-btn" id="btViewTabBtnStats" data-bt-view-tab="stats" role="tab" aria-selected="false" data-i18n="bt_view_tab_stats">Estadísticas</button>
+            </div>
+
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelKpi">
             <div class="bt-section pro-section">
               <section class="bt-kpi-section pro-card open" id="btKpiSection">
                 <button type="button" class="bt-section-toggle" id="btKpiToggle" aria-expanded="true">
@@ -7116,7 +7150,9 @@
                 </div>
               </div>
             </section>
+            </div>
 
+            <div class="bt-tab-panel bt-tab-panel-trades" id="btTradesPanel">
             <div class="bt-section pro-section">
               <div class="pro-card">
               <div class="bt-section-title">
@@ -7277,7 +7313,9 @@
               </div>
               </div>
             </div>
+            </div>
 
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelAnalysis">
             <div class="bt-section pro-section">
               <div class="pro-card">
               <div class="bt-section-title">
@@ -7334,6 +7372,7 @@
                   <div id="btRrCompare" class="backtesting-placeholder-box">—</div>
                 </div>
               </div>
+            </div>
             </div>
             </section>
           </div>

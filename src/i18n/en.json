@@ -299,6 +299,8 @@
   "stats_schedule_excluded_count": "{count} trades outside schedule hidden.",
   "schedule_discipline_empty": "Not enough trades with configured schedule.",
   "withdrawals_nav": "Withdrawals",
+  "bt_view_tab_trades": "Trades",
+  "bt_view_tab_stats": "Statistics",
   "withdrawals_title": "Withdrawals",
   "withdrawals_subtitle": "Financial withdrawal log by account",
   "withdrawals_subtitle_short": "Financial log by account",

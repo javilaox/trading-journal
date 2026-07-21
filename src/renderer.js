@@ -6104,6 +6104,33 @@ function switchManagementTab(tab) {
   document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
 }
 
+let backtestingViewActiveTab = 'trades';
+
+/** Pestañas dentro de una sesión de backtesting: "Trades" (calendario + registro de
+ * operaciones del día) vs "Estadísticas" (KPIs, disciplina por horario, análisis, simulaciones).
+ * Separadas para reducir ruido visual; antes iba todo seguido en una sola vista muy larga. */
+function switchBacktestingViewTab(tab) {
+  backtestingViewActiveTab = tab === 'stats' ? 'stats' : 'trades';
+  const showTrades = backtestingViewActiveTab === 'trades';
+  document.querySelectorAll('.bt-tab-panel-trades').forEach((el) => {
+    el.hidden = !showTrades;
+  });
+  document.querySelectorAll('.bt-tab-panel-stats').forEach((el) => {
+    el.hidden = showTrades;
+  });
+  document.getElementById('btViewTabBtnTrades')?.classList.toggle('active', showTrades);
+  document.getElementById('btViewTabBtnTrades')?.setAttribute('aria-selected', String(showTrades));
+  document.getElementById('btViewTabBtnStats')?.classList.toggle('active', !showTrades);
+  document.getElementById('btViewTabBtnStats')?.setAttribute('aria-selected', String(!showTrades));
+}
+
+function initBacktestingViewTabs() {
+  if (!document.getElementById('backtestingView')) return;
+  document.getElementById('btViewTabBtnTrades')?.addEventListener('click', () => switchBacktestingViewTab('trades'));
+  document.getElementById('btViewTabBtnStats')?.addEventListener('click', () => switchBacktestingViewTab('stats'));
+  switchBacktestingViewTab('trades');
+}
+
 function renderManagementBalanceBanner() {
   // Nota: se eliminó el antiguo "Balance global estimado" (capital + PnL operativo - retiros -
   // gastos) porque mezclaba conceptos y confundía al usuario; el banner de Gestión ahora se
@@ -13288,6 +13315,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initWithdrawalsUI();
   initExpensesUI();
   initManagementTabs();
+  initBacktestingViewTabs();
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
