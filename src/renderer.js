@@ -12442,6 +12442,20 @@ function clearBacktestForm() {
   }
   refreshBacktestingFormUiWidgets();
   updateBacktestingTradeScheduleHints();
+
+  // btResult y btStrategy se dejan con un valor por defecto ('TP' / estrategia por defecto) sin
+  // pasar por sus listeners de 'change' (que son los que auto-rellenan Riesgo € y el PnL estimado
+  // a partir del riesgo%/RR de la estrategia). Si no se fuerza aquí, un trade nuevo que se guarde
+  // sin tocar esos campos (p. ej. Resultado ya en TP por defecto) se queda con PnL 0.
+  const riskElAfterClear = document.getElementById('btRisk');
+  const strategyNameAfterClear = document.getElementById('btStrategy')?.value || '';
+  const strategyAfterClear = getBacktestingStrategies().find((s) => s.name === strategyNameAfterClear);
+  if (strategyAfterClear && riskElAfterClear && !riskElAfterClear.value) {
+    const autoRisk = getBacktestingStrategyRiskEuroForForm(strategyAfterClear);
+    if (autoRisk !== '') riskElAfterClear.value = autoRisk;
+  }
+  applyBacktestingAutoPnlIfUnset();
+  syncBacktestingPnlFromResult();
 }
 
 async function loadBacktestingSessions() {
