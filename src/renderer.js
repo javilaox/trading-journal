@@ -11096,6 +11096,34 @@ function getBacktestingStrategyRiskEuroForForm(strategy) {
   return String(rv);
 }
 
+// Si el riesgo se define en %, muestra cuánto es eso en € para la sesión de backtesting
+// activa (o la única seleccionada en el filtro), usando su capital de cuenta configurado.
+// Así se puede saber el +/- objetivo por operación sin salir del modal de estrategia.
+function updateBtStrategyRiskEuroHint() {
+  const hint = document.getElementById('btStrategyRiskEuroHint');
+  if (!hint) return;
+  if (btStrategyRiskUnit !== 'percent') {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  const riskValue = Number(document.getElementById('btStrategyRiskValue')?.value || 0);
+  const capital = getActiveBacktestingSessionCapital();
+  if (!capital || capital <= 0) {
+    hint.hidden = false;
+    hint.textContent = 'Abre o selecciona una sesión de backtesting para ver el equivalente en €.';
+    return;
+  }
+  if (!riskValue || riskValue <= 0) {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  const euroEquivalent = capital * (riskValue / 100);
+  hint.hidden = false;
+  hint.textContent = `≈ ${euroEquivalent.toFixed(2)}€ por operación (capital de sesión: ${capital.toFixed(2)}€)`;
+}
+
 function syncBtStrategyRiskUnitToggleUi() {
   const toggle = document.getElementById('btStrategyRiskUnitToggle');
   const input = document.getElementById('btStrategyRiskValue');
@@ -11107,19 +11135,22 @@ function syncBtStrategyRiskUnitToggleUi() {
   if (input) {
     input.placeholder = btStrategyRiskUnit === 'percent' ? 'Ej: 1' : 'Ej: 500';
   }
+  updateBtStrategyRiskEuroHint();
 }
 
 function ensureBtStrategyRiskUnitToggleBound() {
   if (document.documentElement.dataset.btStrategyRiskToggleBound === 'true') return;
   document.documentElement.dataset.btStrategyRiskToggleBound = 'true';
   const toggle = document.getElementById('btStrategyRiskUnitToggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-unit]');
-    if (!btn) return;
-    btStrategyRiskUnit = btn.dataset.unit === 'percent' ? 'percent' : 'eur';
-    syncBtStrategyRiskUnitToggleUi();
-  });
+  if (toggle) {
+    toggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-unit]');
+      if (!btn) return;
+      btStrategyRiskUnit = btn.dataset.unit === 'percent' ? 'percent' : 'eur';
+      syncBtStrategyRiskUnitToggleUi();
+    });
+  }
+  document.getElementById('btStrategyRiskValue')?.addEventListener('input', updateBtStrategyRiskEuroHint);
 }
 
 function getBacktestingStrategies() {
