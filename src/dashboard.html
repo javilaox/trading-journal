@@ -7358,6 +7358,30 @@
                       </div>
                     </div>
 
+                    <div class="bt-operation-form-section bt-form-accordion open" data-section="result">
+                      <button type="button" class="bt-form-accordion-header">
+                        <span data-i18n="result">Resultado</span>
+                        <i data-lucide="chevron-down" aria-hidden="true"></i>
+                      </button>
+                      <div class="bt-form-accordion-body">
+                        <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
+                          <div class="field"><label for="btResult" data-i18n="label_result">Resultado</label><select id="btResult" class="input"><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option></select></div>
+                          <div class="field field-full bt-pnl-field-wrap">
+                            <label for="btPnl" data-i18n="estimated_pnl">PnL estimado</label>
+                            <input type="hidden" id="btPnlMode" value="money" />
+                            <div class="bt-input-with-mode">
+                              <input id="btPnl" class="input" type="number" step="any" />
+                              <div class="bt-mode-toggle" data-target="btPnlMode">
+                                <button type="button" class="active" data-value="money" data-i18n="money">€</button>
+                                <button type="button" data-value="percent" data-i18n="percent">%</button>
+                              </div>
+                            </div>
+                            <div id="btPnlConvertedHint" class="bt-converted-hint" aria-live="polite"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div class="bt-operation-form-section bt-form-accordion" data-section="management">
                       <button type="button" class="bt-form-accordion-header">
                         <span data-i18n="management">Gestión</span>
@@ -7393,33 +7417,14 @@
                       </div>
                     </div>
 
-                    <div class="bt-operation-form-section bt-form-accordion" data-section="result">
+                    <div class="bt-operation-form-section bt-form-accordion" id="btCustomMetricsBlock" data-section="custom-metrics">
                       <button type="button" class="bt-form-accordion-header">
-                        <span data-i18n="result">Resultado</span>
+                        <span data-i18n="bt_custom_metrics_section">Métricas personalizadas</span>
                         <i data-lucide="chevron-down" aria-hidden="true"></i>
                       </button>
                       <div class="bt-form-accordion-body">
-                        <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
-                          <div class="field"><label for="btResult" data-i18n="label_result">Resultado</label><select id="btResult" class="input"><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option></select></div>
-                          <div class="field field-full bt-pnl-field-wrap">
-                            <label for="btPnl" data-i18n="estimated_pnl">PnL estimado</label>
-                            <input type="hidden" id="btPnlMode" value="money" />
-                            <div class="bt-input-with-mode">
-                              <input id="btPnl" class="input" type="number" step="any" />
-                              <div class="bt-mode-toggle" data-target="btPnlMode">
-                                <button type="button" class="active" data-value="money" data-i18n="money">€</button>
-                                <button type="button" data-value="percent" data-i18n="percent">%</button>
-                              </div>
-                            </div>
-                            <div id="btPnlConvertedHint" class="bt-converted-hint" aria-live="polite"></div>
-                          </div>
-                        </div>
+                        <div id="btCustomMetricsFields" class="bt-metrics-fields bt-custom-metrics"></div>
                       </div>
-                    </div>
-
-                    <div class="bt-operation-form-section" id="btCustomMetricsBlock">
-                      <h4 class="subsection-title bt-form-section-heading" data-i18n="bt_custom_metrics_section">Métricas personalizadas</h4>
-                      <div id="btCustomMetricsFields" class="bt-metrics-fields bt-custom-metrics"></div>
                     </div>
 
                     <div class="bt-operation-form-section">

@@ -3255,7 +3255,7 @@ let backtestingCurrentYear = new Date().getFullYear();
 let selectedBacktestingDate = '';
 let editingBacktestingTradeId = null;
 let btManagementCollapsed = true;
-let btResultCollapsed = true;
+let btResultCollapsed = false;
 /** Unidad de riesgo en el modal Nueva/Editar estrategia (`'eur'` | `'percent'`). */
 let btStrategyRiskUnit = 'eur';
 const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
@@ -10911,7 +10911,7 @@ function openBacktestingTradeEditor(trade) {
     btResultCollapsed = false;
   } else {
     btManagementCollapsed = true;
-    btResultCollapsed = true;
+    btResultCollapsed = false;
   }
 
   refreshBacktestingFormUiWidgets();
@@ -12409,7 +12409,7 @@ function initBacktestingFormCalculationListeners() {
 function clearBacktestForm() {
   editingBacktestingTradeId = null;
   btManagementCollapsed = true;
-  btResultCollapsed = true;
+  btResultCollapsed = false;
   const hid = document.getElementById('btEditId');
   if (hid) hid.value = '';
   const saveBtn = document.getElementById('btSaveBacktest');
