@@ -3746,6 +3746,132 @@
         font-size: 12px;
         font-weight: 600;
       }
+      /* Selector de hora propio (mismo lenguaje visual que el custom-datepicker), usado en
+         Backtesting (Hora de entrada / Hora de salida) en vez del picker nativo del navegador. */
+      .custom-timepicker {
+        position: relative;
+        width: 100%;
+      }
+      .timepicker-trigger {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card-bg);
+        color: var(--text);
+        padding: 10px 12px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .timepicker-trigger:hover {
+        border-color: var(--green);
+      }
+      .custom-timepicker.open .timepicker-trigger {
+        border-color: var(--green);
+        box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+      }
+      .timepicker-trigger-label {
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .custom-timepicker.has-value .timepicker-trigger-label {
+        color: var(--text);
+      }
+      .timepicker-trigger-icon {
+        opacity: 0.7;
+        display: flex;
+        align-items: center;
+      }
+      .timepicker-trigger-icon svg {
+        width: 15px;
+        height: 15px;
+      }
+      .timepicker-popup {
+        /* position: fixed (no absolute): el formulario de "Nueva operación" en Backtesting
+           tiene overflow:hidden en su tarjeta contenedora (.bt-operation-card), así que un
+           popup absoluto quedaría recortado/invisible. La posición real (top/left) la calcula
+           initTradeTimepicker en JS a partir de getBoundingClientRect() del trigger. */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 190px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+        padding: 10px;
+        z-index: 2000;
+        display: none;
+      }
+      .custom-timepicker.open .timepicker-popup {
+        display: block;
+      }
+      .timepicker-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        height: 180px;
+      }
+      .timepicker-col {
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .timepicker-option {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        border-radius: 8px;
+        height: 30px;
+        flex-shrink: 0;
+        cursor: pointer;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .timepicker-option:hover {
+        background: var(--hover-soft);
+      }
+      .timepicker-option.selected {
+        background: rgba(22, 163, 74, 0.2);
+        border-color: rgba(22, 163, 74, 0.45);
+        color: var(--green);
+        font-weight: 700;
+      }
+      .timepicker-actions {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .timepicker-action-btn {
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--text);
+        border-radius: 8px;
+        cursor: pointer;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .timepicker-action-btn:hover {
+        filter: brightness(1.08);
+      }
+      .native-time-hidden {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+        pointer-events: none !important;
+      }
       .form-group,
       .field {
         display: flex;

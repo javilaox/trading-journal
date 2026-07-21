@@ -4180,6 +4180,176 @@ function initTradeDatepicker(inputId = 'date') {
   if (clearBtn) clearBtn.textContent = t('clear');
 }
 
+let tradeTimepickerRoots = [];
+
+function closeTradeTimepickers(exceptElement = null) {
+  tradeTimepickerRoots.forEach((root) => {
+    if (!exceptElement || root !== exceptElement) {
+      root.classList.remove('open');
+    }
+  });
+}
+
+/** Selector de hora propio (mismo patrón que initTradeDatepicker): sustituye el picker nativo
+ * del navegador por columnas de horas/minutos con el estilo de la app. El <input type="time">
+ * original se mantiene oculto como fuente de verdad del valor (formato HH:MM) para no romper
+ * el resto de lógica (validaciones de horario, cálculos de duración, etc.) que ya lee/escribe
+ * ese input directamente. */
+function initTradeTimepicker(inputId) {
+  const nativeInput = document.getElementById(inputId);
+  if (!nativeInput || nativeInput.dataset.customTimepickerBound === 'true') return;
+
+  nativeInput.dataset.customTimepickerBound = 'true';
+  nativeInput.classList.add('native-time-hidden');
+
+  const custom = document.createElement('div');
+  custom.className = 'custom-timepicker';
+  custom.innerHTML = `
+    <button type="button" class="timepicker-trigger">
+      <span class="timepicker-trigger-label"></span>
+      <span class="timepicker-trigger-icon"><i data-lucide="clock"></i></span>
+    </button>
+    <div class="timepicker-popup">
+      <div class="timepicker-columns">
+        <div class="timepicker-col timepicker-col-hours"></div>
+        <div class="timepicker-col timepicker-col-minutes"></div>
+      </div>
+      <div class="timepicker-actions">
+        <button type="button" class="timepicker-action-btn now-btn"></button>
+        <button type="button" class="timepicker-action-btn clear-btn"></button>
+      </div>
+    </div>
+  `;
+  nativeInput.insertAdjacentElement('afterend', custom);
+  tradeTimepickerRoots.push(custom);
+
+  const trigger = custom.querySelector('.timepicker-trigger');
+  const triggerLabel = custom.querySelector('.timepicker-trigger-label');
+  const popup = custom.querySelector('.timepicker-popup');
+  const hoursCol = custom.querySelector('.timepicker-col-hours');
+  const minutesCol = custom.querySelector('.timepicker-col-minutes');
+  const nowBtn = custom.querySelector('.now-btn');
+  const clearBtn = custom.querySelector('.clear-btn');
+
+  // El popup usa position:fixed (ver comentario en el CSS de .timepicker-popup), así que hay
+  // que posicionarlo a mano con las coordenadas reales del trigger en pantalla.
+  const positionPopup = () => {
+    if (!popup) return;
+    const rect = trigger.getBoundingClientRect();
+    const popupWidth = 190;
+    const estimatedPopupHeight = 260;
+    const left = Math.min(rect.left, window.innerWidth - popupWidth - 12);
+    const fitsBelow = rect.bottom + 8 + estimatedPopupHeight <= window.innerHeight;
+    const top = fitsBelow ? rect.bottom + 8 : Math.max(8, rect.top - estimatedPopupHeight - 8);
+    popup.style.top = `${top}px`;
+    popup.style.left = `${Math.max(8, left)}px`;
+  };
+
+  const parseValue = () => {
+    const m = /^(\d{2}):(\d{2})$/.exec(String(nativeInput.value || ''));
+    return m ? { h: Number(m[1]), m: Number(m[2]) } : null;
+  };
+
+  const syncLabel = () => {
+    const value = nativeInput.value || '';
+    triggerLabel.textContent = value || t('select_time', 'Selecciona hora');
+    custom.classList.toggle('has-value', Boolean(value));
+  };
+
+  const renderColumns = () => {
+    const parsed = parseValue();
+    hoursCol.innerHTML = '';
+    for (let h = 0; h < 24; h += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'timepicker-option';
+      btn.textContent = String(h).padStart(2, '0');
+      if (parsed && parsed.h === h) btn.classList.add('selected');
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const current = parseValue();
+        selectTime(h, current ? current.m : 0);
+      });
+      hoursCol.appendChild(btn);
+    }
+    minutesCol.innerHTML = '';
+    for (let m = 0; m < 60; m += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'timepicker-option';
+      btn.textContent = String(m).padStart(2, '0');
+      if (parsed && parsed.m === m) btn.classList.add('selected');
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const current = parseValue();
+        selectTime(current ? current.h : 0, m);
+      });
+      minutesCol.appendChild(btn);
+    }
+  };
+
+  function selectTime(h, m) {
+    nativeInput.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    syncLabel();
+    renderColumns();
+  }
+
+  const scrollSelectedIntoView = () => {
+    [hoursCol, minutesCol].forEach((col) => {
+      const sel = col.querySelector('.timepicker-option.selected');
+      if (sel) sel.scrollIntoView({ block: 'center' });
+      else col.scrollTop = 0;
+    });
+  };
+
+  trigger?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const willOpen = !custom.classList.contains('open');
+    closeAllCustomSelects();
+    closeTradeDatepicker();
+    closeTradeTimepickers();
+    if (!willOpen) return;
+    renderColumns();
+    positionPopup();
+    custom.classList.add('open');
+    scrollSelectedIntoView();
+  });
+
+  nowBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const now = new Date();
+    selectTime(now.getHours(), now.getMinutes());
+    scrollSelectedIntoView();
+  });
+
+  clearBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    nativeInput.value = '';
+    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    syncLabel();
+    renderColumns();
+    custom.classList.remove('open');
+  });
+
+  nativeInput.addEventListener('change', () => {
+    syncLabel();
+    if (custom.classList.contains('open')) renderColumns();
+  });
+
+  const refreshTimepickerI18n = () => {
+    if (nowBtn) nowBtn.textContent = t('time_now', 'Ahora');
+    if (clearBtn) clearBtn.textContent = t('clear');
+    syncLabel();
+  };
+  custom.refreshTimepickerI18n = refreshTimepickerI18n;
+
+  syncLabel();
+  if (nowBtn) nowBtn.textContent = t('time_now', 'Ahora');
+  if (clearBtn) clearBtn.textContent = t('clear');
+  refreshLucideIcons();
+}
+
 function refreshCustomSelectForNative(nativeSelect) {
   if (!nativeSelect || nativeSelect.tagName !== 'SELECT') return;
   if (
@@ -12112,6 +12282,11 @@ function clearBacktestForm() {
     const el = document.getElementById(id);
     if (el) el.value = val;
   });
+  // btEntryTime/btExitTime tienen un timepicker propio que solo se entera de los cambios de
+  // valor vía el evento 'change' del <input> nativo; sin esto, tras limpiar el formulario la
+  // etiqueta visible del timepicker se quedaría mostrando la hora anterior.
+  document.getElementById('btEntryTime')?.dispatchEvent(new Event('change', { bubbles: true }));
+  document.getElementById('btExitTime')?.dispatchEvent(new Event('change', { bubbles: true }));
   const slMode = document.getElementById('btSlMode');
   const tpMode = document.getElementById('btTpMode');
   const pnlMode = document.getElementById('btPnlMode');
@@ -13834,6 +14009,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   initCustomSelects();
   initAssetCombobox();
   initTradeDatepicker('date');
+  initTradeTimepicker('btEntryTime');
+  initTradeTimepicker('btExitTime');
   applyModeUI();
   updateCreateDerivedFields();
   recalculateCreateNetPnl();
@@ -13856,11 +14033,31 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.custom-datepicker')) {
     closeTradeDatepicker();
   }
+  if (!event.target.closest('.custom-timepicker')) {
+    closeTradeTimepickers();
+  }
 });
+
+// El popup del timepicker usa position:fixed (para escapar del overflow:hidden de la tarjeta
+// "Nueva operación"), así que no sigue al trigger si la página hace scroll; lo más simple y
+// robusto es cerrarlo en cuanto haya scroll en cualquier contenedor (capture:true detecta el
+// scroll interno de paneles con su propio overflow, no solo el de la ventana). Importante:
+// excluir el scroll que ocurre DENTRO del propio popup (las columnas de horas/minutos son
+// scrollables), si no, el simple gesto de desplazarse para elegir una hora lo cerraría solo.
+window.addEventListener(
+  'scroll',
+  (event) => {
+    if (event.target instanceof Element && event.target.closest('.custom-timepicker')) return;
+    closeTradeTimepickers();
+  },
+  true
+);
+window.addEventListener('resize', () => closeTradeTimepickers());
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     closeTradeDatepicker();
+    closeTradeTimepickers();
     assetComboboxState?.closePanel?.();
     backtestingAssetComboboxState?.closePanel?.();
     document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
@@ -13872,6 +14069,7 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('app:languagechanged', () => {
   updateWinrateInfoLabel();
   tradeDatepickerRoot?.refreshDatepickerI18n?.();
+  tradeTimepickerRoots.forEach((root) => root.refreshTimepickerI18n?.());
   void (async () => {
     await loadStrategies();
     await loadAccounts();

@@ -66,6 +66,8 @@
   "dow_sun": "D",
   "today": "Hoy",
   "select_date": "Selecciona fecha",
+  "select_time": "Selecciona hora",
+  "time_now": "Ahora",
   "delete_trade": "Eliminar trade",
   "confirm_delete": "¿Seguro que quieres eliminar este trade?",
   "confirm_delete_irreversible": "Esta acción no se puede deshacer.",
