@@ -4342,17 +4342,20 @@ function normalizeAccount(account) {
       capital: 0,
       commissionPerLot: 0,
       freeSwap: false,
+      prop_name: null,
       client_uuid: null,
       remote_id: null,
       id: null,
       previous_names: [],
     };
   }
+  const propName = String(account?.prop_name ?? '').trim();
   return {
     name: (account?.name || '').trim(),
     capital: Number(account?.capital ?? account?.balance) || 0,
     commissionPerLot: resolveAccountCommissionPerLot(account),
     freeSwap: Boolean(account?.freeSwap ?? account?.free_swap),
+    prop_name: propName || null,
     client_uuid: account?.client_uuid ? String(account.client_uuid) : null,
     remote_id: account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id) : null,
     id: account?.id != null && account.id !== '' ? account.id : null,
@@ -5249,28 +5252,44 @@ async function loadWithdrawalsCache() {
   }
 }
 
+// El filtro de Retiros funciona por PROP (compartida con Gastos); el select del formulario
+// es un vínculo OPCIONAL a una cuenta real configurada (independiente de la prop escrita).
 function fillWithdrawalAccountSelects() {
-  const names = getAccounts().map((account) => account.name);
-  const filterPlaceholder = t('all_accounts', 'Todas las cuentas');
-  const formPlaceholder = t('placeholder_select_account', 'Selecciona cuenta');
-  ['withdrawalFilterAccount', 'withdrawalFormAccount'].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const prev = sel.value;
-    const isFilter = id === 'withdrawalFilterAccount';
-    sel.innerHTML = '';
+  const props = getKnownExpenseProps();
+  const filterSel = document.getElementById('withdrawalFilterAccount');
+  if (filterSel) {
+    const prev = filterSel.value;
+    filterSel.innerHTML = '';
     const base = document.createElement('option');
     base.value = '';
-    base.textContent = isFilter ? filterPlaceholder : formPlaceholder;
-    sel.appendChild(base);
+    base.textContent = t('withdrawals_all_props', 'Todas las props');
+    filterSel.appendChild(base);
+    props.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      filterSel.appendChild(opt);
+    });
+    if (prev && props.includes(prev)) filterSel.value = prev;
+  }
+
+  const names = getAccounts().map((account) => account.name);
+  const formSel = document.getElementById('withdrawalFormAccount');
+  if (formSel) {
+    const prev = formSel.value;
+    formSel.innerHTML = '';
+    const base = document.createElement('option');
+    base.value = '';
+    base.textContent = t('withdrawals_account_optional_placeholder', 'Sin vincular a una cuenta');
+    formSel.appendChild(base);
     names.forEach((name) => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
-      sel.appendChild(opt);
+      formSel.appendChild(opt);
     });
-    if (prev && names.includes(prev)) sel.value = prev;
-  });
+    if (prev && names.includes(prev)) formSel.value = prev;
+  }
 }
 
 function getFilteredWithdrawalsList() {
@@ -5285,10 +5304,17 @@ function getFilteredWithdrawalsList() {
   });
 }
 
+// El filtro es una prop, no una cuenta real; el scope de trades se calcula a partir de las
+// cuentas reales vinculadas a esa prop (por account.prop_name) o cuyo propio nombre coincida
+// (compatibilidad con retiros antiguos, que usaban el nombre de cuenta como "prop").
 function getWithdrawalTradeScope() {
-  const account = document.getElementById('withdrawalFilterAccount')?.value || '';
-  if (!account) return cachedTrades;
-  return cachedTrades.filter((trade) => String(trade.account || '') === account);
+  const propFilter = document.getElementById('withdrawalFilterAccount')?.value || '';
+  if (!propFilter) return cachedTrades;
+  const matchingAccountNames = getAccounts()
+    .filter((acc) => acc.name === propFilter || String(acc.prop_name || '').trim() === propFilter)
+    .map((acc) => acc.name);
+  if (!matchingAccountNames.length) return [];
+  return cachedTrades.filter((trade) => matchingAccountNames.includes(String(trade.account || '')));
 }
 
 function renderWithdrawalsSummary(list, globalMetrics) {
@@ -5395,12 +5421,13 @@ function renderWithdrawalsTable(list) {
 
 async function refreshWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
-  await loadWithdrawalsCache();
+  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache()]);
   fillWithdrawalAccountSelects();
   const filtered = getFilteredWithdrawalsList();
   const accounts = getAccounts().map((account) => ({
     name: account.name,
     capital: Number(account.capital ?? 0) || 0,
+    prop_name: account.prop_name || null,
   }));
   const globalMetrics = calculateWithdrawalMetrics(withdrawalsCache, cachedTrades, accounts);
   const filteredMetrics = calculateWithdrawalMetrics(filtered, getWithdrawalTradeScope(), accounts);
@@ -5431,6 +5458,22 @@ function setWithdrawalModalTitle(isEdit) {
     : t('withdrawals_modal_title_new', 'Nuevo retiro');
 }
 
+// Resuelve el nombre de la cuenta real vinculada (opcional) a un retiro existente, a partir
+// de account_client_uuid/account_id, para poder preseleccionarla al editar.
+function findLinkedAccountNameForWithdrawal(w) {
+  if (!w) return '';
+  const accounts = getAccounts();
+  if (w.account_client_uuid) {
+    const hit = accounts.find((a) => a.client_uuid && a.client_uuid === w.account_client_uuid);
+    if (hit) return hit.name;
+  }
+  if (w.account_id) {
+    const hit = accounts.find((a) => a.remote_id && String(a.remote_id) === String(w.account_id));
+    if (hit) return hit.name;
+  }
+  return '';
+}
+
 function openWithdrawalModal({ editId = null } = {}) {
   const overlay = document.getElementById('withdrawalModalOverlay');
   if (!overlay) return;
@@ -5440,11 +5483,13 @@ function openWithdrawalModal({ editId = null } = {}) {
     const w = withdrawalsCache.find((row) => row.id === editId);
     if (!w) return;
     editingWithdrawalId = editId;
-    const accountInput = document.getElementById('withdrawalFormAccount');
+    const propInput = document.getElementById('withdrawalFormProp');
+    const accountLinkSelect = document.getElementById('withdrawalFormAccount');
     const dateInput = document.getElementById('withdrawalFormDate');
     const amountInput = document.getElementById('withdrawalFormAmount');
     const noteInput = document.getElementById('withdrawalFormNote');
-    if (accountInput) accountInput.value = w.account_name || w.accountName || '';
+    if (propInput) propInput.value = w.account_name || w.accountName || '';
+    if (accountLinkSelect) accountLinkSelect.value = findLinkedAccountNameForWithdrawal(w);
     if (dateInput) dateInput.value = w.date || '';
     if (amountInput) amountInput.value = String(w.amount ?? '');
     if (noteInput) noteInput.value = w.note || '';
@@ -5457,7 +5502,7 @@ function openWithdrawalModal({ editId = null } = {}) {
     if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
   }
   overlay.classList.add('active');
-  document.getElementById('withdrawalFormAccount')?.focus();
+  document.getElementById('withdrawalFormProp')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -5475,8 +5520,10 @@ function resetWithdrawalForm({ keepEditingId = false } = {}) {
   if (amountInput) amountInput.value = '';
   const noteInput = document.getElementById('withdrawalFormNote');
   if (noteInput) noteInput.value = '';
-  const accountInput = document.getElementById('withdrawalFormAccount');
-  if (accountInput) accountInput.value = '';
+  const propInput = document.getElementById('withdrawalFormProp');
+  if (propInput) propInput.value = '';
+  const accountLinkSelect = document.getElementById('withdrawalFormAccount');
+  if (accountLinkSelect) accountLinkSelect.value = '';
   const saveBtn = document.getElementById('saveWithdrawalBtn');
   if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
   setWithdrawalModalTitle(false);
@@ -5487,17 +5534,18 @@ function startEditWithdrawal(id) {
 }
 
 async function saveWithdrawalAction() {
-  const account = document.getElementById('withdrawalFormAccount')?.value?.trim();
+  const prop = document.getElementById('withdrawalFormProp')?.value?.trim();
+  const linkedAccountName = document.getElementById('withdrawalFormAccount')?.value?.trim() || '';
   const date = document.getElementById('withdrawalFormDate')?.value;
   const amount = Number(document.getElementById('withdrawalFormAmount')?.value);
   const note = document.getElementById('withdrawalFormNote')?.value?.trim() || '';
-  if (!account || !date || !Number.isFinite(amount) || amount <= 0) {
-    showToast(t('withdrawals_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
+  if (!prop || !date || !Number.isFinite(amount) || amount <= 0) {
+    showToast(t('withdrawals_validation_error', 'Completa la prop, fecha e importe válido'), 'error');
     return;
   }
   const backend = getBackendApi();
   if (!backend) return;
-  const payload = { account_name: account, date, amount, note };
+  const payload = { account_name: prop, linked_account_name: linkedAccountName, date, amount, note };
   let res;
   if (editingWithdrawalId) {
     const existing = withdrawalsCache.find((w) => w.id === editingWithdrawalId);
@@ -5514,8 +5562,10 @@ async function saveWithdrawalAction() {
     return;
   }
   closeWithdrawalModal();
+  await registerExpensePropIfNew(prop);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshWithdrawalsUI();
+  renderManagementBalanceBanner();
   showToast(t('withdrawals_saved', 'Retiro guardado'), 'success');
 }
 
@@ -5536,11 +5586,13 @@ async function deleteWithdrawalAction(id) {
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   if (editingWithdrawalId === id) closeWithdrawalModal();
   await refreshWithdrawalsUI();
+  renderManagementBalanceBanner();
   showToast(t('withdrawals_deleted', 'Retiro eliminado'));
 }
 
 function initWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
+  attachSuggestDropdown('withdrawalFormProp', 'withdrawalFormPropSuggest', getKnownExpenseProps);
   const openModal = () => openWithdrawalModal();
   document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
   document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
@@ -5625,9 +5677,10 @@ async function registerExpensePropIfNew(name) {
   }
 }
 
-// Las props de gastos no dependen de las cuentas reales configuradas: el usuario las escribe
-// libremente en el campo "Prop". Se sugieren a partir de la lista persistida, más el histórico
-// de gastos ya guardados (por si hay datos previos a la existencia de la lista persistida).
+// Las props no dependen de las cuentas reales configuradas: el usuario las escribe libremente
+// en el campo "Prop" (compartido entre Gastos y Retiros). Se sugieren a partir de la lista
+// persistida, más el histórico de gastos y retiros ya guardados (por si hay datos previos a la
+// existencia de la lista persistida, o retiros antiguos que usaban el nombre de una cuenta real).
 function getKnownExpenseProps() {
   const names = new Set();
   expensePropsCache.forEach((p) => {
@@ -5636,6 +5689,10 @@ function getKnownExpenseProps() {
   });
   expensesCache.forEach((e) => {
     const name = String(e.account_name || e.accountName || '').trim();
+    if (name) names.add(name);
+  });
+  withdrawalsCache.forEach((w) => {
+    const name = String(w.account_name || w.accountName || '').trim();
     if (name) names.add(name);
   });
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -6080,16 +6137,31 @@ function countTradesForAccount(account) {
   return cachedTrades.filter((t) => names.has(String(t.account || ''))).length;
 }
 
-function getAccountWithdrawalStats(accountName) {
-  const list = withdrawalsCache.filter((w) => String(w.account_name || w.accountName) === accountName);
+// Acepta un nombre de cuenta (string, uso legacy) o el objeto de cuenta completo. Cuando se
+// pasa el objeto, además de por nombre de cuenta (retiros/gastos antiguos que usaban el nombre
+// de cuenta como "prop"), hace match por account.prop_name: así un retiro/gasto registrado con
+// la prop vinculada a esta cuenta cuenta también para su balance estimado, aunque no se haya
+// elegido explícitamente esta cuenta en el campo opcional del formulario.
+function getAccountWithdrawalStats(account) {
+  const name = typeof account === 'string' ? account : String(account?.name || '');
+  const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
+  const list = withdrawalsCache.filter((w) => {
+    const wName = String(w.account_name || w.accountName || '');
+    return wName === name || (propName && wName === propName);
+  });
   const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const count = list.length;
   const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
   return { withdrawn, count, last };
 }
 
-function getAccountExpenseStats(accountName) {
-  const list = expensesCache.filter((e) => String(e.account_name || e.accountName) === accountName);
+function getAccountExpenseStats(account) {
+  const name = typeof account === 'string' ? account : String(account?.name || '');
+  const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
+  const list = expensesCache.filter((e) => {
+    const eName = String(e.account_name || e.accountName || '');
+    return eName === name || (propName && eName === propName);
+  });
   const spent = list.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const count = list.length;
   const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
@@ -6098,8 +6170,8 @@ function getAccountExpenseStats(accountName) {
 
 function getAccountEstimatedBalance(account) {
   const names = getAccountTradeNames(account);
-  const stats = getAccountWithdrawalStats(account.name);
-  const expenseStats = getAccountExpenseStats(account.name);
+  const stats = getAccountWithdrawalStats(account);
+  const expenseStats = getAccountExpenseStats(account);
   const operationalNet = cachedTrades
     .filter((t) => names.has(String(t.account || '')))
     .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
@@ -6175,12 +6247,13 @@ function renderSettingsAccountsList() {
   }
   listEl.innerHTML = accounts
     .map((account) => {
-      const stats = getAccountWithdrawalStats(account.name);
-      const expenseStats = getAccountExpenseStats(account.name);
+      const stats = getAccountWithdrawalStats(account);
+      const expenseStats = getAccountExpenseStats(account);
       const balance = getAccountEstimatedBalance(account);
       const tradeCount = countTradesForAccount(account);
       const badges = [];
       if (account.freeSwap) badges.push(`<span class="settings-entity-badge">Free Swap</span>`);
+      if (account.prop_name) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(account.prop_name)}</span>`);
       return `
         <article class="settings-entity-card" role="listitem" ${buildAccountCardDataAttrs(account)}>
           <div class="settings-entity-card-main">
@@ -6250,8 +6323,8 @@ function updateAccountModalSummary(account) {
     if (summaryEl) summaryEl.hidden = true;
     return;
   }
-  const stats = getAccountWithdrawalStats(account.name);
-  const expenseStats = getAccountExpenseStats(account.name);
+  const stats = getAccountWithdrawalStats(account);
+  const expenseStats = getAccountExpenseStats(account);
   const balance = getAccountEstimatedBalance(account);
   const tradeCount = countTradesForAccount(account);
   summaryEl.hidden = false;
@@ -6292,12 +6365,14 @@ function openAccountDetailModal(account = null) {
   if (deleteBtn) deleteBtn.hidden = !isEdit;
   if (account) {
     document.getElementById('accountModalName').value = account.name || '';
+    document.getElementById('accountModalProp').value = account.prop_name || '';
     document.getElementById('accountModalCapital').value = String(account.capital ?? '');
     document.getElementById('accountModalCommission').value = String(account.commissionPerLot ?? '');
     document.getElementById('accountModalFreeSwap').checked = Boolean(account.freeSwap);
     updateAccountModalSummary(account);
   } else {
     document.getElementById('accountModalName').value = '';
+    document.getElementById('accountModalProp').value = '';
     document.getElementById('accountModalCapital').value = '';
     document.getElementById('accountModalCommission').value = '';
     document.getElementById('accountModalFreeSwap').checked = false;
@@ -6344,6 +6419,7 @@ async function saveAccountFromModal() {
   clearAccountModalFeedback();
 
   const name = String(document.getElementById('accountModalName')?.value || '').trim();
+  const propName = String(document.getElementById('accountModalProp')?.value || '').trim();
   const capital = parseNumericField(document.getElementById('accountModalCapital')?.value, 0);
   const commissionPerLot = parseNumericField(document.getElementById('accountModalCommission')?.value, 0);
   const freeSwap = Boolean(document.getElementById('accountModalFreeSwap')?.checked);
@@ -6361,7 +6437,7 @@ async function saveAccountFromModal() {
     return;
   }
 
-  const payload = { name, capital, commissionPerLot, freeSwap };
+  const payload = { name, prop_name: propName || null, capital, commissionPerLot, freeSwap };
   const isEdit = hasStableIdentity(accountModalIdentity);
   const existing = isEdit ? findAccountByIdentity(accountModalIdentity) : null;
   const originalName = accountModalIdentity?.originalName || existing?.name || null;
@@ -6457,6 +6533,7 @@ async function saveAccountFromModal() {
     }
   }
 
+  await registerExpensePropIfNew(propName);
   await syncRealListsFromStorage();
   setAccountModalSuccess(t('account_saved_ok', 'Cuenta actualizada correctamente'));
   await loadAccounts();
@@ -6471,8 +6548,8 @@ async function deleteAccountWithConfirmation(account, identity) {
   if (!account) return false;
   const id = identity || identityFromAccount(account);
   const tradeCount = countTradesForAccount(account);
-  const withdrawalCount = getAccountWithdrawalStats(account.name).count;
-  const expenseCount = getAccountExpenseStats(account.name).count;
+  const withdrawalCount = getAccountWithdrawalStats(account).count;
+  const expenseCount = getAccountExpenseStats(account).count;
   const statsLines = [`Trades asociados: <strong>${tradeCount}</strong>`];
   if (withdrawalCount > 0) {
     statsLines.push(`Retiros asociados: <strong>${withdrawalCount}</strong>`);
@@ -6686,6 +6763,7 @@ function initSettingsEntityListDelegation() {
 
 function initAccountStrategyModals() {
   initSettingsEntityListDelegation();
+  attachSuggestDropdown('accountModalProp', 'accountModalPropSuggest', getKnownExpenseProps);
   document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
   document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());
   document.getElementById('saveAccountDetailModalBtn')?.addEventListener('click', () => {

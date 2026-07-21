@@ -1,5 +1,10 @@
 /**
  * Retiros de cuentas reales — offline-first (SQLite + sync_queue + Supabase).
+ *
+ * Nota: "account_name" aquí representa el nombre de la PROP que el usuario escribe libremente
+ * (compartida con Gastos, ver expense_props), no necesariamente una cuenta real configurada.
+ * "account_id"/"account_client_uuid" son un vínculo OPCIONAL a una cuenta real configurada,
+ * elegida aparte en el formulario ("Cuenta (opcional)").
  */
 
 function isWithdrawalRowHidden(row) {
@@ -209,8 +214,14 @@ function calculateWithdrawalMetrics(withdrawals = [], trades = [], accounts = []
 
   const accountSummaries = (Array.isArray(accounts) ? accounts : []).map((acc) => {
     const name = String(acc.name || '');
+    const propName = String(acc.prop_name || '').trim();
     const capital = Number(acc.capital ?? acc.balance ?? 0) || 0;
-    const accWithdrawals = list.filter((w) => String(w.account_name || w.accountName) === name);
+    // account_name en los retiros es ahora la PROP (texto libre). Un retiro cuenta para
+    // esta cuenta si coincide con el nombre de cuenta (legacy) o con la prop vinculada.
+    const accWithdrawals = list.filter((w) => {
+      const wName = String(w.account_name || w.accountName || '');
+      return wName === name || (propName && wName === propName);
+    });
     const withdrawn = accWithdrawals.reduce((s, w) => s + (Number(w.amount) || 0), 0);
     const accTrades = tradeList.filter((t) => String(t.account || '') === name);
     const accPnlNet = accTrades.reduce((s, t) => {

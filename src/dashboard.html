@@ -2063,6 +2063,23 @@
       #strategyDetailModalOverlay .modal {
         width: min(520px, 100%);
         max-height: min(90vh, 680px);
+        display: flex;
+        flex-direction: column;
+      }
+      #accountDetailModalOverlay .modal-header.app-modal-header,
+      #strategyDetailModalOverlay .modal-header.app-modal-header {
+        flex-shrink: 0;
+      }
+      #accountDetailModalOverlay .entity-detail-form,
+      #strategyDetailModalOverlay .entity-detail-form {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      #accountDetailModalOverlay .entity-detail-actions,
+      #strategyDetailModalOverlay .entity-detail-actions {
+        flex-shrink: 0;
       }
       .entity-detail-summary {
         margin: 12px 0 0;
@@ -6296,8 +6313,8 @@
 
               <div class="card wd-filter-bar">
                 <div class="wd-filter-field">
-                  <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Cuenta</label>
-                  <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="all_accounts">Todas las cuentas</option></select>
+                  <label for="withdrawalFilterAccount" data-i18n="withdrawals_filter_account">Prop</label>
+                  <select id="withdrawalFilterAccount" class="input"><option value="" data-i18n="withdrawals_all_props">Todas las props</option></select>
                 </div>
                 <div class="wd-filter-field">
                   <label for="withdrawalFilterFrom" data-i18n="withdrawals_filter_from">Desde</label>
@@ -6325,7 +6342,7 @@
                       <thead>
                         <tr>
                           <th data-i18n="withdrawals_col_date">Fecha</th>
-                          <th data-i18n="withdrawals_col_account">Cuenta</th>
+                          <th data-i18n="withdrawals_col_account">Prop</th>
                           <th data-i18n="withdrawals_col_amount">Importe</th>
                           <th data-i18n="withdrawals_col_note">Nota</th>
                           <th></th>
@@ -6340,7 +6357,7 @@
                   <h2 class="wd-panel-title" data-i18n="withdrawals_analytics_title">Estadísticas</h2>
                   <div class="wd-analytics-stack">
                     <div class="wd-analytics-block">
-                      <h3 data-i18n="withdrawals_by_account">Por cuenta</h3>
+                      <h3 data-i18n="withdrawals_by_account">Por prop</h3>
                       <ul id="withdrawalAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
                     </div>
                     <div class="wd-analytics-block">
@@ -7697,6 +7714,13 @@
             <input id="accountModalName" class="input" data-i18n-placeholder="placeholder_account_name" placeholder="Nombre de cuenta" />
           </div>
           <div class="field">
+            <label for="accountModalProp" data-i18n="account_prop_label">Prop (opcional)</label>
+            <div class="suggest-wrap">
+              <input id="accountModalProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="account_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="accountModalPropSuggest" class="suggest-panel" hidden></div>
+            </div>
+          </div>
+          <div class="field">
             <label for="accountModalCapital" data-i18n="label_capital_info">Capital</label>
             <input id="accountModalCapital" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_capital" placeholder="Capital (ej: 10000)" />
           </div>
@@ -7770,8 +7794,15 @@
         </div>
         <div class="withdrawal-modal-form">
           <div class="field">
-            <label for="withdrawalFormAccount" data-i18n="label_select_account_settings">Cuenta</label>
-            <select id="withdrawalFormAccount" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
+            <label for="withdrawalFormProp" data-i18n="withdrawals_prop">Prop</label>
+            <div class="suggest-wrap">
+              <input id="withdrawalFormProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="withdrawals_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="withdrawalFormPropSuggest" class="suggest-panel" hidden></div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="withdrawalFormAccount" data-i18n="withdrawals_account_optional">Cuenta (opcional)</label>
+            <select id="withdrawalFormAccount" class="input"><option value="" data-i18n="withdrawals_account_optional_placeholder">Sin vincular a una cuenta</option></select>
           </div>
           <div class="field">
             <label for="withdrawalFormDate" data-i18n="withdrawals_date">Fecha</label>
