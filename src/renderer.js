@@ -10263,6 +10263,101 @@ function computeSessionProgress(session, tradesForSession) {
   return { total_days, tested_days, pending_days, progress_percent };
 }
 
+/** Aplica al formulario de "Nueva operación" el contexto de la sesión activa (par permitido,
+ * estrategia y riesgo € de esa estrategia), y deja el PnL auto-calculado listo si Resultado ya
+ * tiene un valor (normalmente TP por defecto). Se usa tanto al pulsar "Trabajar" en una sesión
+ * como después de guardar cada trade, para que la sesión activa se mantenga entre operaciones
+ * y no haya que volver a pulsar "Trabajar" para cada trade nuevo. */
+function applyActiveBacktestingSessionToTradeForm(opts = {}) {
+  const { jumpToStartDate = false } = opts;
+  const id = Number(activeBacktestingSessionId);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  const session = cachedBacktestingSessions.find((s) => Number(s.id) === id);
+  if (!session) return;
+
+  if (jumpToStartDate) {
+    const startKey = (session.start_date || '').slice(0, 10);
+    selectedBacktestingDate = startKey;
+    const dateInput = document.getElementById('btDate');
+    if (dateInput && startKey) dateInput.value = startKey;
+  }
+
+  const assetInput = document.getElementById('btAsset');
+  const allowedPairs = getSessionPairs(session);
+
+  if (assetInput) {
+    if (typeof backtestingAssetComboboxState?.rebuildFromSettings === 'function') {
+      backtestingAssetComboboxState.rebuildFromSettings();
+    }
+
+    if (allowedPairs.length === 1) {
+      const only = allowedPairs[0];
+      ensureSelectHasValue(assetInput, only);
+      assetInput.value = only;
+      assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      if (backtestingAssetComboboxState) {
+        backtestingAssetComboboxState.selectedValue = only;
+        backtestingAssetComboboxState.value = only;
+        if (typeof backtestingAssetComboboxState.setValue === 'function') {
+          backtestingAssetComboboxState.setValue(only);
+        }
+      }
+    } else if (allowedPairs.length > 1) {
+      const cur = String(assetInput.value || '').trim();
+      if (cur && allowedPairs.includes(cur)) {
+        ensureSelectHasValue(assetInput, cur);
+        assetInput.value = cur;
+        assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+        if (backtestingAssetComboboxState) {
+          backtestingAssetComboboxState.selectedValue = cur;
+          backtestingAssetComboboxState.value = cur;
+          if (typeof backtestingAssetComboboxState.setValue === 'function') {
+            backtestingAssetComboboxState.setValue(cur);
+          }
+        }
+      } else if (typeof backtestingAssetComboboxState?.setValue === 'function') {
+        backtestingAssetComboboxState.setValue('');
+      } else {
+        assetInput.value = '';
+        assetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+
+  const strategyInput = document.getElementById('btStrategy');
+  if (strategyInput && session.strategy) {
+    ensureSelectHasValue(strategyInput, session.strategy);
+    strategyInput.value = session.strategy;
+    refreshBacktestingCustomSelect(strategyInput);
+  }
+
+  const strategyConfig = getBacktestingStrategies().find((s) => s.name === session.strategy);
+  if (strategyConfig) {
+    const riskInput = document.getElementById('btRisk');
+    if (riskInput && !riskInput.value) {
+      const auto = getBacktestingStrategyRiskEuroForForm(strategyConfig);
+      if (auto !== '') riskInput.value = auto;
+    }
+  }
+
+  refreshBacktestingFormUiWidgets();
+
+  if (jumpToStartDate && session.start_date) {
+    const d = new Date(`${String(session.start_date).slice(0, 10)}T12:00:00`);
+    if (!Number.isNaN(+d)) {
+      backtestingCurrentMonth = d.getMonth();
+      backtestingCurrentYear = d.getFullYear();
+    }
+  }
+
+  // El Resultado ya viene en 'TP' por defecto sin pasar por su listener de 'change' (que es el
+  // que dispara el auto-cálculo del PnL a partir del riesgo%/RR), así que hay que forzarlo aquí
+  // también para que cada trade nuevo dentro de esta sesión ya salga con el PnL correcto.
+  applyBacktestingAutoPnlIfUnset();
+  syncBacktestingPnlFromResult();
+}
+
 function highlightActiveBacktestingSessionCard() {
   document.querySelectorAll('.bt-session-card').forEach((card) => {
     const btn = card.querySelector('.bt-session-work-btn');
@@ -10368,85 +10463,7 @@ function renderBacktestingSessionCards() {
       selectedBacktestingSessionIds = [String(id)];
       initBacktestingSessionFilter();
 
-      const session = cachedBacktestingSessions.find((s) => Number(s.id) === id);
-
-      if (session) {
-        const startKey = (session.start_date || '').slice(0, 10);
-        selectedBacktestingDate = startKey;
-
-        const dateInput = document.getElementById('btDate');
-        if (dateInput && startKey) {
-          dateInput.value = startKey;
-        }
-
-        const assetInput = document.getElementById('btAsset');
-        const allowedPairs = getSessionPairs(session);
-
-        if (assetInput) {
-          if (typeof backtestingAssetComboboxState?.rebuildFromSettings === 'function') {
-            backtestingAssetComboboxState.rebuildFromSettings();
-          }
-
-          if (allowedPairs.length === 1) {
-            const only = allowedPairs[0];
-            ensureSelectHasValue(assetInput, only);
-            assetInput.value = only;
-            assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            if (backtestingAssetComboboxState) {
-              backtestingAssetComboboxState.selectedValue = only;
-              backtestingAssetComboboxState.value = only;
-              if (typeof backtestingAssetComboboxState.setValue === 'function') {
-                backtestingAssetComboboxState.setValue(only);
-              }
-            }
-          } else if (allowedPairs.length > 1) {
-            const cur = String(assetInput.value || '').trim();
-            if (cur && allowedPairs.includes(cur)) {
-              ensureSelectHasValue(assetInput, cur);
-              assetInput.value = cur;
-              assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-              if (backtestingAssetComboboxState) {
-                backtestingAssetComboboxState.selectedValue = cur;
-                backtestingAssetComboboxState.value = cur;
-                if (typeof backtestingAssetComboboxState.setValue === 'function') {
-                  backtestingAssetComboboxState.setValue(cur);
-                }
-              }
-            } else if (typeof backtestingAssetComboboxState?.setValue === 'function') {
-              backtestingAssetComboboxState.setValue('');
-            } else {
-              assetInput.value = '';
-              assetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }
-        }
-
-        const strategyInput = document.getElementById('btStrategy');
-        if (strategyInput && session.strategy) {
-          ensureSelectHasValue(strategyInput, session.strategy);
-          strategyInput.value = session.strategy;
-          refreshBacktestingCustomSelect(strategyInput);
-        }
-
-        const strategyConfig = getBacktestingStrategies().find((s) => s.name === session.strategy);
-        if (strategyConfig) {
-          const riskInput = document.getElementById('btRisk');
-          if (riskInput) {
-            const auto = getBacktestingStrategyRiskEuroForForm(strategyConfig);
-            if (auto !== '') riskInput.value = auto;
-          }
-        }
-
-        refreshBacktestingFormUiWidgets();
-
-        if (session.start_date) {
-          const d = new Date(`${String(session.start_date).slice(0, 10)}T12:00:00`);
-          if (!Number.isNaN(+d)) {
-            backtestingCurrentMonth = d.getMonth();
-            backtestingCurrentYear = d.getFullYear();
-          }
-        }
-      }
+      applyActiveBacktestingSessionToTradeForm({ jumpToStartDate: true });
 
       rerenderBacktestingLocal();
       highlightActiveBacktestingSessionCard();
@@ -12460,19 +12477,26 @@ function clearBacktestForm() {
   refreshBacktestingFormUiWidgets();
   updateBacktestingTradeScheduleHints();
 
-  // btResult y btStrategy se dejan con un valor por defecto ('TP' / estrategia por defecto) sin
-  // pasar por sus listeners de 'change' (que son los que auto-rellenan Riesgo € y el PnL estimado
-  // a partir del riesgo%/RR de la estrategia). Si no se fuerza aquí, un trade nuevo que se guarde
-  // sin tocar esos campos (p. ej. Resultado ya en TP por defecto) se queda con PnL 0.
-  const riskElAfterClear = document.getElementById('btRisk');
-  const strategyNameAfterClear = document.getElementById('btStrategy')?.value || '';
-  const strategyAfterClear = getBacktestingStrategies().find((s) => s.name === strategyNameAfterClear);
-  if (strategyAfterClear && riskElAfterClear && !riskElAfterClear.value) {
-    const autoRisk = getBacktestingStrategyRiskEuroForForm(strategyAfterClear);
-    if (autoRisk !== '') riskElAfterClear.value = autoRisk;
+  // Si hay una sesión activa ("Trabajar"), re-aplica su par/estrategia/riesgo por encima de los
+  // valores por defecto genéricos de arriba, para que la sesión se mantenga seleccionada trade
+  // tras trade sin tener que volver a pulsar "Trabajar". Esta función también fuerza, en
+  // cualquier caso (con o sin sesión activa), el auto-cálculo del PnL: btResult y btStrategy se
+  // dejan con un valor por defecto ('TP' / estrategia por defecto) sin pasar por sus listeners de
+  // 'change' (los que auto-rellenan Riesgo € y el PnL a partir del riesgo%/RR), así que sin esto
+  // un trade nuevo guardado sin tocar esos campos se quedaría con PnL 0.
+  if (Number(activeBacktestingSessionId) > 0) {
+    applyActiveBacktestingSessionToTradeForm();
+  } else {
+    const riskElAfterClear = document.getElementById('btRisk');
+    const strategyNameAfterClear = document.getElementById('btStrategy')?.value || '';
+    const strategyAfterClear = getBacktestingStrategies().find((s) => s.name === strategyNameAfterClear);
+    if (strategyAfterClear && riskElAfterClear && !riskElAfterClear.value) {
+      const autoRisk = getBacktestingStrategyRiskEuroForForm(strategyAfterClear);
+      if (autoRisk !== '') riskElAfterClear.value = autoRisk;
+    }
+    applyBacktestingAutoPnlIfUnset();
+    syncBacktestingPnlFromResult();
   }
-  applyBacktestingAutoPnlIfUnset();
-  syncBacktestingPnlFromResult();
 }
 
 async function loadBacktestingSessions() {
