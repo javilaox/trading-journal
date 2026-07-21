@@ -93,3 +93,6 @@ typings/
 
 # Electron-Forge
 out/
+trades.db
+trades.db-shm
+trades.db-wal
