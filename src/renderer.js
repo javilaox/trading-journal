@@ -5403,7 +5403,7 @@ function renderWithdrawalsTable(list) {
     tr.innerHTML = `
       <td>${escapeHtmlChipText(w.date || '')}</td>
       <td>${escapeHtmlChipText(w.account_name || w.accountName || '')}</td>
-      <td class="wd-amount">${formatWithdrawalEuro(w.amount)}</td>
+      <td class="wd-amount wd-amount-withdrawal">${formatWithdrawalEuro(w.amount)}</td>
       <td>${escapeHtmlChipText(w.note || '—')}</td>
       <td class="withdrawals-actions">
         <button type="button" class="withdrawals-action-btn" data-withdrawal-edit="${w.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
@@ -5819,7 +5819,7 @@ function renderExpensesTable(list) {
       <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
       <td>${escapeHtmlChipText(e.account_size || '—')}</td>
       <td>${escapeHtmlChipText(e.category || '—')}</td>
-      <td class="wd-amount">${formatExpenseEuro(e.amount)}</td>
+      <td class="wd-amount wd-amount-expense">${formatExpenseEuro(e.amount)}</td>
       <td>${escapeHtmlChipText(e.note || '—')}</td>
       <td class="withdrawals-actions">
         <button type="button" class="withdrawals-action-btn" data-expense-edit="${e.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>

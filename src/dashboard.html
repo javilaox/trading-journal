@@ -1084,6 +1084,16 @@
       }
       .kpi-value.positive { color: var(--green); }
       .kpi-value.negative { color: var(--red); }
+      /* stat-box/advanced-item/insights-card usan .positive/.negative sin que hasta ahora
+         hubiera ninguna regla que los coloreara (quedaban con el color de texto por defecto,
+         p. ej. "Comisiones pagadas" se veía en el mismo tono que el resto pese a llevar
+         class="negative"). */
+      .stat-box .positive, .advanced-item .positive, .insights-card .positive {
+        color: var(--green);
+      }
+      .stat-box .negative, .advanced-item .negative, .insights-card .negative {
+        color: var(--red);
+      }
       .kpi-header-row {
         height: 30px;
         display: flex;
@@ -1530,7 +1540,21 @@
       }
       .withdrawals-table tbody tr { transition: background 0.15s ease; }
       .withdrawals-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
-      .withdrawals-table .wd-amount { font-weight: 700; color: #f87171; white-space: nowrap; }
+      .withdrawals-table .wd-amount { font-weight: 700; white-space: nowrap; }
+      .withdrawals-table .wd-amount.wd-amount-withdrawal { color: var(--green); }
+      .withdrawals-table .wd-amount.wd-amount-expense { color: var(--red); }
+      /* Retiros = dinero recuperado (verde); Gastos = salida de dinero (rojo). */
+      #withdrawalSummaryTotal, #withdrawalSummaryAvg, #withdrawalSummaryLast,
+      #withdrawalAnalyticsByAccount strong, #withdrawalAnalyticsByMonth strong,
+      #withdrawalAnalyticsTopAccount, #withdrawalAnalyticsWithdrawnTotal,
+      #managementBalanceWithdrawn {
+        color: var(--green);
+      }
+      #expenseSummaryTotal, #expenseSummaryAvg, #expenseSummaryLast,
+      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong, #expenseAnalyticsByCategory strong,
+      #managementBalanceSpent {
+        color: var(--red);
+      }
       .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
       .withdrawals-action-btn {
         height: 28px;
