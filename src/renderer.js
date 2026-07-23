@@ -3800,6 +3800,78 @@ function showConfirmModal({
   });
 }
 
+/** Variante de showConfirmModal con más de dos salidas posibles (p. ej. al borrar una Prop que
+ * ya tiene retiros/gastos asignados: "borrar también sus movimientos" / "mantener movimientos
+ * (desvincular)" / cancelar). Cada choice = { value, label, danger? }; resuelve con choice.value
+ * o null si se cancela/cierra. */
+function showChoiceModal({ title = 'Elige una opción', message = '', choices = [], cancelText = 'Cancelar' } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay app-modal-overlay active';
+    overlay.style.zIndex = '10050';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal app-modal app-confirm-modal';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header app-modal-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close app-modal-close';
+    closeBtn.setAttribute('data-cancel', '');
+    closeBtn.setAttribute('aria-label', 'Cerrar');
+    closeBtn.textContent = '×';
+    header.append(h2, closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body app-modal-body';
+    if (message) {
+      const p = document.createElement('p');
+      p.className = 'confirm-message';
+      p.textContent = message;
+      body.appendChild(p);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer app-modal-footer';
+    footer.style.flexWrap = 'wrap';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.setAttribute('data-cancel', '');
+    cancelBtn.textContent = cancelText;
+    footer.appendChild(cancelBtn);
+    choices.forEach((choice) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = choice.danger ? 'btn-danger' : 'btn-primary';
+      btn.textContent = choice.label;
+      btn.addEventListener('click', () => finish(choice.value));
+      footer.appendChild(btn);
+    });
+
+    modal.append(header, body, footer);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    overlay.querySelectorAll('[data-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => finish(null));
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(null);
+    });
+  });
+}
+
 /**
  * Confirmación simple para eliminar cuenta/estrategia (checkbox).
  * @returns {Promise<boolean>}
@@ -5607,7 +5679,7 @@ function renderWithdrawalsTable(list) {
 
 async function refreshWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
-  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache(), loadExpenseCategoriesCache()]);
   fillWithdrawalAccountSelects();
   const filtered = getFilteredWithdrawalsList();
   const accounts = getAccounts().map((account) => ({
@@ -5887,6 +5959,403 @@ function getKnownExpenseProps() {
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
+// Categorías de gasto: a diferencia de las props (que viven en Supabase vía expense_props para
+// sincronizarse entre dispositivos), las categorías son solo una lista de sugerencias de bajo
+// riesgo y se guardan localmente (localStorage, por usuario) — igual que otras listas simples de
+// la app (cuentas/estrategias "reales"). Arranca sembrada con EXPENSE_CATEGORY_SUGGESTIONS para
+// que también se puedan renombrar/eliminar desde Configuración.
+let customExpenseCategoriesCache = null;
+
+async function loadExpenseCategoriesCache() {
+  const key = await getUserScopedStorageKey('expense_categories');
+  if (!key) {
+    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
+    return;
+  }
+  const stored = getStoredList(key);
+  if (Array.isArray(stored) && stored.length) {
+    customExpenseCategoriesCache = stored.filter((s) => typeof s === 'string' && s.trim());
+  } else {
+    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
+    saveStoredList(key, customExpenseCategoriesCache);
+  }
+}
+
+async function saveCustomExpenseCategoriesList(list) {
+  const key = await getUserScopedStorageKey('expense_categories');
+  if (!key) return;
+  const seen = new Set();
+  const norm = [];
+  (list || []).forEach((raw) => {
+    const name = String(raw || '').trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    norm.push(name);
+  });
+  saveStoredList(key, norm);
+  customExpenseCategoriesCache = norm;
+}
+
+function getKnownExpenseCategories() {
+  const names = new Set();
+  (customExpenseCategoriesCache || EXPENSE_CATEGORY_SUGGESTIONS).forEach((c) => {
+    const name = String(c || '').trim();
+    if (name) names.add(name);
+  });
+  expensesCache.forEach((e) => {
+    const name = String(e.category || '').trim();
+    if (name) names.add(name);
+  });
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+async function registerExpenseCategoryIfNew(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return;
+  const list = customExpenseCategoriesCache || [];
+  if (list.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return;
+  await saveCustomExpenseCategoriesList([...list, trimmed]);
+}
+
+// ------------------------ Gestión: pestaña "Props y categorías" ------------------------
+
+function matchesPropName(row, name) {
+  const rowName = String(row?.account_name || row?.accountName || '').trim().toLowerCase();
+  return rowName === name.trim().toLowerCase();
+}
+
+function getWithdrawalLinkedAccountName(w) {
+  if (!w?.account_client_uuid) return '';
+  const acc = realAccountsCache.find((a) => a.client_uuid === w.account_client_uuid);
+  return acc?.name || '';
+}
+
+function renderMgmtConfigLists() {
+  if (!document.getElementById('managementTabConfig')) return;
+  renderMgmtConfigPropsList();
+  renderMgmtConfigCategoriesList();
+}
+
+function renderMgmtConfigPropsList() {
+  const host = document.getElementById('mgmtConfigPropsList');
+  if (!host) return;
+  const names = getKnownExpenseProps();
+  if (!names.length) {
+    host.innerHTML = `<li class="mgmt-config-empty">${escapeHtmlChipText(t('mgmt_config_no_props', 'Todavía no hay props guardadas.'))}</li>`;
+    return;
+  }
+  host.innerHTML = names
+    .map((name) => {
+      const count =
+        expensesCache.filter((e) => matchesPropName(e, name)).length +
+        withdrawalsCache.filter((w) => matchesPropName(w, name)).length;
+      const safeName = escapeAttrChip(name);
+      return `
+        <li class="mgmt-config-item" data-name="${safeName}">
+          <div class="mgmt-config-item-name">
+            <strong>${escapeHtmlChipText(name)}</strong>
+            <span class="mgmt-config-item-count">${count} ${count === 1 ? t('mgmt_config_movement_singular', 'movimiento') : t('mgmt_config_movement_plural', 'movimientos')}</span>
+          </div>
+          <div class="mgmt-config-item-edit-row">
+            <input type="text" class="input mgmt-config-edit-input" value="${safeName}" />
+          </div>
+          <div class="mgmt-config-item-actions">
+            <button type="button" class="withdrawals-action-btn" data-prop-edit>${escapeHtmlChipText(t('mgmt_config_edit_btn', 'Editar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-prop-save hidden>${escapeHtmlChipText(t('mgmt_config_save_btn', 'Guardar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-prop-cancel hidden>${escapeHtmlChipText(t('cancel', 'Cancelar'))}</button>
+            <button type="button" class="withdrawals-action-btn danger" data-prop-delete>${escapeHtmlChipText(t('mgmt_config_delete_btn', 'Eliminar'))}</button>
+          </div>
+        </li>`;
+    })
+    .join('');
+
+  host.querySelectorAll('[data-prop-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      li?.classList.add('editing');
+      li?.querySelector('[data-prop-edit]')?.setAttribute('hidden', '');
+      li?.querySelector('[data-prop-save]')?.removeAttribute('hidden');
+      li?.querySelector('[data-prop-cancel]')?.removeAttribute('hidden');
+      li?.querySelector('.mgmt-config-edit-input')?.focus();
+    });
+  });
+  host.querySelectorAll('[data-prop-cancel]').forEach((btn) => {
+    btn.addEventListener('click', () => renderMgmtConfigPropsList());
+  });
+  host.querySelectorAll('[data-prop-save]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const oldName = li?.dataset.name || '';
+      const newName = li?.querySelector('.mgmt-config-edit-input')?.value?.trim() || '';
+      void renameMgmtProp(oldName, newName);
+    });
+  });
+  host.querySelectorAll('[data-prop-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const name = li?.dataset.name || '';
+      void deleteMgmtProp(name);
+    });
+  });
+}
+
+async function renameMgmtProp(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) {
+    renderMgmtConfigLists();
+    return;
+  }
+  const backend = getBackendApi();
+  if (!backend) return;
+  const prop = expensePropsCache.find((p) => String(p.name).toLowerCase() === oldName.toLowerCase());
+  if (prop) {
+    const res = await backend.updateExpensePropLocal({ id: prop.id, client_uuid: prop.client_uuid, name: newName });
+    if (!res?.success) {
+      showToast(res?.error === 'DUPLICATE_NAME' ? t('mgmt_config_duplicate_name', 'Ya existe una prop con ese nombre') : t('mgmt_config_error', 'No se pudo guardar'), 'error');
+      return;
+    }
+  } else {
+    // Prop derivada solo del histórico de gastos/retiros (nunca se registró en la lista
+    // persistida): al renombrarla la damos de alta ya con el nombre nuevo.
+    await registerExpensePropIfNew(newName);
+  }
+
+  const matchingExpenses = expensesCache.filter((e) => matchesPropName(e, oldName));
+  const matchingWithdrawals = withdrawalsCache.filter((w) => matchesPropName(w, oldName));
+  for (const e of matchingExpenses) {
+    await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, account_name: newName });
+  }
+  for (const w of matchingWithdrawals) {
+    await backend.updateWithdrawalLocal({
+      id: w.id,
+      client_uuid: w.client_uuid,
+      account_name: newName,
+      linked_account_name: getWithdrawalLinkedAccountName(w),
+    });
+  }
+
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await Promise.all([loadExpensesCache(), loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_prop_renamed', 'Prop renombrada'), 'success');
+}
+
+async function deleteMgmtProp(name) {
+  if (!name) return;
+  const backend = getBackendApi();
+  if (!backend) return;
+
+  const matchingExpenses = expensesCache.filter((e) => matchesPropName(e, name));
+  const matchingWithdrawals = withdrawalsCache.filter((w) => matchesPropName(w, name));
+  const totalLinked = matchingExpenses.length + matchingWithdrawals.length;
+
+  let cascade = 'none';
+  if (totalLinked > 0) {
+    cascade = await showChoiceModal({
+      title: t('mgmt_config_delete_prop_title', 'Eliminar prop'),
+      message: t('mgmt_config_delete_prop_linked_msg', '"{name}" tiene {count} movimiento(s) (retiros/gastos) asignados. ¿Qué quieres hacer con ellos?')
+        .replace('{name}', name)
+        .replace('{count}', String(totalLinked)),
+      choices: [
+        { value: 'delete', label: t('mgmt_config_delete_prop_choice_delete', 'Borrar también sus movimientos'), danger: true },
+        { value: 'unlink', label: t('mgmt_config_delete_prop_choice_unlink', 'Mantener movimientos (desvincular)') },
+      ],
+      cancelText: t('cancel', 'Cancelar'),
+    });
+    if (!cascade) return;
+  } else {
+    const ok = await showConfirmModal({
+      title: t('mgmt_config_delete_prop_title', 'Eliminar prop'),
+      message: t('mgmt_config_delete_prop_confirm', '¿Eliminar la prop "{name}"?').replace('{name}', name),
+      confirmText: t('mgmt_config_delete_btn', 'Eliminar'),
+      cancelText: t('cancel', 'Cancelar'),
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
+  if (cascade === 'delete') {
+    for (const e of matchingExpenses) {
+      await backend.deleteExpenseLocal(e.client_uuid || String(e.id));
+    }
+    for (const w of matchingWithdrawals) {
+      await backend.deleteWithdrawalLocal(w.client_uuid || String(w.id));
+    }
+  } else if (cascade === 'unlink') {
+    // account_name no puede quedar vacío (validación de retiros/gastos), así que se sustituye
+    // por una etiqueta neutra: el movimiento se conserva íntegro, solo deja de estar asociado
+    // al nombre de la prop que se acaba de eliminar.
+    const placeholder = t('mgmt_config_unlinked_prop_label', 'Prop eliminada');
+    for (const e of matchingExpenses) {
+      await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, account_name: placeholder });
+    }
+    for (const w of matchingWithdrawals) {
+      await backend.updateWithdrawalLocal({
+        id: w.id,
+        client_uuid: w.client_uuid,
+        account_name: placeholder,
+        linked_account_name: getWithdrawalLinkedAccountName(w),
+      });
+    }
+  }
+
+  const prop = expensePropsCache.find((p) => String(p.name).toLowerCase() === name.toLowerCase());
+  if (prop && backend.deleteExpensePropLocal) {
+    await backend.deleteExpensePropLocal(prop.client_uuid || prop.id);
+  }
+
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await Promise.all([loadExpensesCache(), loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_prop_deleted', 'Prop eliminada'), 'success');
+}
+
+function renderMgmtConfigCategoriesList() {
+  const host = document.getElementById('mgmtConfigCategoriesList');
+  if (!host) return;
+  const names = getKnownExpenseCategories();
+  if (!names.length) {
+    host.innerHTML = `<li class="mgmt-config-empty">${escapeHtmlChipText(t('mgmt_config_no_categories', 'Todavía no hay categorías guardadas.'))}</li>`;
+    return;
+  }
+  host.innerHTML = names
+    .map((name) => {
+      const count = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === name.toLowerCase()).length;
+      const safeName = escapeAttrChip(name);
+      return `
+        <li class="mgmt-config-item" data-name="${safeName}">
+          <div class="mgmt-config-item-name">
+            <strong>${escapeHtmlChipText(name)}</strong>
+            <span class="mgmt-config-item-count">${count} ${count === 1 ? t('expenses_nav_singular', 'gasto') : t('expenses_nav', 'gastos')}</span>
+          </div>
+          <div class="mgmt-config-item-edit-row">
+            <input type="text" class="input mgmt-config-edit-input" value="${safeName}" />
+          </div>
+          <div class="mgmt-config-item-actions">
+            <button type="button" class="withdrawals-action-btn" data-cat-edit>${escapeHtmlChipText(t('mgmt_config_edit_btn', 'Editar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-cat-save hidden>${escapeHtmlChipText(t('mgmt_config_save_btn', 'Guardar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-cat-cancel hidden>${escapeHtmlChipText(t('cancel', 'Cancelar'))}</button>
+            <button type="button" class="withdrawals-action-btn danger" data-cat-delete>${escapeHtmlChipText(t('mgmt_config_delete_btn', 'Eliminar'))}</button>
+          </div>
+        </li>`;
+    })
+    .join('');
+
+  host.querySelectorAll('[data-cat-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      li?.classList.add('editing');
+      li?.querySelector('[data-cat-edit]')?.setAttribute('hidden', '');
+      li?.querySelector('[data-cat-save]')?.removeAttribute('hidden');
+      li?.querySelector('[data-cat-cancel]')?.removeAttribute('hidden');
+      li?.querySelector('.mgmt-config-edit-input')?.focus();
+    });
+  });
+  host.querySelectorAll('[data-cat-cancel]').forEach((btn) => {
+    btn.addEventListener('click', () => renderMgmtConfigCategoriesList());
+  });
+  host.querySelectorAll('[data-cat-save]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const oldName = li?.dataset.name || '';
+      const newName = li?.querySelector('.mgmt-config-edit-input')?.value?.trim() || '';
+      void renameMgmtCategory(oldName, newName);
+    });
+  });
+  host.querySelectorAll('[data-cat-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const name = li?.dataset.name || '';
+      void deleteMgmtCategory(name);
+    });
+  });
+}
+
+async function renameMgmtCategory(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) {
+    renderMgmtConfigLists();
+    return;
+  }
+  if ((customExpenseCategoriesCache || []).some((c) => c.toLowerCase() === newName.toLowerCase())) {
+    showToast(t('mgmt_config_duplicate_name', 'Ya existe una categoría con ese nombre'), 'error');
+    return;
+  }
+  const list = (customExpenseCategoriesCache || []).map((c) => (c.toLowerCase() === oldName.toLowerCase() ? newName : c));
+  await saveCustomExpenseCategoriesList(list);
+
+  const backend = getBackendApi();
+  const matchingExpenses = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === oldName.toLowerCase());
+  if (backend) {
+    for (const e of matchingExpenses) {
+      await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, category: newName });
+    }
+    if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  }
+
+  await loadExpensesCache();
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_category_renamed', 'Categoría renombrada'), 'success');
+}
+
+async function deleteMgmtCategory(name) {
+  if (!name) return;
+  const count = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === name.toLowerCase()).length;
+  const ok = await showConfirmModal({
+    title: t('mgmt_config_delete_category_title', 'Eliminar categoría'),
+    message:
+      count > 0
+        ? t('mgmt_config_delete_category_linked_msg', '"{name}" se quita de la lista de sugerencias. Los {count} gasto(s) que ya la usan conservan su categoría tal cual.')
+            .replace('{name}', name)
+            .replace('{count}', String(count))
+        : t('mgmt_config_delete_category_confirm', '¿Eliminar la categoría "{name}"?').replace('{name}', name),
+    confirmText: t('mgmt_config_delete_btn', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+    danger: true,
+  });
+  if (!ok) return;
+
+  const list = (customExpenseCategoriesCache || []).filter((c) => c.toLowerCase() !== name.toLowerCase());
+  await saveCustomExpenseCategoriesList(list);
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_category_deleted', 'Categoría eliminada'), 'success');
+}
+
+function initMgmtConfigTab() {
+  if (!document.getElementById('managementTabConfig')) return;
+  document.getElementById('mgmtConfigAddPropBtn')?.addEventListener('click', () => {
+    void (async () => {
+      const input = document.getElementById('mgmtConfigNewPropInput');
+      const name = input?.value?.trim() || '';
+      if (!name) return;
+      await registerExpensePropIfNew(name);
+      if (input) input.value = '';
+      renderMgmtConfigLists();
+      showToast(t('mgmt_config_prop_added', 'Prop añadida'), 'success');
+    })();
+  });
+  document.getElementById('mgmtConfigNewPropInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') document.getElementById('mgmtConfigAddPropBtn')?.click();
+  });
+  document.getElementById('mgmtConfigAddCategoryBtn')?.addEventListener('click', () => {
+    void (async () => {
+      const input = document.getElementById('mgmtConfigNewCategoryInput');
+      const name = input?.value?.trim() || '';
+      if (!name) return;
+      await registerExpenseCategoryIfNew(name);
+      if (input) input.value = '';
+      renderMgmtConfigLists();
+      showToast(t('mgmt_config_category_added', 'Categoría añadida'), 'success');
+    })();
+  });
+  document.getElementById('mgmtConfigNewCategoryInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') document.getElementById('mgmtConfigAddCategoryBtn')?.click();
+  });
+}
+
 function fillExpenseAccountSelects() {
   const names = getKnownExpenseProps();
 
@@ -6029,7 +6498,7 @@ function renderExpensesTable(list) {
 
 async function refreshExpensesUI() {
   if (!document.getElementById('managementView')) return;
-  await Promise.all([loadExpensesCache(), loadExpensePropsCache()]);
+  await Promise.all([loadExpensesCache(), loadExpensePropsCache(), loadExpenseCategoriesCache()]);
   fillExpenseAccountSelects();
   const filtered = getFilteredExpensesList();
   const filteredMetrics = calculateExpenseMetrics(filtered);
@@ -6157,6 +6626,7 @@ async function saveExpenseAction() {
   }
   closeExpenseModal();
   await registerExpensePropIfNew(account);
+  await registerExpenseCategoryIfNew(category);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshExpensesUI();
   renderManagementBalanceBanner();
@@ -6278,7 +6748,7 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
 function initExpensesUI() {
   if (!document.getElementById('managementView')) return;
   attachSuggestDropdown('expenseFormAccount', 'expenseFormAccountSuggest', getKnownExpenseProps);
-  attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => EXPENSE_CATEGORY_SUGGESTIONS);
+  attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => getKnownExpenseCategories());
   const openModal = () => openExpenseModal();
   document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
   document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);
@@ -6308,13 +6778,17 @@ function initExpensesUI() {
 let managementActiveTab = 'withdrawals';
 
 function switchManagementTab(tab) {
-  managementActiveTab = tab === 'expenses' ? 'expenses' : 'withdrawals';
+  managementActiveTab = tab === 'expenses' ? 'expenses' : tab === 'config' ? 'config' : 'withdrawals';
   const withdrawalsPanel = document.getElementById('managementTabWithdrawals');
   const expensesPanel = document.getElementById('managementTabExpenses');
+  const configPanel = document.getElementById('managementTabConfig');
   if (withdrawalsPanel) withdrawalsPanel.hidden = managementActiveTab !== 'withdrawals';
   if (expensesPanel) expensesPanel.hidden = managementActiveTab !== 'expenses';
+  if (configPanel) configPanel.hidden = managementActiveTab !== 'config';
   document.getElementById('mgmtTabBtnWithdrawals')?.classList.toggle('active', managementActiveTab === 'withdrawals');
   document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
+  document.getElementById('mgmtTabBtnConfig')?.classList.toggle('active', managementActiveTab === 'config');
+  if (managementActiveTab === 'config') renderMgmtConfigLists();
 }
 
 let backtestingViewActiveTab = 'trades';
@@ -6371,13 +6845,16 @@ async function refreshManagementUI() {
   if (!document.getElementById('managementView')) return;
   await Promise.all([refreshWithdrawalsUI(), refreshExpensesUI()]);
   renderManagementBalanceBanner();
+  if (managementActiveTab === 'config') renderMgmtConfigLists();
 }
 
 function initManagementTabs() {
   if (!document.getElementById('managementView')) return;
   document.getElementById('mgmtTabBtnWithdrawals')?.addEventListener('click', () => switchManagementTab('withdrawals'));
   document.getElementById('mgmtTabBtnExpenses')?.addEventListener('click', () => switchManagementTab('expenses'));
+  document.getElementById('mgmtTabBtnConfig')?.addEventListener('click', () => switchManagementTab('config'));
   switchManagementTab('withdrawals');
+  initMgmtConfigTab();
 }
 
 function getAccountTradeNames(account) {

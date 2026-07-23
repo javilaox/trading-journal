@@ -1859,6 +1859,84 @@
         gap: 16px;
       }
       #managementView .management-tab-panel[hidden] { display: none; }
+      #managementView .mgmt-config-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        #managementView .mgmt-config-grid { grid-template-columns: 1fr; }
+      }
+      #managementView .mgmt-config-card-header { margin-bottom: 12px; }
+      #managementView .mgmt-config-card-header h2 { margin: 0 0 2px; }
+      #managementView .mgmt-config-card-header p { margin: 0; }
+      #managementView .mgmt-config-add-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      #managementView .mgmt-config-add-row .input { flex: 1 1 auto; min-width: 0; }
+      #managementView .mgmt-config-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 360px;
+        overflow-y: auto;
+      }
+      #managementView .mgmt-config-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(148, 163, 184, 0.06);
+      }
+      #managementView .mgmt-config-item-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      #managementView .mgmt-config-item-name strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #managementView .mgmt-config-item-count {
+        font-size: 0.76rem;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+      #managementView .mgmt-config-item-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      #managementView .mgmt-config-item-actions button {
+        padding: 6px 10px;
+        font-size: 0.78rem;
+      }
+      #managementView .mgmt-config-item.editing .mgmt-config-item-name { display: none; }
+      #managementView .mgmt-config-item-edit-row {
+        display: none;
+        flex: 1 1 auto;
+        gap: 8px;
+        min-width: 0;
+      }
+      #managementView .mgmt-config-item.editing .mgmt-config-item-edit-row {
+        display: flex;
+      }
+      #managementView .mgmt-config-item-edit-row .input { flex: 1 1 auto; min-width: 0; }
+      #managementView .mgmt-config-empty {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        padding: 8px 2px;
+      }
       /* Panel de sugerencias propio (Prop / Categoría) para no depender del popup nativo
          de <datalist>, que no se puede tematizar en Electron/Chromium. */
       .suggest-wrap { position: relative; }
@@ -6535,6 +6613,7 @@
             <div class="mgmt-tabs" role="tablist">
               <button type="button" class="mgmt-tab-btn active" id="mgmtTabBtnWithdrawals" data-mgmt-tab="withdrawals" data-i18n="withdrawals_nav">Retiros</button>
               <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnExpenses" data-mgmt-tab="expenses" data-i18n="expenses_nav">Gastos</button>
+              <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnConfig" data-mgmt-tab="config" data-i18n="mgmt_config_nav">Props y categorías</button>
             </div>
 
             <div id="managementTabWithdrawals" class="management-tab-panel">
@@ -6723,6 +6802,34 @@
                     </div>
                   </div>
                 </aside>
+              </div>
+            </div>
+
+            <div id="managementTabConfig" class="management-tab-panel" hidden>
+              <div class="mgmt-config-grid">
+                <section class="card mgmt-config-card">
+                  <div class="mgmt-config-card-header">
+                    <h2 class="wd-panel-title" data-i18n="mgmt_config_props_title">Props</h2>
+                    <p class="wd-subtitle" data-i18n="mgmt_config_props_desc">Se usan en Retiros y Gastos.</p>
+                  </div>
+                  <div class="mgmt-config-add-row">
+                    <input id="mgmtConfigNewPropInput" class="input" type="text" data-i18n-placeholder="mgmt_config_new_prop_placeholder" placeholder="Nueva prop..." />
+                    <button type="button" id="mgmtConfigAddPropBtn" class="button button-add" data-i18n="mgmt_config_add_btn">Añadir</button>
+                  </div>
+                  <ul id="mgmtConfigPropsList" class="mgmt-config-list"></ul>
+                </section>
+
+                <section class="card mgmt-config-card">
+                  <div class="mgmt-config-card-header">
+                    <h2 class="wd-panel-title" data-i18n="mgmt_config_categories_title">Categorías</h2>
+                    <p class="wd-subtitle" data-i18n="mgmt_config_categories_desc">Se usan en Gastos (opcional).</p>
+                  </div>
+                  <div class="mgmt-config-add-row">
+                    <input id="mgmtConfigNewCategoryInput" class="input" type="text" data-i18n-placeholder="mgmt_config_new_category_placeholder" placeholder="Nueva categoría..." />
+                    <button type="button" id="mgmtConfigAddCategoryBtn" class="button button-add" data-i18n="mgmt_config_add_btn">Añadir</button>
+                  </div>
+                  <ul id="mgmtConfigCategoriesList" class="mgmt-config-list"></ul>
+                </section>
               </div>
             </div>
           </div>
