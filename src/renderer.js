@@ -6202,6 +6202,27 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
       .join('');
   }
 
+  // El panel usa position:fixed (ver comentario en el CSS de .suggest-panel) porque vive dentro
+  // de un formulario con overflow-y:auto: como hijo absolute quedaba recortado por ese overflow
+  // y nunca se veía (o se veía un instante al hacer scrollIntoView y luego "se cerraba"). Con
+  // fixed hay que posicionarlo a mano con las coordenadas reales del input en pantalla.
+  function reposition() {
+    const rect = input.getBoundingClientRect();
+    const maxHeight = 220;
+    const fitsBelow = rect.bottom + 6 + Math.min(maxHeight, 160) <= window.innerHeight;
+    panel.style.left = `${Math.round(rect.left)}px`;
+    panel.style.width = `${Math.round(rect.width)}px`;
+    if (fitsBelow) {
+      panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+      panel.style.bottom = '';
+      panel.style.maxHeight = `${Math.max(120, Math.floor(window.innerHeight - rect.bottom - 16))}px`;
+    } else {
+      panel.style.bottom = `${Math.round(window.innerHeight - rect.top + 6)}px`;
+      panel.style.top = '';
+      panel.style.maxHeight = `${Math.max(120, Math.floor(rect.top - 16))}px`;
+    }
+  }
+
   function open() {
     const query = input.value.trim().toLowerCase();
     const all = (typeof getItems === 'function' ? getItems() : []) || [];
@@ -6211,12 +6232,8 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
       return;
     }
     renderItems(filtered);
+    reposition();
     panel.hidden = false;
-    // El panel vive dentro de un formulario con scroll propio; nos aseguramos de que
-    // quede visible en vez de recortado por el borde del área con overflow.
-    requestAnimationFrame(() => {
-      panel.scrollIntoView({ block: 'nearest' });
-    });
   }
 
   function close() {
@@ -6240,8 +6257,22 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     if (event.target === input || panel.contains(event.target)) return;
     close();
   });
+  // Captura (true) para enterarse también del scroll dentro del formulario del modal (que no
+  // burbujea); si el scroll viene de dentro del propio panel de sugerencias no lo cerramos.
+  window.addEventListener(
+    'scroll',
+    (event) => {
+      if (panel.hidden) return;
+      if (event.target && typeof event.target.closest === 'function' && event.target.closest('.suggest-panel')) return;
+      close();
+    },
+    true
+  );
+  window.addEventListener('resize', () => {
+    if (!panel.hidden) reposition();
+  });
 
-  return { open, close };
+  return { open, close, reposition };
 }
 
 function initExpensesUI() {

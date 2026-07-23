@@ -1862,12 +1862,14 @@
       /* Panel de sugerencias propio (Prop / Categoría) para no depender del popup nativo
          de <datalist>, que no se puede tematizar en Electron/Chromium. */
       .suggest-wrap { position: relative; }
+      /* position:fixed (en vez de absolute) a propósito: el formulario del modal de Retiro/Gasto
+         tiene overflow-y:auto para poder hacer scroll, y un hijo absolute quedaría recortado por
+         ese overflow en vez de flotar por encima. Las coordenadas se calculan a mano en JS
+         (attachSuggestDropdown) a partir de getBoundingClientRect() del input, igual que el
+         selector de hora de Backtesting. */
       .suggest-panel {
-        position: absolute;
-        top: calc(100% + 4px);
-        left: 0;
-        right: 0;
-        z-index: 60;
+        position: fixed;
+        z-index: 10001;
         max-height: 220px;
         overflow-y: auto;
         background: var(--card-bg);
@@ -1875,6 +1877,7 @@
         border-radius: 10px;
         box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
         padding: 4px;
+        box-sizing: border-box;
       }
       .suggest-panel[hidden] { display: none; }
       .suggest-item {
