@@ -6793,17 +6793,22 @@ function initExpensesUI() {
 let managementActiveTab = 'withdrawals';
 
 function switchManagementTab(tab) {
-  managementActiveTab = tab === 'expenses' ? 'expenses' : tab === 'config' ? 'config' : 'withdrawals';
+  managementActiveTab =
+    tab === 'expenses' ? 'expenses' : tab === 'config' ? 'config' : tab === 'calendar' ? 'calendar' : 'withdrawals';
   const withdrawalsPanel = document.getElementById('managementTabWithdrawals');
   const expensesPanel = document.getElementById('managementTabExpenses');
+  const calendarPanel = document.getElementById('managementTabCalendar');
   const configPanel = document.getElementById('managementTabConfig');
   if (withdrawalsPanel) withdrawalsPanel.hidden = managementActiveTab !== 'withdrawals';
   if (expensesPanel) expensesPanel.hidden = managementActiveTab !== 'expenses';
+  if (calendarPanel) calendarPanel.hidden = managementActiveTab !== 'calendar';
   if (configPanel) configPanel.hidden = managementActiveTab !== 'config';
   document.getElementById('mgmtTabBtnWithdrawals')?.classList.toggle('active', managementActiveTab === 'withdrawals');
   document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
+  document.getElementById('mgmtTabBtnCalendar')?.classList.toggle('active', managementActiveTab === 'calendar');
   document.getElementById('mgmtTabBtnConfig')?.classList.toggle('active', managementActiveTab === 'config');
   if (managementActiveTab === 'config') renderMgmtConfigLists();
+  if (managementActiveTab === 'calendar') renderMgmtCalendar();
 }
 
 let backtestingViewActiveTab = 'trades';
@@ -6861,15 +6866,210 @@ async function refreshManagementUI() {
   await Promise.all([refreshWithdrawalsUI(), refreshExpensesUI()]);
   renderManagementBalanceBanner();
   if (managementActiveTab === 'config') renderMgmtConfigLists();
+  if (managementActiveTab === 'calendar') renderMgmtCalendar();
 }
 
 function initManagementTabs() {
   if (!document.getElementById('managementView')) return;
   document.getElementById('mgmtTabBtnWithdrawals')?.addEventListener('click', () => switchManagementTab('withdrawals'));
   document.getElementById('mgmtTabBtnExpenses')?.addEventListener('click', () => switchManagementTab('expenses'));
+  document.getElementById('mgmtTabBtnCalendar')?.addEventListener('click', () => switchManagementTab('calendar'));
   document.getElementById('mgmtTabBtnConfig')?.addEventListener('click', () => switchManagementTab('config'));
   switchManagementTab('withdrawals');
   initMgmtConfigTab();
+  initMgmtCalendarTab();
+}
+
+// ------------------------ Gestión: pestaña Calendario (neto retirado - gastado) ------------------------
+
+let mgmtCalendarView = 'month'; // 'month' | 'year'
+const mgmtCalendarToday = new Date();
+let mgmtCalendarYear = mgmtCalendarToday.getFullYear();
+let mgmtCalendarMonth = mgmtCalendarToday.getMonth();
+let mgmtCalendarSelectedDate = '';
+
+/** Retirado/gastado/neto para una fecha exacta (YYYY-MM-DD). */
+function getManagementDayFlow(dateKey) {
+  const withdrawn = withdrawalsCache
+    .filter((w) => String(w.date || '').slice(0, 10) === dateKey)
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const spent = expensesCache
+    .filter((e) => String(e.date || '').slice(0, 10) === dateKey)
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  return { withdrawn, spent, net: withdrawn - spent };
+}
+
+/** Retirado/gastado/neto agregados para un mes completo (year, month 0-indexado). */
+function getManagementMonthFlow(year, month) {
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const withdrawn = withdrawalsCache
+    .filter((w) => String(w.date || '').slice(0, 7) === prefix)
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const spent = expensesCache
+    .filter((e) => String(e.date || '').slice(0, 7) === prefix)
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  return { withdrawn, spent, net: withdrawn - spent };
+}
+
+function mgmtCalendarFlowTitle(flow) {
+  return `${t('withdrawals_total', 'Total retirado')}: ${formatWithdrawalEuro(flow.withdrawn)}  ·  ${t('expenses_total', 'Total gastado')}: ${formatNegativeEuro(flow.spent)}`;
+}
+
+function updateMgmtCalendarPeriodLabel() {
+  const label = document.getElementById('mgmtCalendarPeriodLabel');
+  if (!label) return;
+  label.textContent =
+    mgmtCalendarView === 'month' ? formatCalendarTitle(mgmtCalendarYear, mgmtCalendarMonth) : String(mgmtCalendarYear);
+}
+
+function renderMgmtCalendarDayDetail(dateKey) {
+  const host = document.getElementById('mgmtCalendarDayDetail');
+  if (!host) return;
+  if (!dateKey) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  const flow = getManagementDayFlow(dateKey);
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="mgmt-calendar-day-detail-item"><span>${escapeHtmlChipText(formatDateEs(dateKey))}</span><strong>—</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('withdrawals_total', 'Total retirado')}</span><strong class="positive">${formatWithdrawalEuro(flow.withdrawn)}</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('expenses_total', 'Total gastado')}</span><strong class="negative">${formatNegativeEuro(flow.spent)}</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('management_balance_net', 'Retirado - Gastado')}</span><strong class="${flow.net >= 0 ? 'positive' : 'negative'}">${formatWithdrawalEuro(flow.net)}</strong></div>`;
+}
+
+function renderMgmtCalendarMonthView() {
+  const header = document.getElementById('mgmtCalendarMonthHeader');
+  const grid = document.getElementById('mgmtCalendarMonthGrid');
+  if (!header || !grid) return;
+
+  header.innerHTML = getCalendarWeekdayLabels(true)
+    .map((label) => `<span>${escapeHtmlChipText(label)}</span>`)
+    .join('');
+
+  const year = mgmtCalendarYear;
+  const month = mgmtCalendarMonth;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  const cellsHtml = [];
+  for (let i = 0; i < startOffset; i++) {
+    cellsHtml.push('<div class="mgmt-calendar-cell mgmt-calendar-cell-empty"></div>');
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateKey = toDateKey(year, month, day);
+    const flow = getManagementDayFlow(dateKey);
+    const hasData = flow.withdrawn !== 0 || flow.spent !== 0;
+    const cls = ['mgmt-calendar-cell'];
+    if (hasData) cls.push('has-data', flow.net >= 0 ? 'positive' : 'negative');
+    if (dateKey === mgmtCalendarSelectedDate) cls.push('selected');
+    cellsHtml.push(`
+      <div class="${cls.join(' ')}" data-mgmt-cal-day="${dateKey}" title="${escapeAttrChip(mgmtCalendarFlowTitle(flow))}">
+        <span class="mgmt-calendar-cell-label">${day}</span>
+        ${hasData ? `<span class="mgmt-calendar-cell-net">${flow.net > 0 ? '+' : ''}${flow.net.toFixed(2)}€</span>` : ''}
+      </div>`);
+  }
+  grid.innerHTML = cellsHtml.join('');
+
+  grid.querySelectorAll('[data-mgmt-cal-day]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      const dateKey = cell.dataset.mgmtCalDay;
+      mgmtCalendarSelectedDate = mgmtCalendarSelectedDate === dateKey ? '' : dateKey;
+      renderMgmtCalendarMonthView();
+      renderMgmtCalendarDayDetail(mgmtCalendarSelectedDate);
+    });
+  });
+}
+
+function renderMgmtCalendarYearView() {
+  const grid = document.getElementById('mgmtCalendarYearView');
+  if (!grid) return;
+  const year = mgmtCalendarYear;
+
+  grid.innerHTML = MONTH_I18N_KEYS.map((monthKey, index) => {
+    const flow = getManagementMonthFlow(year, index);
+    const hasData = flow.withdrawn !== 0 || flow.spent !== 0;
+    const cls = ['mgmt-calendar-cell'];
+    if (hasData) cls.push('has-data', flow.net >= 0 ? 'positive' : 'negative');
+    return `
+      <div class="${cls.join(' ')}" data-mgmt-cal-month="${index}" title="${escapeAttrChip(mgmtCalendarFlowTitle(flow))}">
+        <span class="mgmt-calendar-cell-label">${escapeHtmlChipText(t(monthKey))}</span>
+        ${hasData ? `<span class="mgmt-calendar-cell-net">${flow.net > 0 ? '+' : ''}${flow.net.toFixed(2)}€</span>` : ''}
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-mgmt-cal-month]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      mgmtCalendarMonth = Number(cell.dataset.mgmtCalMonth);
+      mgmtCalendarView = 'month';
+      mgmtCalendarSelectedDate = '';
+      syncMgmtCalendarViewUi();
+      renderMgmtCalendar();
+    });
+  });
+}
+
+function syncMgmtCalendarViewUi() {
+  document.getElementById('mgmtCalendarViewMonthBtn')?.classList.toggle('active', mgmtCalendarView === 'month');
+  document.getElementById('mgmtCalendarViewYearBtn')?.classList.toggle('active', mgmtCalendarView === 'year');
+  const monthWrap = document.getElementById('mgmtCalendarMonthView');
+  const yearWrap = document.getElementById('mgmtCalendarYearView');
+  if (monthWrap) monthWrap.hidden = mgmtCalendarView !== 'month';
+  if (yearWrap) yearWrap.hidden = mgmtCalendarView !== 'year';
+}
+
+function renderMgmtCalendar() {
+  if (!document.getElementById('managementTabCalendar')) return;
+  updateMgmtCalendarPeriodLabel();
+  if (mgmtCalendarView === 'month') {
+    renderMgmtCalendarMonthView();
+    renderMgmtCalendarDayDetail(mgmtCalendarSelectedDate);
+  } else {
+    renderMgmtCalendarYearView();
+    renderMgmtCalendarDayDetail('');
+  }
+}
+
+function initMgmtCalendarTab() {
+  if (!document.getElementById('managementTabCalendar')) return;
+  document.getElementById('mgmtCalendarViewMonthBtn')?.addEventListener('click', () => {
+    mgmtCalendarView = 'month';
+    syncMgmtCalendarViewUi();
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarViewYearBtn')?.addEventListener('click', () => {
+    mgmtCalendarView = 'year';
+    syncMgmtCalendarViewUi();
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarPrevBtn')?.addEventListener('click', () => {
+    if (mgmtCalendarView === 'month') {
+      mgmtCalendarMonth -= 1;
+      if (mgmtCalendarMonth < 0) {
+        mgmtCalendarMonth = 11;
+        mgmtCalendarYear -= 1;
+      }
+    } else {
+      mgmtCalendarYear -= 1;
+    }
+    mgmtCalendarSelectedDate = '';
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarNextBtn')?.addEventListener('click', () => {
+    if (mgmtCalendarView === 'month') {
+      mgmtCalendarMonth += 1;
+      if (mgmtCalendarMonth > 11) {
+        mgmtCalendarMonth = 0;
+        mgmtCalendarYear += 1;
+      }
+    } else {
+      mgmtCalendarYear += 1;
+    }
+    mgmtCalendarSelectedDate = '';
+    renderMgmtCalendar();
+  });
+  syncMgmtCalendarViewUi();
 }
 
 function getAccountTradeNames(account) {

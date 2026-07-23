@@ -1937,6 +1937,117 @@
         font-size: 0.85rem;
         padding: 8px 2px;
       }
+      #managementView .mgmt-calendar-card { display: flex; flex-direction: column; gap: 16px; }
+      #managementView .mgmt-calendar-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      #managementView .mgmt-calendar-view-toggle {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 3px;
+        gap: 3px;
+      }
+      #managementView .mgmt-calendar-view-btn {
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        padding: 6px 14px;
+        border-radius: 9px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #managementView .mgmt-calendar-view-btn.active {
+        background: var(--green, #22c55e);
+        color: #04150a;
+      }
+      #managementView .mgmt-calendar-nav {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      #managementView .mgmt-calendar-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      #managementView .mgmt-calendar-weekdays span {
+        text-align: center;
+        font-size: 0.74rem;
+        color: var(--text-muted);
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      #managementView .mgmt-calendar-grid-month {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 8px;
+      }
+      #managementView .mgmt-calendar-grid-year {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      #managementView .mgmt-calendar-cell {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(148, 163, 184, 0.05);
+        padding: 8px;
+        min-height: 64px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        cursor: default;
+        transition: border-color .15s ease, background .15s ease;
+      }
+      #managementView .mgmt-calendar-cell.mgmt-calendar-cell-empty {
+        border-color: transparent;
+        background: transparent;
+      }
+      #managementView .mgmt-calendar-cell.has-data { cursor: pointer; }
+      #managementView .mgmt-calendar-cell.has-data:hover {
+        border-color: rgba(148, 163, 184, 0.4);
+        background: rgba(148, 163, 184, 0.1);
+      }
+      #managementView .mgmt-calendar-cell.positive { border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.08); }
+      #managementView .mgmt-calendar-cell.negative { border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.08); }
+      #managementView .mgmt-calendar-cell.selected { outline: 2px solid var(--green, #22c55e); outline-offset: -2px; }
+      #managementView .mgmt-calendar-cell-label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        font-weight: 700;
+      }
+      #managementView .mgmt-calendar-cell-net {
+        font-size: 0.85rem;
+        font-weight: 800;
+      }
+      #managementView .mgmt-calendar-cell.positive .mgmt-calendar-cell-net { color: var(--green, #22c55e); }
+      #managementView .mgmt-calendar-cell.negative .mgmt-calendar-cell-net { color: var(--red, #ef4444); }
+      #managementView .mgmt-calendar-grid-year .mgmt-calendar-cell { min-height: 84px; justify-content: center; align-items: center; text-align: center; }
+      #managementView .mgmt-calendar-day-detail {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: rgba(148, 163, 184, 0.06);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+      }
+      #managementView .mgmt-calendar-day-detail-item span {
+        display: block;
+        font-size: 0.74rem;
+        color: var(--text-muted);
+        margin-bottom: 2px;
+      }
+      #managementView .mgmt-calendar-day-detail-item strong { font-size: 1rem; }
+      #managementView .mgmt-calendar-day-detail-item strong.positive { color: var(--green); }
+      #managementView .mgmt-calendar-day-detail-item strong.negative { color: var(--red); }
       /* Panel de sugerencias propio (Prop / Categoría) para no depender del popup nativo
          de <datalist>, que no se puede tematizar en Electron/Chromium. */
       .suggest-wrap { position: relative; }
@@ -6645,6 +6756,7 @@
             <div class="mgmt-tabs" role="tablist">
               <button type="button" class="mgmt-tab-btn active" id="mgmtTabBtnWithdrawals" data-mgmt-tab="withdrawals" data-i18n="withdrawals_nav">Retiros</button>
               <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnExpenses" data-mgmt-tab="expenses" data-i18n="expenses_nav">Gastos</button>
+              <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnCalendar" data-mgmt-tab="calendar" data-i18n="mgmt_calendar_nav">Calendario</button>
               <button type="button" class="mgmt-tab-btn" id="mgmtTabBtnConfig" data-mgmt-tab="config" data-i18n="mgmt_config_nav">Props y categorías</button>
             </div>
 
@@ -6834,6 +6946,30 @@
                     </div>
                   </div>
                 </aside>
+              </div>
+            </div>
+
+            <div id="managementTabCalendar" class="management-tab-panel" hidden>
+              <div class="card mgmt-calendar-card">
+                <div class="mgmt-calendar-toolbar">
+                  <div class="mgmt-calendar-view-toggle" role="tablist">
+                    <button type="button" class="mgmt-calendar-view-btn active" id="mgmtCalendarViewMonthBtn" data-mgmt-calendar-view="month" data-i18n="mgmt_calendar_view_month">Mensual</button>
+                    <button type="button" class="mgmt-calendar-view-btn" id="mgmtCalendarViewYearBtn" data-mgmt-calendar-view="year" data-i18n="mgmt_calendar_view_year">Anual</button>
+                  </div>
+                  <div class="mgmt-calendar-nav">
+                    <button type="button" id="mgmtCalendarPrevBtn" class="calendar-nav-btn" aria-label="Anterior">‹</button>
+                    <span id="mgmtCalendarPeriodLabel" class="calendar-month-label">—</span>
+                    <button type="button" id="mgmtCalendarNextBtn" class="calendar-nav-btn" aria-label="Siguiente">›</button>
+                  </div>
+                </div>
+
+                <div id="mgmtCalendarMonthView">
+                  <div id="mgmtCalendarMonthHeader" class="mgmt-calendar-weekdays"></div>
+                  <div id="mgmtCalendarMonthGrid" class="mgmt-calendar-grid mgmt-calendar-grid-month"></div>
+                </div>
+                <div id="mgmtCalendarYearView" class="mgmt-calendar-grid mgmt-calendar-grid-year" hidden></div>
+
+                <div id="mgmtCalendarDayDetail" class="mgmt-calendar-day-detail" hidden></div>
               </div>
             </div>
 
