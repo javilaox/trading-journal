@@ -4587,6 +4587,12 @@ function setMode(mode) {
   }
 }
 
+const REAL_ACCOUNT_TYPES = new Set(['challenge', 'funded', 'own_capital']);
+function normalizeAccountType(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return REAL_ACCOUNT_TYPES.has(v) ? v : null;
+}
+
 function normalizeAccount(account) {
   if (typeof account === 'string') {
     return {
@@ -4595,6 +4601,10 @@ function normalizeAccount(account) {
       commissionPerLot: 0,
       freeSwap: false,
       prop_name: null,
+      account_type: null,
+      account_number: null,
+      challenge_passed: false,
+      disabled_by_max_dd: false,
       client_uuid: null,
       remote_id: null,
       id: null,
@@ -4602,12 +4612,17 @@ function normalizeAccount(account) {
     };
   }
   const propName = String(account?.prop_name ?? '').trim();
+  const accountNumber = String(account?.account_number ?? account?.accountNumber ?? '').trim();
   return {
     name: (account?.name || '').trim(),
     capital: Number(account?.capital ?? account?.balance) || 0,
     commissionPerLot: resolveAccountCommissionPerLot(account),
     freeSwap: Boolean(account?.freeSwap ?? account?.free_swap),
     prop_name: propName || null,
+    account_type: normalizeAccountType(account?.account_type ?? account?.accountType),
+    account_number: accountNumber || null,
+    challenge_passed: Boolean(account?.challenge_passed ?? account?.challengePassed),
+    disabled_by_max_dd: Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd),
     client_uuid: account?.client_uuid ? String(account.client_uuid) : null,
     remote_id: account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id) : null,
     id: account?.id != null && account.id !== '' ? account.id : null,
@@ -6958,6 +6973,57 @@ function buildAccountCardDataAttrs(account) {
     .join(' ');
 }
 
+function getAccountTypeLabel(type) {
+  if (type === 'challenge') return t('account_type_challenge', 'Challenge');
+  if (type === 'funded') return t('account_type_funded', 'Fondeada');
+  if (type === 'own_capital') return t('account_type_own_capital', 'Capital propio');
+  return '';
+}
+
+/** % de cuentas Challenge quemadas por máximo DD, % de challenges superados, y retiro medio de
+ * las cuentas Fondeadas — para poder responder a "qué % de challenges paso" / "qué % de cuentas
+ * quemo" / "cuánto retiro de media de cada cuenta que llego a fondear". */
+function renderAccountsChallengeStats(accounts) {
+  const row = document.getElementById('accountsChallengeStatsRow');
+  if (!row) return;
+
+  const challenges = accounts.filter((a) => a.account_type === 'challenge');
+  const funded = accounts.filter((a) => a.account_type === 'funded');
+
+  if (!challenges.length && !funded.length) {
+    row.hidden = true;
+    row.innerHTML = '';
+    return;
+  }
+
+  const burned = challenges.filter((a) => a.disabled_by_max_dd).length;
+  const passed = challenges.filter((a) => a.challenge_passed).length;
+  const burnedPct = challenges.length ? (burned / challenges.length) * 100 : 0;
+  const passedPct = challenges.length ? (passed / challenges.length) * 100 : 0;
+  const avgFundedWithdrawn = funded.length
+    ? funded.reduce((sum, a) => sum + getAccountWithdrawalStats(a).withdrawn, 0) / funded.length
+    : 0;
+
+  row.hidden = false;
+  row.innerHTML = `
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_challenges', 'Challenges intentados')}</span>
+      <strong>${challenges.length}</strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_passed_pct', '% challenges superados')}</span>
+      <strong>${challenges.length ? passedPct.toFixed(1) : '0.0'}% <small style="font-weight:400;color:var(--text-muted)">(${passed}/${challenges.length})</small></strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_burned_pct', '% cuentas quemadas (Máx. DD)')}</span>
+      <strong>${challenges.length ? burnedPct.toFixed(1) : '0.0'}% <small style="font-weight:400;color:var(--text-muted)">(${burned}/${challenges.length})</small></strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_avg_funded_withdrawn', 'Retiro medio por cuenta fondeada')}</span>
+      <strong>${formatWithdrawalEuro(avgFundedWithdrawn)} <small style="font-weight:400;color:var(--text-muted)">(${funded.length})</small></strong>
+    </div>`;
+}
+
 function buildStrategyCardDataAttrs(record) {
   return [
     `data-entity-type="strategy"`,
@@ -6978,6 +7044,7 @@ function renderSettingsAccountsList() {
     listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_account', 'No hay cuentas todavía')}</div>`;
     return;
   }
+  renderAccountsChallengeStats(accounts);
   listEl.innerHTML = accounts
     .map((account) => {
       const stats = getAccountWithdrawalStats(account);
@@ -6987,6 +7054,15 @@ function renderSettingsAccountsList() {
       const badges = [];
       if (account.freeSwap) badges.push(`<span class="settings-entity-badge">Free Swap</span>`);
       if (account.prop_name) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(account.prop_name)}</span>`);
+      const typeLabel = getAccountTypeLabel(account.account_type);
+      if (typeLabel) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(typeLabel)}</span>`);
+      if (account.account_number) badges.push(`<span class="settings-entity-badge muted">#${escapeHtmlChipText(account.account_number)}</span>`);
+      if (account.account_type === 'challenge' && account.disabled_by_max_dd) {
+        badges.push(`<span class="settings-entity-badge danger">${escapeHtmlChipText(t('account_max_dd_badge', 'Quemada (Máx. DD)'))}</span>`);
+      }
+      if (account.account_type === 'challenge' && account.challenge_passed) {
+        badges.push(`<span class="settings-entity-badge ok">${escapeHtmlChipText(t('account_challenge_passed_badge', 'Challenge superado'))}</span>`);
+      }
       return `
         <article class="settings-entity-card" role="listitem" ${buildAccountCardDataAttrs(account)}>
           <div class="settings-entity-card-main">
@@ -7096,23 +7172,47 @@ function openAccountDetailModal(account = null) {
   if (title) title.textContent = isEdit ? t('account_detail_title', 'Detalle de cuenta') : t('add_account', 'Nueva cuenta');
   if (saveBtn) saveBtn.textContent = isEdit ? t('save_changes') : t('add_account');
   if (deleteBtn) deleteBtn.hidden = !isEdit;
+  const typeSel = document.getElementById('accountModalType');
   if (account) {
     document.getElementById('accountModalName').value = account.name || '';
     document.getElementById('accountModalProp').value = account.prop_name || '';
+    document.getElementById('accountModalNumber').value = account.account_number || '';
     document.getElementById('accountModalCapital').value = String(account.capital ?? '');
     document.getElementById('accountModalCommission').value = String(account.commissionPerLot ?? '');
     document.getElementById('accountModalFreeSwap').checked = Boolean(account.freeSwap);
+    document.getElementById('accountModalChallengePassed').checked = Boolean(account.challenge_passed);
+    document.getElementById('accountModalMaxDd').checked = Boolean(account.disabled_by_max_dd);
+    if (typeSel) {
+      typeSel.value = account.account_type || '';
+      refreshCustomSelectForNative(typeSel);
+    }
     updateAccountModalSummary(account);
   } else {
     document.getElementById('accountModalName').value = '';
     document.getElementById('accountModalProp').value = '';
+    document.getElementById('accountModalNumber').value = '';
     document.getElementById('accountModalCapital').value = '';
     document.getElementById('accountModalCommission').value = '';
     document.getElementById('accountModalFreeSwap').checked = false;
+    document.getElementById('accountModalChallengePassed').checked = false;
+    document.getElementById('accountModalMaxDd').checked = false;
+    if (typeSel) {
+      typeSel.value = '';
+      refreshCustomSelectForNative(typeSel);
+    }
     const summaryEl = document.getElementById('accountModalSummary');
     if (summaryEl) summaryEl.hidden = true;
   }
+  syncAccountModalChallengeFieldsVisibility();
   showEntityModalOverlay('accountDetailModalOverlay');
+}
+
+// Los campos "Challenge superado" / "Máximo DD" solo tienen sentido si la cuenta es de tipo
+// Challenge; se ocultan para Fondeada/Capital propio/sin especificar para no confundir.
+function syncAccountModalChallengeFieldsVisibility() {
+  const type = document.getElementById('accountModalType')?.value || '';
+  const wrap = document.getElementById('accountModalChallengeFields');
+  if (wrap) wrap.hidden = type !== 'challenge';
 }
 
 function closeAccountDetailModal() {
@@ -7153,9 +7253,15 @@ async function saveAccountFromModal() {
 
   const name = String(document.getElementById('accountModalName')?.value || '').trim();
   const propName = String(document.getElementById('accountModalProp')?.value || '').trim();
+  const accountNumber = String(document.getElementById('accountModalNumber')?.value || '').trim();
+  const accountType = normalizeAccountType(document.getElementById('accountModalType')?.value);
   const capital = parseNumericField(document.getElementById('accountModalCapital')?.value, 0);
   const commissionPerLot = parseNumericField(document.getElementById('accountModalCommission')?.value, 0);
   const freeSwap = Boolean(document.getElementById('accountModalFreeSwap')?.checked);
+  // Los toggles de challenge solo se guardan tal cual si la cuenta es de tipo Challenge; si se
+  // cambia el tipo a Fondeada/Capital propio no tiene sentido arrastrar un estado de challenge.
+  const challengePassed = accountType === 'challenge' && Boolean(document.getElementById('accountModalChallengePassed')?.checked);
+  const disabledByMaxDd = accountType === 'challenge' && Boolean(document.getElementById('accountModalMaxDd')?.checked);
 
   if (!name) {
     setAccountModalError('el nombre es obligatorio');
@@ -7170,7 +7276,17 @@ async function saveAccountFromModal() {
     return;
   }
 
-  const payload = { name, prop_name: propName || null, capital, commissionPerLot, freeSwap };
+  const payload = {
+    name,
+    prop_name: propName || null,
+    account_number: accountNumber || null,
+    account_type: accountType,
+    capital,
+    commissionPerLot,
+    freeSwap,
+    challenge_passed: challengePassed,
+    disabled_by_max_dd: disabledByMaxDd,
+  };
   const isEdit = hasStableIdentity(accountModalIdentity);
   const existing = isEdit ? findAccountByIdentity(accountModalIdentity) : null;
   const originalName = accountModalIdentity?.originalName || existing?.name || null;
@@ -7497,6 +7613,7 @@ function initSettingsEntityListDelegation() {
 function initAccountStrategyModals() {
   initSettingsEntityListDelegation();
   attachSuggestDropdown('accountModalProp', 'accountModalPropSuggest', getKnownExpenseProps);
+  document.getElementById('accountModalType')?.addEventListener('change', syncAccountModalChallengeFieldsVisibility);
   document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
   document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());
   document.getElementById('saveAccountDetailModalBtn')?.addEventListener('click', () => {

@@ -2107,6 +2107,37 @@
         color: var(--text-muted);
         border-color: rgba(148, 163, 184, 0.2);
       }
+      .settings-entity-badge.danger {
+        background: rgba(239, 68, 68, 0.12);
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, 0.3);
+      }
+      .settings-entity-badge.ok {
+        background: rgba(34, 197, 94, 0.12);
+        color: #86efac;
+        border-color: rgba(34, 197, 94, 0.3);
+      }
+      .settings-accounts-stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .settings-accounts-stat-card {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(148, 163, 184, 0.06);
+      }
+      .settings-accounts-stat-card span {
+        display: block;
+        font-size: 0.74rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .settings-accounts-stat-card strong {
+        font-size: 1.1rem;
+      }
       .settings-entity-card-actions {
         display: flex;
         flex-direction: column;
@@ -6533,6 +6564,7 @@
                 <div class="settings-list-toolbar">
                   <button id="openNewAccountModalBtn" class="button button-add" type="button" data-i18n="add_account">Nueva cuenta</button>
                 </div>
+                <div id="accountsChallengeStatsRow" class="settings-accounts-stats-row" hidden></div>
                 <div id="settingsAccountsList" class="settings-entity-list" role="list"></div>
               </article>
 
@@ -8095,6 +8127,19 @@
             </div>
           </div>
           <div class="field">
+            <label for="accountModalType" data-i18n="account_type_label">Tipo de cuenta</label>
+            <select id="accountModalType" class="input">
+              <option value="" data-i18n="account_type_unspecified">Sin especificar</option>
+              <option value="challenge" data-i18n="account_type_challenge">Challenge</option>
+              <option value="funded" data-i18n="account_type_funded">Fondeada</option>
+              <option value="own_capital" data-i18n="account_type_own_capital">Capital propio</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="accountModalNumber" data-i18n="account_number_label">Nº de cuenta (opcional)</label>
+            <input id="accountModalNumber" class="input" type="text" data-i18n-placeholder="account_number_placeholder" placeholder="Ej: 123456" />
+          </div>
+          <div class="field">
             <label for="accountModalCapital" data-i18n="label_capital_info">Capital</label>
             <input id="accountModalCapital" class="input" type="number" step="0.01" data-i18n-placeholder="placeholder_capital" placeholder="Capital (ej: 10000)" />
           </div>
@@ -8108,6 +8153,22 @@
               <span class="slider"></span>
             </label>
             <span data-i18n="free_swap">Free Swap</span>
+          </div>
+          <div id="accountModalChallengeFields">
+            <div class="toggle-row">
+              <label class="switch" for="accountModalChallengePassed">
+                <input id="accountModalChallengePassed" type="checkbox" />
+                <span class="slider"></span>
+              </label>
+              <span data-i18n="account_challenge_passed">Challenge superado</span>
+            </div>
+            <div class="toggle-row">
+              <label class="switch" for="accountModalMaxDd">
+                <input id="accountModalMaxDd" type="checkbox" />
+                <span class="slider"></span>
+              </label>
+              <span data-i18n="account_max_dd">Deshabilitada por Máximo DD (quemada)</span>
+            </div>
           </div>
           <div id="accountModalSummary" class="entity-detail-summary" hidden></div>
           <div id="accountModalError" class="entity-modal-feedback is-error" hidden role="alert"></div>
