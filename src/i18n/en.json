@@ -227,6 +227,8 @@
   "label_account_name_settings": "Account name",
   "account_prop_label": "Prop (optional)",
   "account_prop_placeholder": "Apex, Topstep, Bulenox...",
+  "account_broker_label": "Broker (optional)",
+  "account_broker_placeholder": "IC Markets, Pepperstone, IBKR...",
   "account_type_label": "Account type",
   "account_type_unspecified": "Unspecified",
   "account_type_challenge": "Challenge",

@@ -1994,6 +1994,11 @@
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 10px;
       }
+      #managementView .mgmt-calendar-grid-month[hidden],
+      #managementView .mgmt-calendar-grid-year[hidden],
+      #managementView #mgmtCalendarMonthView[hidden] {
+        display: none !important;
+      }
       #managementView .mgmt-calendar-cell {
         border: 1px solid var(--border);
         border-radius: 12px;
@@ -8256,13 +8261,6 @@
             <input id="accountModalName" class="input" data-i18n-placeholder="placeholder_account_name" placeholder="Nombre de cuenta" />
           </div>
           <div class="field">
-            <label for="accountModalProp" data-i18n="account_prop_label">Prop (opcional)</label>
-            <div class="suggest-wrap">
-              <input id="accountModalProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="account_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
-              <div id="accountModalPropSuggest" class="suggest-panel" hidden></div>
-            </div>
-          </div>
-          <div class="field">
             <label for="accountModalType" data-i18n="account_type_label">Tipo de cuenta</label>
             <select id="accountModalType" class="input">
               <option value="" data-i18n="account_type_unspecified">Sin especificar</option>
@@ -8270,6 +8268,13 @@
               <option value="funded" data-i18n="account_type_funded">Fondeada</option>
               <option value="own_capital" data-i18n="account_type_own_capital">Capital propio</option>
             </select>
+          </div>
+          <div class="field">
+            <label for="accountModalProp" id="accountModalPropLabel" data-i18n="account_prop_label">Prop (opcional)</label>
+            <div class="suggest-wrap">
+              <input id="accountModalProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="account_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
+              <div id="accountModalPropSuggest" class="suggest-panel" hidden></div>
+            </div>
           </div>
           <div class="field">
             <label for="accountModalNumber" data-i18n="account_number_label">Nº de cuenta (opcional)</label>

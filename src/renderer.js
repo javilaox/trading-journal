@@ -7409,10 +7409,26 @@ function openAccountDetailModal(account = null) {
 
 // Los campos "Challenge superado" / "Máximo DD" solo tienen sentido si la cuenta es de tipo
 // Challenge; se ocultan para Fondeada/Capital propio/sin especificar para no confundir.
+// Además, si la cuenta es de Capital propio no tiene sentido hablar de "Prop", así que el
+// campo pasa a llamarse "Broker" (no es una prop firm, es el bróker donde opera el capital propio).
 function syncAccountModalChallengeFieldsVisibility() {
   const type = document.getElementById('accountModalType')?.value || '';
   const wrap = document.getElementById('accountModalChallengeFields');
   if (wrap) wrap.hidden = type !== 'challenge';
+
+  const isOwnCapital = type === 'own_capital';
+  const label = document.getElementById('accountModalPropLabel');
+  const input = document.getElementById('accountModalProp');
+  if (label) {
+    label.setAttribute('data-i18n', isOwnCapital ? 'account_broker_label' : 'account_prop_label');
+    label.textContent = isOwnCapital ? t('account_broker_label', 'Broker (opcional)') : t('account_prop_label', 'Prop (opcional)');
+  }
+  if (input) {
+    input.setAttribute('data-i18n-placeholder', isOwnCapital ? 'account_broker_placeholder' : 'account_prop_placeholder');
+    input.placeholder = isOwnCapital
+      ? t('account_broker_placeholder', 'IC Markets, Pepperstone, IBKR...')
+      : t('account_prop_placeholder', 'Apex, Topstep, Bulenox...');
+  }
 }
 
 function closeAccountDetailModal() {
