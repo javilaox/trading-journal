@@ -7236,16 +7236,44 @@ function buildStrategyCardDataAttrs(record) {
     .join(' ');
 }
 
+// Pestaña activa en Configuración > Cuentas: 'all' | 'challenge' | 'funded' | 'own_capital' | 'disabled'.
+// 'disabled' son las cuentas Challenge marcadas como quemadas por Máximo DD (disabled_by_max_dd).
+let settingsAccountsTab = 'all';
+
+function accountMatchesSettingsTab(account, tab) {
+  if (tab === 'all') return true;
+  if (tab === 'disabled') return account.account_type === 'challenge' && Boolean(account.disabled_by_max_dd);
+  if (tab === 'challenge') return account.account_type === 'challenge' && !account.disabled_by_max_dd;
+  return account.account_type === tab;
+}
+
+function initSettingsAccountsTabs() {
+  document.querySelectorAll('.settings-accounts-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settingsAccountsTab = btn.getAttribute('data-accounts-tab') || 'all';
+      document.querySelectorAll('.settings-accounts-tab-btn').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
+      renderSettingsAccountsList();
+    });
+  });
+}
+
 function renderSettingsAccountsList() {
   const listEl = document.getElementById('settingsAccountsList');
   if (!listEl) return;
   const accounts = getAccounts();
+  renderAccountsChallengeStats(accounts);
+  const filteredAccounts = accounts.filter((account) => accountMatchesSettingsTab(account, settingsAccountsTab));
   if (!accounts.length) {
     listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_account', 'No hay cuentas todavía')}</div>`;
     return;
   }
-  renderAccountsChallengeStats(accounts);
-  listEl.innerHTML = accounts
+  if (!filteredAccounts.length) {
+    listEl.innerHTML = `<div class="settings-entity-empty">${t('accounts_tab_empty', 'No hay cuentas en esta categoría')}</div>`;
+    return;
+  }
+  listEl.innerHTML = filteredAccounts
     .map((account) => {
       const stats = getAccountWithdrawalStats(account);
       const expenseStats = getAccountExpenseStats(account);
@@ -14509,6 +14537,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
 
   initAccountStrategyModals();
+  initSettingsAccountsTabs();
   initWithdrawalsUI();
   initExpensesUI();
   initManagementTabs();

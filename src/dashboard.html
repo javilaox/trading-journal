@@ -2264,6 +2264,29 @@
       .settings-accounts-stat-card strong {
         font-size: 1.1rem;
       }
+      .settings-accounts-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .settings-accounts-tab-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        font-weight: 600;
+        padding: 9px 6px;
+        margin-bottom: -1px;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+      }
+      .settings-accounts-tab-btn.active {
+        color: var(--text-color, var(--text));
+        border-bottom-color: var(--accent, #4f8cff);
+      }
       .settings-entity-card-actions {
         display: flex;
         flex-direction: column;
@@ -6691,6 +6714,13 @@
                   <button id="openNewAccountModalBtn" class="button button-add" type="button" data-i18n="add_account">Nueva cuenta</button>
                 </div>
                 <div id="accountsChallengeStatsRow" class="settings-accounts-stats-row" hidden></div>
+                <div class="settings-accounts-tabs" role="tablist">
+                  <button type="button" class="settings-accounts-tab-btn active" id="accountsTabBtnAll" data-accounts-tab="all" data-i18n="accounts_tab_all">Todas</button>
+                  <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnChallenge" data-accounts-tab="challenge" data-i18n="accounts_tab_challenge">Challenges</button>
+                  <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnFunded" data-accounts-tab="funded" data-i18n="accounts_tab_funded">Fondeadas</button>
+                  <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnOwnCapital" data-accounts-tab="own_capital" data-i18n="accounts_tab_own_capital">Capital propio</button>
+                  <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnDisabled" data-accounts-tab="disabled" data-i18n="accounts_tab_disabled">Deshabilitadas</button>
+                </div>
                 <div id="settingsAccountsList" class="settings-entity-list" role="list"></div>
               </article>
 
