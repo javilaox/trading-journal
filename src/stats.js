@@ -1188,6 +1188,26 @@ function setCompareSectionVisibility(isVisible) {
   compareSection.classList.toggle('hidden', !isVisible);
 }
 
+// Pestañas de Estadísticas (Resumen / Gráficas / Retiros / Horario): los filtros y toggles
+// se quedan siempre visibles arriba, solo se reparte el contenido en pestañas para que la
+// página no sea un scroll interminable.
+function switchStatsTab(tab) {
+  const target = tab || 'summary';
+  document.querySelectorAll('.stats-tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-stats-tab') === target);
+  });
+  document.querySelectorAll('.stats-tab-panel').forEach((panel) => {
+    panel.hidden = panel.getAttribute('data-stats-tab') !== target;
+  });
+}
+
+function initStatsTabs() {
+  document.querySelectorAll('.stats-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchStatsTab(btn.getAttribute('data-stats-tab')));
+  });
+  switchStatsTab('summary');
+}
+
 function refreshLucideIcons() {
   if (window.lucide && typeof window.lucide.createIcons === 'function') {
     window.lucide.createIcons();
@@ -2316,6 +2336,8 @@ async function bindStatsEventsOnce() {
       toggleAdvancedBtn.textContent = willOpen ? t('insights_advanced_toggle_hide') : t('insights_advanced_toggle_show');
     };
   }
+
+  initStatsTabs();
 
   statsDocClickHandler = (event) => {
     if (!(event.target instanceof Element)) return;

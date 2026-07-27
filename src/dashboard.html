@@ -1991,8 +1991,18 @@
       }
       #managementView .mgmt-calendar-grid-year {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 10px;
+      }
+      @media (max-width: 900px) {
+        #managementView .mgmt-calendar-grid-year {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 560px) {
+        #managementView .mgmt-calendar-grid-year {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
       #managementView .mgmt-calendar-grid-month[hidden],
       #managementView .mgmt-calendar-grid-year[hidden],
@@ -7076,7 +7086,14 @@
 
       <div id="statsEmptyState" class="empty-state" data-i18n="no_data_filters">No hay datos para los filtros seleccionados.</div>
 
-      <div class="top-stats">
+      <div class="stats-tabs" role="tablist">
+        <button type="button" class="stats-tab-btn active" id="statsTabBtnSummary" data-stats-tab="summary" data-i18n="stats_tab_summary">Resumen</button>
+        <button type="button" class="stats-tab-btn" id="statsTabBtnCharts" data-stats-tab="charts" data-i18n="stats_tab_charts">Gráficas</button>
+        <button type="button" class="stats-tab-btn" id="statsTabBtnWithdrawals" data-stats-tab="withdrawals" data-i18n="stats_tab_withdrawals">Retiros</button>
+        <button type="button" class="stats-tab-btn" id="statsTabBtnSchedule" data-stats-tab="schedule" data-i18n="stats_tab_schedule">Horario</button>
+      </div>
+
+      <div class="top-stats stats-tab-panel" data-stats-tab="summary">
         <div class="stat-box">
           <span data-i18n="stat_win_rate">Ratio de aciertos</span>
           <h2 id="statWinrate">0%</h2>
@@ -7099,7 +7116,7 @@
         </div>
       </div>
 
-      <div class="insights-card">
+      <div class="insights-card stats-tab-panel" data-stats-tab="summary">
         <div data-i18n-title="insight_tp_streak_tip"><span data-i18n="insight_tp_streak">Racha TP máx.:</span> <strong id="statMaxWinStreak" class="positive">0</strong></div>
         <div data-i18n-title="insight_sl_streak_tip"><span data-i18n="insight_sl_streak">Racha SL máx.:</span> <strong id="statMaxLossStreak" class="negative">0</strong></div>
         <div data-i18n-title="insight_best_tip"><span data-i18n="insight_best_trade">Mejor trade:</span> <strong id="statBestTrade" class="positive">+0.00€</strong></div>
@@ -7109,9 +7126,9 @@
         <div data-i18n-title="insight_max_dd_tip"><span data-i18n="insight_max_dd">Max drawdown:</span> <strong id="statMaxDrawdown" class="negative">-0.00€</strong></div>
       </div>
 
-      <button id="toggleAdvanced" class="advanced-toggle" type="button" data-i18n="insights_advanced_toggle_show">Ver análisis avanzado</button>
+      <button id="toggleAdvanced" class="advanced-toggle" type="button" data-i18n="insights_advanced_toggle_show" hidden>Ver análisis avanzado</button>
 
-      <section id="withdrawalStatsSection" class="withdrawal-report-card card">
+      <section id="withdrawalStatsSection" class="withdrawal-report-card card stats-tab-panel" data-stats-tab="withdrawals" hidden>
         <h2 class="section-title title-with-icon schedule-discipline-title">
           <i data-lucide="banknote"></i>
           <span>Informe de retiros</span>
@@ -7155,7 +7172,7 @@
         </div>
       </section>
 
-      <section id="scheduleStatsSection" class="schedule-discipline-card card">
+      <section id="scheduleStatsSection" class="schedule-discipline-card card stats-tab-panel" data-stats-tab="schedule" hidden>
         <h2 class="section-title title-with-icon schedule-discipline-title">
           <i data-lucide="clock"></i>
           <span data-i18n="schedule_discipline_title">Disciplina por horario</span>
@@ -7207,7 +7224,7 @@
         </div>
       </section>
 
-      <div id="advancedStats" class="stats-grid advanced-grid">
+      <div id="advancedStats" class="stats-grid advanced-grid stats-tab-panel" data-stats-tab="summary">
         <div class="advanced-item">
           <span data-i18n="advanced_avg_win">Avg win</span>
           <h2 id="statAvgWin" class="positive">+0.00€</h2>
@@ -7238,7 +7255,7 @@
         </div>
       </div>
 
-      <div class="chart-grid">
+      <div class="chart-grid stats-tab-panel" data-stats-tab="charts" hidden>
         <div class="chart-card">
           <div class="chart-card-header">
             <div class="chart-title">
@@ -7325,7 +7342,7 @@
         </div>
       </div>
 
-      <div id="compareCharts" class="compare-section hidden">
+      <div id="compareCharts" class="compare-section hidden stats-tab-panel" data-stats-tab="charts" hidden>
         <div class="chart-card">
           <div class="chart-card-header">
             <div class="chart-title">
