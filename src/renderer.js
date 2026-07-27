@@ -5897,6 +5897,13 @@ async function saveWithdrawalAction() {
     showToast(t('withdrawals_validation_error', 'Completa la prop, fecha e importe válido'), 'error');
     return;
   }
+  if (withdrawalFormPropSuggestHandle && !withdrawalFormPropSuggestHandle.isValid()) {
+    showToast(
+      t('prop_selector_invalid', 'Selecciona una Prop de la lista (o créala antes en Configuración > Props y categorías)'),
+      'error'
+    );
+    return;
+  }
   const backend = getBackendApi();
   if (!backend) return;
   const payload = { account_name: prop, linked_account_name: linkedAccountName, date, amount, note };
@@ -5944,9 +5951,16 @@ async function deleteWithdrawalAction(id) {
   showToast(t('withdrawals_deleted', 'Retiro eliminado'));
 }
 
+let withdrawalFormPropSuggestHandle = null;
+
 function initWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
-  attachSuggestDropdown('withdrawalFormProp', 'withdrawalFormPropSuggest', getKnownExpenseProps);
+  withdrawalFormPropSuggestHandle = attachSuggestDropdown(
+    'withdrawalFormProp',
+    'withdrawalFormPropSuggest',
+    getKnownExpensePropsRecentFirst,
+    { strict: true }
+  );
   const openModal = () => openWithdrawalModal();
   document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
   document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
@@ -6050,6 +6064,30 @@ function getKnownExpenseProps() {
     if (name) names.add(name);
   });
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+// Mismo listado que getKnownExpenseProps(), pero con la usada más recientemente arriba del
+// todo (por fecha de gasto/retiro más reciente que la use), y alfabético para las que aún no
+// se hayan usado nunca. Se usa en los selectores estrictos de Prop de Gastos/Retiros.
+function getKnownExpensePropsRecentFirst() {
+  const names = getKnownExpenseProps();
+  const lastUsed = new Map();
+  const consider = (rawName, rawDate) => {
+    const name = String(rawName || '').trim();
+    if (!name) return;
+    const time = Date.parse(rawDate || '') || 0;
+    const key = name.toLowerCase();
+    const prev = lastUsed.get(key);
+    if (!prev || time > prev) lastUsed.set(key, time);
+  };
+  expensesCache.forEach((e) => consider(e.account_name || e.accountName, e.created_at || e.date));
+  withdrawalsCache.forEach((w) => consider(w.account_name || w.accountName, w.created_at || w.date));
+  return names.sort((a, b) => {
+    const ta = lastUsed.get(a.toLowerCase()) || 0;
+    const tb = lastUsed.get(b.toLowerCase()) || 0;
+    if (ta !== tb) return tb - ta;
+    return a.localeCompare(b, undefined, { sensitivity: 'base' });
+  });
 }
 
 // Categorías de gasto: a diferencia de las props (que viven en Supabase vía expense_props para
@@ -6699,6 +6737,13 @@ async function saveExpenseAction() {
     showToast(t('expenses_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
     return;
   }
+  if (expenseFormAccountSuggestHandle && !expenseFormAccountSuggestHandle.isValid()) {
+    showToast(
+      t('prop_selector_invalid', 'Selecciona una Prop de la lista (o créala antes en Configuración > Props y categorías)'),
+      'error'
+    );
+    return;
+  }
   const backend = getBackendApi();
   if (!backend) return;
   const payload = { account_name: account, account_size: accountSize, date, amount, category, note };
@@ -6749,11 +6794,17 @@ async function deleteExpenseAction(id) {
 
 // Panel de sugerencias propio (tematizado) para sustituir al popup nativo de <datalist>,
 // que en Electron/Chromium no se puede estilizar acorde al tema oscuro de la app.
-function attachSuggestDropdown(inputId, panelId, getItems) {
+function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
   const input = document.getElementById(inputId);
   const panel = document.getElementById(panelId);
   if (!input || !panel || input.dataset.suggestInit === '1') return null;
   input.dataset.suggestInit = '1';
+  // strict: el campo deja de ser texto libre y se convierte en un selector — el valor final
+  // tiene que coincidir con uno de los elementos de getItems() (p.ej. Props ya creadas), si no
+  // se revierte al último valor válido. Se usa para Prop en Gastos/Retiros: ya no se puede crear
+  // una prop nueva escribiendo en ese campo, hay que darla de alta antes en Configuración.
+  const strict = Boolean(options.strict);
+  let lastValidValue = strict ? String(input.value || '').trim() : '';
 
   function renderItems(items) {
     if (!items.length) {
@@ -6763,6 +6814,29 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     panel.innerHTML = items
       .map((item) => `<button type="button" class="suggest-item" data-value="${escapeAttrChip(item)}">${escapeHtmlChipText(item)}</button>`)
       .join('');
+  }
+
+  function findExactMatch(value) {
+    const all = (typeof getItems === 'function' ? getItems() : []) || [];
+    const needle = String(value || '').trim().toLowerCase();
+    if (!needle) return '';
+    return all.find((item) => String(item).trim().toLowerCase() === needle) || '';
+  }
+
+  function enforceStrictValue() {
+    if (!strict) return;
+    const current = String(input.value || '').trim();
+    if (!current) {
+      lastValidValue = '';
+      return;
+    }
+    const match = findExactMatch(current);
+    if (match) {
+      input.value = match;
+      lastValidValue = match;
+    } else {
+      input.value = lastValidValue;
+    }
   }
 
   // El panel usa position:fixed (ver comentario en el CSS de .suggest-panel) porque vive dentro
@@ -6803,22 +6877,44 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     panel.hidden = true;
   }
 
+  function closeAndValidate() {
+    close();
+    enforceStrictValue();
+  }
+
   input.addEventListener('focus', open);
   input.addEventListener('input', open);
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') close();
+    if (event.key === 'Escape') closeAndValidate();
+    if (strict && event.key === 'Enter') {
+      // Con un único resultado visible, Enter lo selecciona directamente (evita tener que usar
+      // el ratón si solo queda una coincidencia al buscar).
+      const visible = [...panel.querySelectorAll('.suggest-item')];
+      if (visible.length === 1) {
+        input.value = visible[0].dataset.value || '';
+      }
+      closeAndValidate();
+      event.preventDefault();
+    }
   });
   panel.addEventListener('mousedown', (event) => {
     const btn = event.target.closest('.suggest-item');
     if (!btn) return;
     event.preventDefault();
     input.value = btn.dataset.value || '';
+    if (strict) lastValidValue = input.value;
     close();
     input.focus();
   });
+  input.addEventListener('blur', () => {
+    // Nota: seleccionar un item del panel no dispara blur (el mousedown hace preventDefault +
+    // vuelve a enfocar el input), así que si llegamos aquí es porque el foco se fue a otro sitio
+    // (p.ej. al botón Guardar) y toca validar ya mismo, sin esperar.
+    closeAndValidate();
+  });
   document.addEventListener('click', (event) => {
     if (event.target === input || panel.contains(event.target)) return;
-    close();
+    closeAndValidate();
   });
   // Captura (true) para enterarse también del scroll dentro del formulario del modal (que no
   // burbujea); si el scroll viene de dentro del propio panel de sugerencias no lo cerramos.
@@ -6835,12 +6931,24 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     if (!panel.hidden) reposition();
   });
 
-  return { open, close, reposition };
+  return {
+    open,
+    close,
+    reposition,
+    isValid: () => !strict || !input.value.trim() || Boolean(findExactMatch(input.value)),
+  };
 }
+
+let expenseFormAccountSuggestHandle = null;
 
 function initExpensesUI() {
   if (!document.getElementById('managementView')) return;
-  attachSuggestDropdown('expenseFormAccount', 'expenseFormAccountSuggest', getKnownExpenseProps);
+  expenseFormAccountSuggestHandle = attachSuggestDropdown(
+    'expenseFormAccount',
+    'expenseFormAccountSuggest',
+    getKnownExpensePropsRecentFirst,
+    { strict: true }
+  );
   attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => getKnownExpenseCategories());
   const openModal = () => openExpenseModal();
   document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
