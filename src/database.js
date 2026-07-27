@@ -42,6 +42,29 @@ function resolveTradesDbPath() {
  * cwd del proceso o junto al ejecutable) y lo copia, para no perder el caché local de
  * quien actualiza desde una versión afectada por este bug.
  */
+function findLegacySquirrelCandidates() {
+  // Squirrel.Windows instala cada versión en <LOCALAPPDATA>\<AppId>\app-X.Y.Z\. Con la ruta
+  // relativa antigua, trades.db se creaba dentro de esa carpeta versionada. Al actualizar, la
+  // app pasa a ejecutarse desde una carpeta app-X.Y.Z distinta, así que hay que rastrear TODAS
+  // las carpetas app-* hermanas (no solo la actual) para encontrar el trades.db de versiones
+  // anteriores.
+  try {
+    if (!process.execPath) return [];
+    // process.execPath packaged suele ser <LOCALAPPDATA>\<AppId>\app-X.Y.Z\TradingJournal.exe
+    const versionDir = path.dirname(process.execPath); // .../app-X.Y.Z
+    const appRoot = path.dirname(versionDir); // .../<AppId>
+    if (!fs.existsSync(appRoot)) return [];
+    const entries = fs.readdirSync(appRoot, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('app-'))
+      .map((entry) => path.join(appRoot, entry.name, 'trades.db'))
+      .filter((candidate) => candidate !== path.join(versionDir, 'trades.db'));
+  } catch (err) {
+    console.warn('[database] Fallo rastreando carpetas app-* de Squirrel:', err);
+    return [];
+  }
+}
+
 function migrateLegacyTradesDbIfNeeded(targetPath, userDataDir) {
   try {
     if (fs.existsSync(targetPath)) return;
@@ -51,8 +74,21 @@ function migrateLegacyTradesDbIfNeeded(targetPath, userDataDir) {
         ? path.join(process.resourcesPath, '..', 'trades.db')
         : null,
       electronApp && process.execPath ? path.join(path.dirname(process.execPath), 'trades.db') : null,
+      ...findLegacySquirrelCandidates(),
     ].filter(Boolean);
-    for (const candidate of candidates) {
+    // Si hay varios candidatos existentes, nos quedamos con el modificado más recientemente
+    // (lo más probable es que sea el que tiene el caché más completo).
+    const existing = candidates.filter((candidate) => candidate !== targetPath && fs.existsSync(candidate));
+    if (existing.length > 1) {
+      existing.sort((a, b) => {
+        try {
+          return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+        } catch (err) {
+          return 0;
+        }
+      });
+    }
+    for (const candidate of existing.length ? [existing[0]] : candidates) {
       if (candidate !== targetPath && fs.existsSync(candidate)) {
         fs.copyFileSync(candidate, targetPath);
         // Copiar también los archivos WAL/SHM si existen, para no perder writes recientes.
