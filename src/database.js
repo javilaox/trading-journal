@@ -1,6 +1,81 @@
 const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
+let electronApp = null;
+try {
+  // Puede no estar disponible fuera de Electron (p.ej. scripts/tests en Node puro).
+  ({ app: electronApp } = require('electron'));
+} catch (err) {
+  electronApp = null;
+}
 
-const db = new Database('trades.db');
+/**
+ * CRÍTICO: la ruta de trades.db debe ser SIEMPRE la misma entre versiones de la app.
+ * Antes se abría con la ruta relativa 'trades.db', que depende del cwd del proceso.
+ * Squirrel.Windows instala cada actualización en una carpeta versionada distinta
+ * (app-1.0.5, app-1.0.6, ...), así que con una ruta relativa cada actualización creaba
+ * un trades.db nuevo y vacío en la carpeta de la nueva versión, perdiendo todo el caché
+ * local de retiros/gastos/cuentas ya introducidos. Ahora se ancla a userData, que es
+ * estable entre instalaciones y actualizaciones.
+ */
+function resolveTradesDbPath() {
+  const userDataDir = electronApp && typeof electronApp.getPath === 'function'
+    ? electronApp.getPath('userData')
+    : null;
+  if (!userDataDir) {
+    // Fallback (tests / Node fuera de Electron): mantener el comportamiento anterior.
+    return 'trades.db';
+  }
+  try {
+    fs.mkdirSync(userDataDir, { recursive: true });
+  } catch (err) {
+    console.warn('No se pudo asegurar el directorio userData:', err);
+  }
+  const targetPath = path.join(userDataDir, 'trades.db');
+  migrateLegacyTradesDbIfNeeded(targetPath, userDataDir);
+  return targetPath;
+}
+
+/**
+ * Migración de una sola vez: si el trades.db "bueno" (en userData) todavía no existe,
+ * busca un trades.db legacy (creado con la ruta relativa de versiones anteriores, en el
+ * cwd del proceso o junto al ejecutable) y lo copia, para no perder el caché local de
+ * quien actualiza desde una versión afectada por este bug.
+ */
+function migrateLegacyTradesDbIfNeeded(targetPath, userDataDir) {
+  try {
+    if (fs.existsSync(targetPath)) return;
+    const candidates = [
+      path.join(process.cwd(), 'trades.db'),
+      electronApp && electronApp.isPackaged && process.resourcesPath
+        ? path.join(process.resourcesPath, '..', 'trades.db')
+        : null,
+      electronApp && process.execPath ? path.join(path.dirname(process.execPath), 'trades.db') : null,
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (candidate !== targetPath && fs.existsSync(candidate)) {
+        fs.copyFileSync(candidate, targetPath);
+        // Copiar también los archivos WAL/SHM si existen, para no perder writes recientes.
+        for (const ext of ['-wal', '-shm']) {
+          const src = `${candidate}${ext}`;
+          if (fs.existsSync(src)) {
+            try {
+              fs.copyFileSync(src, `${targetPath}${ext}`);
+            } catch (err) {
+              console.warn(`No se pudo copiar ${src}:`, err);
+            }
+          }
+        }
+        console.log(`[database] trades.db legacy migrado desde ${candidate} a ${targetPath}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('[database] Fallo comprobando trades.db legacy:', err);
+  }
+}
+
+const db = new Database(resolveTradesDbPath());
 
 // Rendimiento: WAL permite lecturas concurrentes con escrituras y acelera commits.
 // synchronous=NORMAL es seguro con WAL (sin riesgo de corrupción ante crash de app).
