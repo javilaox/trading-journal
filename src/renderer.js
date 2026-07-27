@@ -2519,6 +2519,7 @@ let lastSyncHealthState = null;
 
 const SYNC_HEALTH_LABELS = {
   syncing: () => 'Sincronizando...',
+  needs_session: () => 'Restableciendo sesión...',
   online_up_to_date: () => '',
   online_pending: (pending) => `${pending} cambio${pending === 1 ? '' : 's'} pendiente${pending === 1 ? '' : 's'} de sincronizar`,
   online_error: (pending, failed) => `${failed} elemento${failed === 1 ? '' : 's'} sin sincronizar (toca para reintentar)`,
@@ -2577,15 +2578,50 @@ function setSyncHealthIndicatorVisual(state, { pending = 0, failed = 0 } = {}) {
     return;
   }
   textEl.textContent = label;
-  el.classList.add('is-visible', `state-${state === 'syncing' ? 'syncing' : state === 'offline' ? 'offline' : state === 'online_error' ? 'error' : 'pending'}`);
+  const variant =
+    state === 'syncing' || state === 'needs_session'
+      ? 'syncing'
+      : state === 'offline'
+        ? 'offline'
+        : state === 'online_error'
+          ? 'error'
+          : 'pending';
+  el.classList.add('is-visible', `state-${variant}`);
 }
 
 // Evita que el aviso se repita en cada reintento automático (cada 3 min) mientras el problema
 // siga sin resolverse: solo se muestra una vez por incidencia, hasta que vuelva a estar al día.
 let syncErrorToastShown = false;
 
+// Si main avisa de que no tiene sesión de Supabase, se la reenviamos desde el renderer (que sí
+// la tiene) y reintentamos. Sin esto, auth.uid() es NULL en main y todo insert choca contra RLS.
+let recoveringSyncSession = false;
+async function recoverSyncSessionAndRetry() {
+  if (recoveringSyncSession) return;
+  recoveringSyncSession = true;
+  try {
+    const ok = await syncSupabaseSessionWithMain();
+    if (ok) {
+      const backend = getBackendApi();
+      if (backend?.syncPendingChanges) await backend.syncPendingChanges();
+    } else {
+      showToast?.('Tu sesión ha caducado. Vuelve a iniciar sesión para sincronizar tus datos.', 'warning');
+    }
+  } catch (err) {
+    console.warn('No se pudo restablecer la sesión para sincronizar:', err);
+  } finally {
+    recoveringSyncSession = false;
+  }
+}
+
 function applySyncHealthState(state, { pending = 0, failed = 0 } = {}) {
   setSyncHealthIndicatorVisual(state, { pending, failed });
+
+  if (state === 'needs_session') {
+    void recoverSyncSessionAndRetry();
+    lastSyncHealthState = state;
+    return;
+  }
 
   if (state === 'online_up_to_date') {
     syncErrorToastShown = false;

@@ -2013,6 +2013,27 @@ async function syncPendingChanges(userId) {
     return { skipped: true, reason: 'OFFLINE' };
   }
 
+  // CRÍTICO: el user_id puede venir de la caché local (IPC set-user-id) aunque el cliente de
+  // Supabase de este proceso NO tenga sesión activa. En ese caso auth.uid() es NULL y TODO
+  // insert falla con "new row violates row-level security policy", dejando los datos atrapados
+  // solo en local. Comprobamos la sesión antes de intentar nada y pedimos al renderer que la
+  // reenvíe, en vez de quemar los elementos marcándolos como fallidos.
+  let hasSession = false;
+  try {
+    const { data } = await supabase.auth.getSession();
+    hasSession = Boolean(data?.session?.access_token);
+  } catch (err) {
+    console.warn('[sync] no se pudo comprobar la sesión de Supabase:', err);
+  }
+  if (!hasSession) {
+    console.warn('[sync] sin sesión de Supabase en main: se pide al renderer que la reenvíe');
+    emitSyncStatus('needs_session', {
+      pending: getSyncPendingCountForUser(userId),
+      failed: getSyncFailedCountForUser(userId),
+    });
+    return { skipped: true, reason: 'NO_SUPABASE_SESSION' };
+  }
+
   emitSyncStatus('syncing', { pending: getSyncPendingCountForUser(userId) });
 
   const items = selectQueueItems(userId);
