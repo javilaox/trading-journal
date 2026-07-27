@@ -3428,6 +3428,9 @@ let createAfterImagePath = '';
 let editBeforeImagePath = '';
 let editAfterImagePath = '';
 let tradeDatepickerRoot = null;
+// Todas las instancias del datepicker personalizado (Nuevo trade, Retiro, Gasto...). Antes solo
+// se guardaba la última en tradeDatepickerRoot, así que al montar varias no se podían cerrar bien.
+const customDatepickerRoots = new Set();
 let activeDayModalIsoDate = '';
 let deletingTradeInProgress = false;
 let activeTradePanelDate = '';
@@ -4167,6 +4170,16 @@ function closeTradeDatepicker() {
   if (tradeDatepickerRoot) {
     tradeDatepickerRoot.classList.remove('open');
   }
+  customDatepickerRoots.forEach((root) => root.classList.remove('open'));
+}
+
+/** Refresca la etiqueta del datepicker asociado a un input tras asignarle .value por JS. */
+function syncCustomDatepicker(inputId) {
+  const input = document.getElementById(inputId);
+  const custom = input?.nextElementSibling;
+  if (custom?.classList?.contains('custom-datepicker')) {
+    custom.syncDatepickerFromNative?.();
+  }
 }
 
 function formatIsoDate(year, month, day) {
@@ -4209,6 +4222,7 @@ function initTradeDatepicker(inputId = 'date') {
   `;
   nativeInput.insertAdjacentElement('afterend', custom);
   tradeDatepickerRoot = custom;
+  customDatepickerRoots.add(custom);
 
   const trigger = custom.querySelector('.datepicker-trigger');
   const triggerLabel = custom.querySelector('.datepicker-trigger-label');
@@ -4310,6 +4324,27 @@ function initTradeDatepicker(inputId = 'date') {
     }
   };
 
+  // Dentro de los modales de Retiro/Gasto el popup es position:fixed (ver CSS), así que hay que
+  // colocarlo a mano con las coordenadas reales del trigger en pantalla, volteándolo hacia arriba
+  // si no cabe por debajo.
+  const isFixedPopup = () => Boolean(custom.closest('#withdrawalModalOverlay, #expenseModalOverlay'));
+
+  const repositionPopup = () => {
+    if (!popup || !isFixedPopup()) return;
+    const rect = trigger.getBoundingClientRect();
+    const popupHeight = popup.offsetHeight || 320;
+    const fitsBelow = rect.bottom + 8 + popupHeight <= window.innerHeight;
+    const width = popup.offsetWidth || 280;
+    popup.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - width - 12))}px`;
+    if (fitsBelow) {
+      popup.style.top = `${Math.round(rect.bottom + 8)}px`;
+      popup.style.bottom = '';
+    } else {
+      popup.style.top = `${Math.round(Math.max(12, rect.top - popupHeight - 8))}px`;
+      popup.style.bottom = '';
+    }
+  };
+
   trigger?.addEventListener('click', (event) => {
     event.stopPropagation();
     const willOpen = !custom.classList.contains('open');
@@ -4319,8 +4354,22 @@ function initTradeDatepicker(inputId = 'date') {
     syncViewWithValue();
     renderDays();
     custom.classList.add('open');
+    repositionPopup();
     popup?.scrollTo?.(0, 0);
   });
+
+  window.addEventListener('resize', () => {
+    if (custom.classList.contains('open')) repositionPopup();
+  });
+  window.addEventListener(
+    'scroll',
+    (event) => {
+      if (!custom.classList.contains('open')) return;
+      if (event.target && typeof event.target.closest === 'function' && event.target.closest('.datepicker-popup')) return;
+      closeTradeDatepicker();
+    },
+    true
+  );
 
   prevBtn?.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -4330,6 +4379,8 @@ function initTradeDatepicker(inputId = 'date') {
       state.viewYear -= 1;
     }
     renderDays();
+    // El nº de filas puede cambiar (5/6 semanas) y con ello la altura: recolocar si es fixed.
+    repositionPopup();
   });
 
   nextBtn?.addEventListener('click', (event) => {
@@ -4340,6 +4391,7 @@ function initTradeDatepicker(inputId = 'date') {
       state.viewYear += 1;
     }
     renderDays();
+    repositionPopup();
   });
 
   daysGrid?.addEventListener('click', (event) => {
@@ -4386,6 +4438,13 @@ function initTradeDatepicker(inputId = 'date') {
     }
   };
   custom.refreshDatepickerI18n = refreshDatepickerI18n;
+  // Los modales asignan la fecha con .value = ... (sin evento change), así que hace falta poder
+  // resincronizar la etiqueta visible del selector desde fuera al abrirlos.
+  custom.syncDatepickerFromNative = () => {
+    syncViewWithValue();
+    syncLabel();
+  };
+  nativeInput.dataset.customDatepickerId = String(inputId);
 
   syncViewWithValue();
   syncLabel();
@@ -5916,6 +5975,7 @@ function openWithdrawalModal({ editId = null } = {}) {
   // El valor de "Cuenta (opcional)" se asigna arriba con .value = ... directamente (sin evento
   // change), así que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
   refreshCustomSelectForNative(document.getElementById('withdrawalFormAccount'));
+  syncCustomDatepicker('withdrawalFormDate');
   overlay.classList.add('active');
   document.getElementById('withdrawalFormProp')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -5941,6 +6001,7 @@ function resetWithdrawalForm({ keepEditingId = false } = {}) {
   if (accountLinkSelect) accountLinkSelect.value = '';
   const saveBtn = document.getElementById('saveWithdrawalBtn');
   if (saveBtn) saveBtn.textContent = t('withdrawals_add_btn', 'Añadir retiro');
+  syncCustomDatepicker('withdrawalFormDate');
   setWithdrawalModalTitle(false);
 }
 
@@ -6022,6 +6083,8 @@ function initWithdrawalsUI() {
     getKnownExpensePropsRecentFirst,
     { strict: true }
   );
+  // Datepicker propio (el nativo de Chromium no se puede tematizar y desentona con el tema oscuro).
+  initTradeDatepicker('withdrawalFormDate');
   const openModal = () => openWithdrawalModal();
   document.getElementById('openWithdrawalModalBtn')?.addEventListener('click', openModal);
   document.getElementById('withdrawalsEmptyCta')?.addEventListener('click', openModal);
@@ -6753,6 +6816,7 @@ function openExpenseModal({ editId = null } = {}) {
   // "Tamaño de cuenta" se asigna arriba con .value = ... directamente (sin evento change), así
   // que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
   refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
+  syncCustomDatepicker('expenseFormDate');
   overlay.classList.add('active');
   document.getElementById('expenseFormAccount')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -6780,6 +6844,7 @@ function resetExpenseForm({ keepEditingId = false } = {}) {
   if (accountSizeInput) accountSizeInput.value = '';
   const saveBtn = document.getElementById('saveExpenseBtn');
   if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
+  syncCustomDatepicker('expenseFormDate');
   setExpenseModalTitle(false);
 }
 
@@ -7035,6 +7100,8 @@ function initExpensesUI() {
     { strict: true }
   );
   attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => getKnownExpenseCategories());
+  // Datepicker propio (el nativo de Chromium no se puede tematizar y desentona con el tema oscuro).
+  initTradeDatepicker('expenseFormDate');
   const openModal = () => openExpenseModal();
   document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
   document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);
@@ -15371,7 +15438,7 @@ document.addEventListener('keydown', (event) => {
 
 window.addEventListener('app:languagechanged', () => {
   updateWinrateInfoLabel();
-  tradeDatepickerRoot?.refreshDatepickerI18n?.();
+  customDatepickerRoots.forEach((root) => root.refreshDatepickerI18n?.());
   tradeTimepickerRoots.forEach((root) => root.refreshTimepickerI18n?.());
   void (async () => {
     await loadStrategies();

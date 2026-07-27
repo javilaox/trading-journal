@@ -4028,6 +4028,15 @@
       .custom-datepicker.open .datepicker-popup {
         display: block;
       }
+      /* Dentro de los modales de Retiro/Gasto el formulario tiene overflow-y:auto, así que un
+         popup absolute quedaría recortado (mismo caso que .suggest-panel). Se pasa a fixed y las
+         coordenadas se calculan en JS a partir del getBoundingClientRect() del trigger. */
+      #withdrawalModalOverlay .datepicker-popup,
+      #expenseModalOverlay .datepicker-popup {
+        position: fixed;
+        width: 280px;
+        z-index: 10001;
+      }
       .datepicker-header {
         display: flex;
         align-items: center;
