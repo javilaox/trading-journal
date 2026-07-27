@@ -29,6 +29,7 @@ if (!process.env.APP_ENV) {
 }
 
 const APP_ICON = path.resolve(__dirname, 'src/assets/jlx-app-icon.ico');
+const INSTALLER_LOADING_GIF = path.resolve(__dirname, 'src/assets/installer-loading.gif');
 const SQUIRREL_EXE = 'TradingJournal.exe';
 /** ID Squirrel (sin / ni -). Carpeta de instalación: %LOCALAPPDATA%\\TradingJournal */
 const SQUIRREL_APP_ID = 'TradingJournal';
@@ -61,6 +62,7 @@ module.exports = {
         exe: SQUIRREL_EXE,
         setupExe: 'Trading Journal Setup.exe',
         setupIcon: APP_ICON,
+        loadingGif: INSTALLER_LOADING_GIF,
         description:
           'Diario de trading personal con sincronización Supabase y modo offline-first.',
         noMsi: true,

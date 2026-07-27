@@ -2510,6 +2510,84 @@ function ensureSyncBannerHost() {
   }
 }
 
+// --- Indicador de salud de sincronización -----------------------------------------------
+// Motivo: tras el bug de trades.db (ruta relativa perdida en cada actualización), quedó claro
+// que un fallo de sincronización silencioso puede acabar en pérdida de datos sin que el usuario
+// se entere. Este indicador es SIEMPRE visible (esquina inferior izquierda) mientras haya algo
+// pendiente de sincronizar o con error, e independiente del resto de banners de la app.
+let lastSyncHealthState = null;
+
+const SYNC_HEALTH_LABELS = {
+  syncing: () => 'Sincronizando...',
+  online_up_to_date: () => '',
+  online_pending: (pending) => `${pending} cambio${pending === 1 ? '' : 's'} pendiente${pending === 1 ? '' : 's'} de sincronizar`,
+  online_error: (pending, failed) => `${failed} elemento${failed === 1 ? '' : 's'} sin sincronizar (toca para reintentar)`,
+  offline: (pending) => `Sin conexión · ${pending} pendiente${pending === 1 ? '' : 's'}`,
+};
+
+function initSyncHealthIndicator() {
+  const el = document.getElementById('syncHealthIndicator');
+  if (!el || el.dataset.wired) return;
+  el.dataset.wired = '1';
+  el.addEventListener('click', () => {
+    const backend = getBackendApi();
+    if (backend?.syncPendingChanges) {
+      setSyncHealthIndicatorVisual('syncing', { pending: 0, failed: 0 });
+      backend.syncPendingChanges().catch(() => {});
+    }
+  });
+}
+
+function setSyncHealthIndicatorVisual(state, { pending = 0, failed = 0 } = {}) {
+  const el = document.getElementById('syncHealthIndicator');
+  const textEl = document.getElementById('syncHealthIndicatorText');
+  if (!el || !textEl) return;
+
+  el.classList.remove('state-syncing', 'state-pending', 'state-error', 'state-offline');
+
+  if (state === 'online_up_to_date' || !state) {
+    el.classList.remove('is-visible');
+    return;
+  }
+
+  const labelFn = SYNC_HEALTH_LABELS[state];
+  const label = labelFn ? labelFn(pending, failed) : '';
+  if (!label) {
+    el.classList.remove('is-visible');
+    return;
+  }
+  textEl.textContent = label;
+  el.classList.add('is-visible', `state-${state === 'syncing' ? 'syncing' : state === 'offline' ? 'offline' : state === 'online_error' ? 'error' : 'pending'}`);
+}
+
+function applySyncHealthState(state, { pending = 0, failed = 0 } = {}) {
+  setSyncHealthIndicatorVisual(state, { pending, failed });
+
+  // Aviso único (toast) la primera vez que detectamos elementos que no se han podido
+  // sincronizar, para llamar la atención aunque el usuario no mire el indicador.
+  if (state === 'online_error' && lastSyncHealthState !== 'online_error' && failed > 0) {
+    showToast?.(
+      `${failed} elemento${failed === 1 ? '' : 's'} no se ${failed === 1 ? 'ha' : 'han'} podido sincronizar con Supabase. Revisa tu conexión o vuelve a intentarlo.`,
+      'warning'
+    );
+  }
+  lastSyncHealthState = state;
+}
+
+let syncHealthAutoRetryStarted = false;
+function startSyncHealthAutoRetry() {
+  if (syncHealthAutoRetryStarted) return;
+  syncHealthAutoRetryStarted = true;
+  // Reintento periódico: para que los cambios pendientes/fallidos no se queden esperando
+  // indefinidamente a que el usuario dispare una acción cualquiera o reinicie la app.
+  setInterval(() => {
+    if (!isAppAuthenticated) return;
+    if (!isOnline() || isOfflineModeActive()) return;
+    const backend = getBackendApi();
+    if (backend?.syncPendingChanges) backend.syncPendingChanges().catch(() => {});
+  }, 3 * 60 * 1000);
+}
+
 async function checkAuth() {
   let onlineSession = null;
   let reallyOnline = false;
@@ -14407,39 +14485,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     updateOfflineBanner();
   }
 
-  // Estado de sync desde main (no bloquea UI).
+  // Estado de sync desde main (no bloquea UI). Indicador persistente + reintento periódico,
+  // para que un fallo de sincronización (p.ej. una tabla de Supabase que aún no existe) nunca
+  // vuelva a pasar desapercibido en silencio.
   try {
     if (window.syncAPI?.onStatusChanged) {
-      ensureSyncBannerHost();
       window.syncAPI.onStatusChanged((payload) => {
         const state = String(payload?.state || '');
         const pending = Number(payload?.pending || 0) || 0;
         const failed = Number(payload?.failed || 0) || 0;
-
-        if (state === 'syncing') {
-          setSyncBannerText('Online · Sincronizando...');
-          return;
-        }
-        if (state === 'online_up_to_date') {
-          setSyncBannerText('Online · Sincronizado al día');
-          return;
-        }
-        if (state === 'online_error') {
-          setSyncBannerText(`Online · ${failed} errores de sincronización`);
-          return;
-        }
-        if (state === 'online_pending') {
-          setSyncBannerText(`Online · ${pending} pendientes`);
-          return;
-        }
-        if (state === 'offline') {
-          setSyncBannerText(`Offline · ${pending} pendientes`);
-        }
+        applySyncHealthState(state, { pending, failed });
       });
     }
   } catch (err) {
     console.warn('No se pudo inicializar listener de sync status:', err);
   }
+  initSyncHealthIndicator();
+  startSyncHealthAutoRetry();
 
   window.addEventListener('online', async () => {
     console.log('🌐 Conexión recuperada');
