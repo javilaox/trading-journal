@@ -1304,8 +1304,28 @@
       #backtestingView #btSaveBacktest.btn.btn-primary {
         width: 100%;
       }
+      /* La sección "Configuración" en sí (#configView > .card) actúa solo como contenedor de
+         página: usa el fondo base en vez de --card-bg para que no se confunda visualmente con
+         las tarjetas Modo/Estrategias/Cuentas de dentro, que son las que deben destacar como
+         recuadros independientes y fáciles de distinguir de un vistazo. */
+      #configView > .card {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+      #configView > .card > .section-title {
+        margin: 0 0 var(--space-md) 0;
+      }
       .settings-layout { display:grid; gap: var(--space-lg); }
-      .settings-card { background: var(--card-bg); border:1px solid var(--border); border-radius:14px; padding: var(--space-md); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+      .settings-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: var(--space-md);
+        box-shadow: var(--shadow-sm);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
       .settings-card.is-editing {
         border-color: rgba(59, 130, 246, 0.65);
         box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
