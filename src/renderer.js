@@ -4366,7 +4366,18 @@ function initTradeDatepicker(inputId = 'date') {
     (event) => {
       if (!custom.classList.contains('open')) return;
       if (event.target && typeof event.target.closest === 'function' && event.target.closest('.datepicker-popup')) return;
-      closeTradeDatepicker();
+      // Igual que en el panel de sugerencias: reposicionar en vez de cerrar, para no cerrarlo por
+      // el scroll automático del propio formulario. Solo se cierra si el campo sale de la vista.
+      const rect = trigger.getBoundingClientRect();
+      const scroller = event.target && event.target.getBoundingClientRect ? event.target.getBoundingClientRect() : null;
+      const outOfView = scroller
+        ? rect.bottom < scroller.top || rect.top > scroller.bottom
+        : rect.bottom < 0 || rect.top > window.innerHeight;
+      if (outOfView) {
+        closeTradeDatepicker();
+        return;
+      }
+      repositionPopup();
     },
     true
   );
@@ -7031,6 +7042,15 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
     // Si ya está abierto, un segundo clic lo cierra (comportamiento esperado de un desplegable).
     if (!panel.hidden) {
       setTimeout(closeAndValidate, 0);
+      return;
+    }
+    // Si el input YA tenía el foco (p.ej. justo después de elegir un item), el evento 'focus' no
+    // vuelve a dispararse, así que hay que abrirlo aquí a mano o el clic no haría nada.
+    if (document.activeElement === input) {
+      setTimeout(() => {
+        input.select();
+        open({ showAll: true });
+      }, 0);
     }
   });
   input.addEventListener('input', () => open());
@@ -7067,13 +7087,27 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
     closeAndValidate();
   });
   // Captura (true) para enterarse también del scroll dentro del formulario del modal (que no
-  // burbujea); si el scroll viene de dentro del propio panel de sugerencias no lo cerramos.
+  // burbujea); si el scroll viene de dentro del propio panel de sugerencias lo ignoramos.
+  // OJO: aquí NO se puede cerrar el panel. Al enfocar el input, el navegador hace scroll para
+  // traerlo a la vista dentro del formulario (overflow-y:auto), lo que disparaba este listener y
+  // cerraba el panel justo después de abrirlo — por eso solo funcionaba pulsando la etiqueta
+  // "Prop" (que enfoca sin provocar scroll). Reposicionamos, y solo cerramos si el input se ha
+  // salido de la parte visible del formulario.
   window.addEventListener(
     'scroll',
     (event) => {
       if (panel.hidden) return;
       if (event.target && typeof event.target.closest === 'function' && event.target.closest('.suggest-panel')) return;
-      close();
+      const rect = input.getBoundingClientRect();
+      const scroller = event.target && event.target.getBoundingClientRect ? event.target.getBoundingClientRect() : null;
+      const outOfView = scroller
+        ? rect.bottom < scroller.top || rect.top > scroller.bottom
+        : rect.bottom < 0 || rect.top > window.innerHeight;
+      if (outOfView) {
+        close();
+        return;
+      }
+      reposition();
     },
     true
   );
