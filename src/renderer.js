@@ -2560,15 +2560,20 @@ function setSyncHealthIndicatorVisual(state, { pending = 0, failed = 0 } = {}) {
   el.classList.add('is-visible', `state-${state === 'syncing' ? 'syncing' : state === 'offline' ? 'offline' : state === 'online_error' ? 'error' : 'pending'}`);
 }
 
+// Evita que el aviso se repita en cada reintento automático (cada 3 min) mientras el problema
+// siga sin resolverse: solo se muestra una vez por incidencia, hasta que vuelva a estar al día.
+let syncErrorToastShown = false;
+
 function applySyncHealthState(state, { pending = 0, failed = 0 } = {}) {
   setSyncHealthIndicatorVisual(state, { pending, failed });
 
-  // Aviso único (toast) la primera vez que detectamos elementos que no se han podido
-  // sincronizar, para llamar la atención aunque el usuario no mire el indicador.
-  if (state === 'online_error' && lastSyncHealthState !== 'online_error' && failed > 0) {
+  if (state === 'online_up_to_date') {
+    syncErrorToastShown = false;
+  } else if (state === 'online_error' && failed > 0 && !syncErrorToastShown) {
+    syncErrorToastShown = true;
     showToast?.(
-      `${failed} elemento${failed === 1 ? '' : 's'} no se ${failed === 1 ? 'ha' : 'han'} podido sincronizar con Supabase. Revisa tu conexión o vuelve a intentarlo.`,
-      'warning'
+      `${failed} elemento${failed === 1 ? '' : 's'} pendiente${failed === 1 ? '' : 's'} de sincronizar. Se reintentará automáticamente (icono abajo a la izquierda).`,
+      'info'
     );
   }
   lastSyncHealthState = state;

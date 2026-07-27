@@ -3664,6 +3664,7 @@
       }
       .toast {
         min-width: 250px;
+        max-width: 380px;
         padding: 12px 16px;
         border-radius: 10px;
         font-weight: 500;
@@ -3676,6 +3677,10 @@
         opacity: 0;
         transform: translateY(-10px);
         animation: slideIn 0.3s forwards;
+      }
+      .toast .toast-message {
+        white-space: normal;
+        word-break: break-word;
       }
       .toast-icon {
         width: 18px;
