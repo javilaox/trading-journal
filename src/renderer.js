@@ -3732,6 +3732,13 @@ function formatDateToDisplay(dateStr) {
   return formatDateEs(dateStr);
 }
 
+/** Clave de mes 'AAAA-MM' → 'MM-AAAA', coherente con el formato DD-MM-AAAA del resto de la app. */
+function formatMonthKeyDisplay(monthKey) {
+  const s = String(monthKey || '').trim();
+  const match = /^(\d{4})-(\d{2})$/.exec(s);
+  return match ? `${match[2]}-${match[1]}` : s;
+}
+
 function formatDateToISO(dateStr) {
   if (!dateStr) return '';
   if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) return dateStr;
@@ -4202,10 +4209,11 @@ function initTradeDatepicker(inputId = 'date') {
   const custom = document.createElement('div');
   custom.className = 'custom-datepicker';
   custom.innerHTML = `
-    <button type="button" class="datepicker-trigger">
-      <span class="datepicker-trigger-label"></span>
+    <div class="datepicker-trigger">
+      <input type="text" class="datepicker-trigger-input" inputmode="numeric" autocomplete="off"
+             placeholder="DD-MM-AAAA" maxlength="10" />
       <span class="datepicker-trigger-arrow">v</span>
-    </button>
+    </div>
     <div class="datepicker-popup">
       <div class="datepicker-header">
         <button type="button" class="datepicker-nav-btn prev-month"><</button>
@@ -4225,7 +4233,7 @@ function initTradeDatepicker(inputId = 'date') {
   customDatepickerRoots.add(custom);
 
   const trigger = custom.querySelector('.datepicker-trigger');
-  const triggerLabel = custom.querySelector('.datepicker-trigger-label');
+  const triggerInput = custom.querySelector('.datepicker-trigger-input');
   const popup = custom.querySelector('.datepicker-popup');
   const monthLabel = custom.querySelector('.datepicker-month-label');
   const weekdaysRow = custom.querySelector('.datepicker-weekdays');
@@ -4246,8 +4254,28 @@ function initTradeDatepicker(inputId = 'date') {
 
   const syncLabel = () => {
     const value = nativeInput.value || '';
-    triggerLabel.textContent = value ? formatDateToDisplay(value) : t('select_date');
+    // No pisar lo que el usuario está tecleando: solo refrescamos si no tiene el foco.
+    if (document.activeElement !== triggerInput) {
+      triggerInput.value = value ? formatDateToDisplay(value) : '';
+    }
+    triggerInput.placeholder = t('date_format_placeholder', 'DD-MM-AAAA');
     custom.classList.toggle('has-value', Boolean(value));
+  };
+
+  /**
+   * Interpreta lo tecleado como DD-MM-AAAA (también admite DD/MM/AAAA y sin separadores) y
+   * devuelve la fecha en ISO, o '' si no es una fecha válida real (valida días por mes y bisiestos).
+   */
+  const parseTypedDate = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length !== 8) return '';
+    const day = Number(digits.slice(0, 2));
+    const month = Number(digits.slice(2, 4));
+    const year = Number(digits.slice(4, 8));
+    if (!day || !month || !year || month > 12) return '';
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (day > daysInMonth) return '';
+    return formatIsoDate(year, month - 1, day);
   };
 
   const selectDate = (isoDate) => {
@@ -4345,17 +4373,71 @@ function initTradeDatepicker(inputId = 'date') {
     }
   };
 
-  trigger?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const willOpen = !custom.classList.contains('open');
+  const openPopup = () => {
     closeAllCustomSelects();
     closeTradeDatepicker();
-    if (!willOpen) return;
     syncViewWithValue();
     renderDays();
     custom.classList.add('open');
     repositionPopup();
     popup?.scrollTo?.(0, 0);
+  };
+
+  // Solo la flecha abre/cierra el calendario; el resto del recuadro es el campo de texto para
+  // poder escribir la fecha a mano.
+  const arrow = custom.querySelector('.datepicker-trigger-arrow');
+  arrow?.addEventListener('mousedown', (event) => {
+    // mousedown (no click) para adelantarse al blur del input y no reabrirlo justo tras cerrarlo.
+    event.preventDefault();
+    event.stopPropagation();
+    if (custom.classList.contains('open')) {
+      closeTradeDatepicker();
+      return;
+    }
+    openPopup();
+  });
+
+  // Auto-formato mientras se escribe: 27072026 → 27-07-2026 (solo dígitos, guiones automáticos).
+  triggerInput?.addEventListener('input', () => {
+    const digits = triggerInput.value.replace(/\D/g, '').slice(0, 8);
+    let formatted = digits;
+    if (digits.length > 4) formatted = `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+    else if (digits.length > 2) formatted = `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    triggerInput.value = formatted;
+
+    const iso = parseTypedDate(digits);
+    if (iso) {
+      nativeInput.value = iso;
+      nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+      custom.classList.add('has-value');
+      custom.classList.remove('is-invalid');
+      syncViewWithValue();
+      if (custom.classList.contains('open')) renderDays();
+    } else {
+      custom.classList.toggle('is-invalid', digits.length === 8);
+    }
+  });
+
+  // Al salir del campo: si lo escrito no es una fecha válida, se revierte al valor guardado.
+  triggerInput?.addEventListener('blur', () => {
+    const iso = parseTypedDate(triggerInput.value);
+    if (!iso && triggerInput.value.trim()) {
+      triggerInput.value = nativeInput.value ? formatDateToDisplay(nativeInput.value) : '';
+    } else if (!triggerInput.value.trim()) {
+      nativeInput.value = '';
+      nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+      custom.classList.remove('has-value');
+    }
+    custom.classList.remove('is-invalid');
+  });
+
+  triggerInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      closeTradeDatepicker();
+      triggerInput.blur();
+    }
+    if (event.key === 'Escape') closeTradeDatepicker();
   });
 
   window.addEventListener('resize', () => {
@@ -5838,7 +5920,7 @@ function renderWithdrawalsAnalytics(filteredList, metrics) {
       ? entries
           .map(
             ([month, total]) =>
-              `<li><span>${escapeHtmlChipText(month)}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`
+              `<li><span>${escapeHtmlChipText(formatMonthKeyDisplay(month))}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`
           )
           .join('')
       : '<li>—</li>';
@@ -6698,7 +6780,7 @@ function renderExpensesAnalytics(metrics) {
       ? entries
           .map(
             ([month, total]) =>
-              `<li><span>${escapeHtmlChipText(month)}</span><strong>${formatExpenseEuro(total)}</strong></li>`
+              `<li><span>${escapeHtmlChipText(formatMonthKeyDisplay(month))}</span><strong>${formatExpenseEuro(total)}</strong></li>`
           )
           .join('')
       : '<li>—</li>';

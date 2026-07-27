@@ -1721,10 +1721,15 @@ async function renderWithdrawalStats(trades) {
 
   const byMonthEl = document.getElementById('withdrawalStatByMonth');
   if (byMonthEl) {
+    // 'AAAA-MM' → 'MM-AAAA', coherente con el formato DD-MM-AAAA del resto de la app.
+    const monthLabel = (key) => {
+      const m = /^(\d{4})-(\d{2})$/.exec(String(key || '').trim());
+      return m ? `${m[2]}-${m[1]}` : String(key || '');
+    };
     const entries = Object.entries(metrics.byMonth || {}).sort((a, b) => b[0].localeCompare(a[0]));
     byMonthEl.innerHTML = entries.length
       ? entries
-          .map(([month, total]) => `<li><span>${month}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`)
+          .map(([month, total]) => `<li><span>${monthLabel(month)}</span><strong>${formatWithdrawalEuro(total)}</strong></li>`)
           .join('')
       : '<li>—</li>';
   }

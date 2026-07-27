@@ -3993,7 +3993,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        cursor: pointer;
+        cursor: text;
       }
       .datepicker-trigger:hover {
         border-color: var(--green);
@@ -4008,9 +4008,36 @@
       .custom-datepicker.has-value .datepicker-trigger-label {
         color: var(--text);
       }
+      /* El trigger contiene un input real para poder escribir la fecha a mano (DD-MM-AAAA).
+         El input se funde con el recuadro: sin borde ni fondo propios. */
+      .datepicker-trigger-input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+        font-family: inherit;
+        padding: 0;
+        outline: none;
+        letter-spacing: 0.02em;
+      }
+      .datepicker-trigger-input::placeholder {
+        color: var(--text-muted);
+        letter-spacing: normal;
+      }
+      .custom-datepicker.is-invalid .datepicker-trigger {
+        border-color: var(--red);
+      }
       .datepicker-trigger-arrow {
         opacity: 0.7;
         font-size: 12px;
+        cursor: pointer;
+        padding: 0 2px 0 8px;
+        user-select: none;
+      }
+      .datepicker-trigger-arrow:hover {
+        opacity: 1;
       }
       .datepicker-popup {
         position: absolute;
