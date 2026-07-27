@@ -6866,10 +6866,17 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
   // una prop nueva escribiendo en ese campo, hay que darla de alta antes en Configuración.
   const strict = Boolean(options.strict);
   let lastValidValue = strict ? String(input.value || '').trim() : '';
+  // Contenedor con apariencia de <select> (flecha): hay que marcarlo abierto/cerrado para girarla.
+  const selectWrap = input.closest('.suggest-wrap--select');
+  const setOpenState = (isOpen) => selectWrap?.classList.toggle('is-open', Boolean(isOpen));
 
   function renderItems(items) {
     if (!items.length) {
-      panel.innerHTML = `<div class="suggest-empty">${escapeHtmlChipText(t('no_results', 'Sin sugerencias'))}</div>`;
+      // En modo selector el vacío es accionable: hay que dar de alta la prop en Configuración.
+      const emptyMsg = strict
+        ? t('prop_selector_empty', 'No hay props. Créalas en Configuración > Props y categorías')
+        : t('no_results', 'Sin sugerencias');
+      panel.innerHTML = `<div class="suggest-empty">${escapeHtmlChipText(emptyMsg)}</div>`;
       return;
     }
     panel.innerHTML = items
@@ -6921,21 +6928,26 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
     }
   }
 
-  function open() {
-    const query = input.value.trim().toLowerCase();
+  function open({ showAll = false } = {}) {
+    const query = showAll ? '' : input.value.trim().toLowerCase();
     const all = (typeof getItems === 'function' ? getItems() : []) || [];
     const filtered = query ? all.filter((v) => String(v).toLowerCase().includes(query)) : all;
-    if (!filtered.length && !query) {
+    // En modo selector siempre abrimos el panel (aunque no haya props todavía) para poder mostrar
+    // el "Sin sugerencias" y que se comporte como un desplegable de verdad.
+    if (!filtered.length && !query && !strict) {
       panel.hidden = true;
+      setOpenState(false);
       return;
     }
     renderItems(filtered);
     reposition();
     panel.hidden = false;
+    setOpenState(true);
   }
 
   function close() {
     panel.hidden = true;
+    setOpenState(false);
   }
 
   function closeAndValidate() {
@@ -6943,8 +6955,20 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
     enforceStrictValue();
   }
 
-  input.addEventListener('focus', open);
-  input.addEventListener('input', open);
+  // Al abrirlo se muestra la lista COMPLETA (como un <select>), no filtrada por lo que ya
+  // hubiera escrito; el texto queda seleccionado para que empezar a teclear lo reemplace y filtre.
+  input.addEventListener('focus', () => {
+    if (strict) input.select();
+    open({ showAll: strict });
+  });
+  input.addEventListener('mousedown', () => {
+    if (!strict) return;
+    // Si ya está abierto, un segundo clic lo cierra (comportamiento esperado de un desplegable).
+    if (!panel.hidden) {
+      setTimeout(closeAndValidate, 0);
+    }
+  });
+  input.addEventListener('input', () => open());
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeAndValidate();
     if (strict && event.key === 'Enter') {

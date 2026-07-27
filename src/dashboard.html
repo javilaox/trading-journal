@@ -2126,6 +2126,31 @@
         color: var(--text-muted);
         font-size: 0.82rem;
       }
+      /* Variante "selector": el campo es un desplegable de verdad (valor obligatorio de la lista)
+         aunque por dentro sea un input para poder buscar escribiendo. Se le añade la flecha y el
+         mismo lenguaje visual que los <select> del resto de la app para que se entienda a la
+         primera que hay que elegir, no escribir libremente. */
+      .suggest-wrap--select { position: relative; }
+      .suggest-wrap--select > input {
+        cursor: pointer;
+        padding-right: 34px;
+      }
+      .suggest-wrap--select::after {
+        content: '';
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--text-muted);
+        border-bottom: 2px solid var(--text-muted);
+        transform: translateY(-70%) rotate(45deg);
+        pointer-events: none;
+        transition: transform 0.15s ease;
+      }
+      .suggest-wrap--select.is-open::after {
+        transform: translateY(-30%) rotate(225deg);
+      }
       @media (max-width: 960px) {
         .withdrawals-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         #managementView .wd-body-grid { grid-template-columns: 1fr; }
@@ -8451,8 +8476,8 @@
         <div class="withdrawal-modal-form">
           <div class="field">
             <label for="withdrawalFormProp" data-i18n="withdrawals_prop">Prop</label>
-            <div class="suggest-wrap">
-              <input id="withdrawalFormProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="withdrawals_prop_placeholder" placeholder="Buscar prop..." />
+            <div class="suggest-wrap suggest-wrap--select">
+              <input id="withdrawalFormProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="withdrawals_prop_placeholder" placeholder="Selecciona una prop" />
               <div id="withdrawalFormPropSuggest" class="suggest-panel" hidden></div>
             </div>
           </div>
@@ -8489,8 +8514,8 @@
         <div class="withdrawal-modal-form">
           <div class="field">
             <label for="expenseFormAccount" data-i18n="expenses_prop">Prop</label>
-            <div class="suggest-wrap">
-              <input id="expenseFormAccount" class="input" type="text" autocomplete="off" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Buscar prop..." />
+            <div class="suggest-wrap suggest-wrap--select">
+              <input id="expenseFormAccount" class="input" type="text" autocomplete="off" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Selecciona una prop" />
               <div id="expenseFormAccountSuggest" class="suggest-panel" hidden></div>
             </div>
           </div>
