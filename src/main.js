@@ -179,6 +179,12 @@ function normalizeBoolInt(v) {
   return v ? 1 : 0;
 }
 
+const REAL_ACCOUNT_TYPES = new Set(['challenge', 'funded', 'own_capital']);
+function normalizeAccountTypeValue(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return REAL_ACCOUNT_TYPES.has(s) ? s : null;
+}
+
 function emitSyncStatus(state, extras = {}) {
   try {
     if (!mainWindow?.webContents) return;
@@ -688,17 +694,25 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
       : 'create';
 
   const propName = account?.prop_name != null ? String(account.prop_name).trim() : '';
+  const accountType = normalizeAccountTypeValue(account?.account_type ?? account?.accountType);
+  const accountNumber = account?.account_number != null ? String(account.account_number).trim() : (account?.accountNumber != null ? String(account.accountNumber).trim() : '');
+  const challengePassed = normalizeBoolInt(Boolean(account?.challenge_passed ?? account?.challengePassed));
+  const disabledByMaxDd = normalizeBoolInt(Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd));
 
   db.prepare(`
     INSERT INTO real_accounts
-    (user_id, client_uuid, remote_id, name, balance, commission_per_lot, free_swap, prop_name, is_active, created_at, updated_at, sync_status, deleted_at)
-    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, 'pending_create', NULL)
+    (user_id, client_uuid, remote_id, name, balance, commission_per_lot, free_swap, prop_name, account_type, account_number, challenge_passed, disabled_by_max_dd, is_active, created_at, updated_at, sync_status, deleted_at)
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'pending_create', NULL)
     ON CONFLICT(user_id, client_uuid) DO UPDATE SET
       name = excluded.name,
       balance = excluded.balance,
       commission_per_lot = excluded.commission_per_lot,
       free_swap = excluded.free_swap,
       prop_name = excluded.prop_name,
+      account_type = excluded.account_type,
+      account_number = excluded.account_number,
+      challenge_passed = excluded.challenge_passed,
+      disabled_by_max_dd = excluded.disabled_by_max_dd,
       updated_at = excluded.updated_at,
       sync_status = CASE
         WHEN real_accounts.sync_status LIKE 'pending_%' THEN real_accounts.sync_status
@@ -713,6 +727,10 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
     Number(account?.commissionPerLot ?? account?.commission_per_lot ?? 0) || 0,
     normalizeBoolInt(Boolean(account?.freeSwap ?? account?.free_swap)),
     propName || null,
+    accountType,
+    accountNumber || null,
+    challengePassed,
+    disabledByMaxDd,
     ts,
     ts
   );
@@ -729,6 +747,10 @@ ipcMain.handle('add-real-account-local', async (_event, account) => {
       name,
       balance: Number(account?.capital ?? account?.balance ?? 0) || 0,
       prop_name: propName || null,
+      account_type: accountType,
+      account_number: accountNumber || null,
+      challenge_passed: Boolean(challengePassed),
+      disabled_by_max_dd: Boolean(disabledByMaxDd),
     }
   });
 
@@ -863,6 +885,10 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
   const commission = Number(account?.commissionPerLot ?? account?.commission_per_lot ?? 0) || 0;
   const freeSwap = normalizeBoolInt(Boolean(account?.freeSwap ?? account?.free_swap));
   const propName = account?.prop_name != null ? String(account.prop_name).trim() : '';
+  const accountType = normalizeAccountTypeValue(account?.account_type ?? account?.accountType);
+  const accountNumber = account?.account_number != null ? String(account.account_number).trim() : (account?.accountNumber != null ? String(account.accountNumber).trim() : '');
+  const challengePassed = normalizeBoolInt(Boolean(account?.challenge_passed ?? account?.challengePassed));
+  const disabledByMaxDd = normalizeBoolInt(Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd));
 
   const syncAction =
     String(row.sync_status || '') === 'pending_create' && !row.remote_id ? 'create' : 'update';
@@ -874,6 +900,10 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       commission_per_lot = ?,
       free_swap = ?,
       prop_name = ?,
+      account_type = ?,
+      account_number = ?,
+      challenge_passed = ?,
+      disabled_by_max_dd = ?,
       updated_at = ?,
       sync_status = CASE
         WHEN sync_status = 'pending_create' THEN 'pending_create'
@@ -881,7 +911,20 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       END,
       deleted_at = NULL
      WHERE user_id = ? AND client_uuid = ?`
-  ).run(name, balance, commission, freeSwap, propName || null, ts, String(userId), finalUuid);
+  ).run(
+    name,
+    balance,
+    commission,
+    freeSwap,
+    propName || null,
+    accountType,
+    accountNumber || null,
+    challengePassed,
+    disabledByMaxDd,
+    ts,
+    String(userId),
+    finalUuid
+  );
 
   enqueueSyncItem({
     userId,
@@ -897,6 +940,10 @@ ipcMain.handle('update-real-account-local', async (_event, account) => {
       commission_per_lot: commission,
       free_swap: freeSwap,
       prop_name: propName || null,
+      account_type: accountType,
+      account_number: accountNumber || null,
+      challenge_passed: Boolean(challengePassed),
+      disabled_by_max_dd: Boolean(disabledByMaxDd),
     },
   });
 
@@ -1521,6 +1568,85 @@ ipcMain.handle('add-expense-prop-local', async (_event, raw) => {
   };
 });
 
+// Renombra una prop ya guardada. El propio renderer se encarga de propagar el nuevo nombre a
+// los retiros/gastos que ya la usaban (account_name es texto libre, no hay FK), llamando a
+// update-expense-local / update-withdrawal-local por cada fila afectada.
+ipcMain.handle('update-expense-prop-local', async (_event, raw) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : '';
+  const localId = Number(raw?.id);
+  const name = String(raw?.name || '').trim();
+  if (!name) return { success: false, error: 'MISSING_NAME' };
+
+  const existing = clientUuid
+    ? db.prepare(`SELECT * FROM expense_props WHERE user_id = ? AND client_uuid = ? LIMIT 1`).get(String(userId), clientUuid)
+    : Number.isFinite(localId)
+      ? db.prepare(`SELECT * FROM expense_props WHERE user_id = ? AND id = ? LIMIT 1`).get(String(userId), localId)
+      : null;
+  if (!existing) return { success: false, error: 'NOT_FOUND' };
+
+  const dupe = db
+    .prepare(
+      `SELECT id FROM expense_props
+       WHERE user_id = ? AND name = ? COLLATE NOCASE AND client_uuid != ?
+         AND (deleted_at IS NULL OR deleted_at = '')
+       LIMIT 1`
+    )
+    .get(String(userId), name, String(existing.client_uuid));
+  if (dupe) return { success: false, error: 'DUPLICATE_NAME' };
+
+  const ts = nowIso();
+  db.prepare(
+    `UPDATE expense_props SET name = ?, updated_at = ?,
+      sync_status = CASE WHEN sync_status = 'pending_create' THEN 'pending_create' ELSE 'pending_update' END
+     WHERE user_id = ? AND client_uuid = ?`
+  ).run(name, ts, String(userId), String(existing.client_uuid));
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'expense_prop',
+    entityLocalId: String(existing.client_uuid),
+    entityRemoteId: existing.remote_id ? String(existing.remote_id) : null,
+    action: String(existing.sync_status) === 'pending_create' ? 'create' : 'update',
+    payload: { user_id: String(userId), client_uuid: String(existing.client_uuid), name },
+  });
+
+  return { success: true, prop: { id: existing.id, client_uuid: existing.client_uuid, name } };
+});
+
+// Borrado simple de la prop de la lista de sugerencias. NO toca los retiros/gastos que ya la
+// usaban (account_name es texto libre): eso lo decide y ejecuta el renderer según la elección
+// del usuario (borrar esos movimientos o desvincularlos), llamando a los IPC de retiros/gastos
+// ya existentes fila a fila antes de invocar este borrado.
+ipcMain.handle('delete-expense-prop-local', async (_event, clientUuidOrId) => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+  const needle = String(clientUuidOrId ?? '').trim();
+  if (!needle) return { success: false, error: 'MISSING_ID' };
+
+  const row = db
+    .prepare(`SELECT client_uuid, remote_id, sync_status FROM expense_props WHERE user_id = ? AND (client_uuid = ? OR id = ?) LIMIT 1`)
+    .get(String(userId), needle, Number(needle) || -1);
+  if (!row) return { success: true, skipped: true };
+
+  const ts = nowIso();
+  db.prepare(
+    `UPDATE expense_props SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+  ).run(ts, ts, String(userId), String(row.client_uuid));
+
+  enqueueSyncItem({
+    userId,
+    entityType: 'expense_prop',
+    entityLocalId: String(row.client_uuid),
+    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+    action: 'delete',
+    payload: { user_id: String(userId), client_uuid: String(row.client_uuid), remote_id: row.remote_id || null },
+  });
+
+  return { success: true };
+});
+
 ipcMain.handle('delete-real-strategy-local', async (_event, clientUuidOrName) => {
   const userId = await resolveUserIdForLocalCache();
   if (!userId) return { success: false, error: 'NO_USER_ID' };
@@ -1945,6 +2071,10 @@ async function syncPendingChanges(userId) {
         const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
         const payloadBalance = Number(payload?.balance ?? 0) || 0;
         const payloadPropName = payload?.prop_name != null ? String(payload.prop_name).trim() : '';
+        const payloadAccountType = normalizeAccountTypeValue(payload?.account_type);
+        const payloadAccountNumber = payload?.account_number != null ? String(payload.account_number).trim() : '';
+        const payloadChallengePassed = Boolean(payload?.challenge_passed);
+        const payloadDisabledByMaxDd = Boolean(payload?.disabled_by_max_dd);
 
         if (action === 'create') {
           const row = {
@@ -1953,6 +2083,10 @@ async function syncPendingChanges(userId) {
             name: payloadName,
             balance: payloadBalance,
             prop_name: payloadPropName || null,
+            account_type: payloadAccountType,
+            account_number: payloadAccountNumber || null,
+            challenge_passed: payloadChallengePassed,
+            disabled_by_max_dd: payloadDisabledByMaxDd,
           };
           const ins = await supabase.from('real_accounts').insert(row).select('id, client_uuid').single();
           if (ins.error) {
@@ -1994,6 +2128,10 @@ async function syncPendingChanges(userId) {
             name: payloadName || undefined,
             balance: payloadBalance,
             prop_name: payloadPropName || null,
+            account_type: payloadAccountType,
+            account_number: payloadAccountNumber || null,
+            challenge_passed: payloadChallengePassed,
+            disabled_by_max_dd: payloadDisabledByMaxDd,
           };
           if (remoteId) {
             const upd = await supabase
@@ -2015,10 +2153,25 @@ async function syncPendingChanges(userId) {
              SET name = COALESCE(?, name),
                  balance = ?,
                  prop_name = ?,
+                 account_type = ?,
+                 account_number = ?,
+                 challenge_passed = ?,
+                 disabled_by_max_dd = ?,
                  sync_status = 'synced',
                  updated_at = ?
              WHERE user_id = ? AND client_uuid = ?`
-          ).run(payloadName || null, payloadBalance, payloadPropName || null, nowIso(), String(userId), payloadUuid);
+          ).run(
+            payloadName || null,
+            payloadBalance,
+            payloadPropName || null,
+            payloadAccountType,
+            payloadAccountNumber || null,
+            normalizeBoolInt(payloadChallengePassed),
+            normalizeBoolInt(payloadDisabledByMaxDd),
+            nowIso(),
+            String(userId),
+            payloadUuid
+          );
           markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
           ok += 1;
           continue;
@@ -2531,6 +2684,63 @@ async function syncPendingChanges(userId) {
         continue;
       }
 
+      if (entityType === 'expense_prop' && action === 'update') {
+        const clientUuid = String(item.entity_local_id || '');
+        const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
+        const remoteId = item.entity_remote_id || null;
+        const name = String(payload?.name || '').trim();
+
+        if (remoteId) {
+          const upd = await supabase.from('expense_props').update({ name, updated_at: nowIso() }).eq('id', String(remoteId)).eq('user_id', String(userId));
+          if (upd.error) throw upd.error;
+        } else {
+          const upd = await supabase.from('expense_props').update({ name, updated_at: nowIso() }).eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
+          if (upd.error) throw upd.error;
+        }
+
+        db.prepare(
+          `UPDATE expense_props SET name = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+        ).run(name, nowIso(), String(userId), payloadUuid);
+        markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+        ok += 1;
+        continue;
+      }
+
+      if (entityType === 'expense_prop' && action === 'delete') {
+        const clientUuid = String(item.entity_local_id || '');
+        const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
+        const remoteId = item.entity_remote_id || payload?.remote_id || null;
+        const tsDelete = nowIso();
+
+        const local = db
+          .prepare(`SELECT remote_id, sync_status FROM expense_props WHERE user_id = ? AND client_uuid = ?`)
+          .get(String(userId), payloadUuid);
+
+        if (!local?.remote_id && String(local?.sync_status || '').startsWith('pending_')) {
+          db.prepare(
+            `UPDATE expense_props SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+          ).run(tsDelete, tsDelete, String(userId), payloadUuid);
+          markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+          ok += 1;
+          continue;
+        }
+
+        if (remoteId) {
+          const del = await supabase.from('expense_props').delete().eq('id', String(remoteId)).eq('user_id', String(userId));
+          if (del.error) throw del.error;
+        } else {
+          const del = await supabase.from('expense_props').delete().eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
+          if (del.error) throw del.error;
+        }
+
+        db.prepare(
+          `UPDATE expense_props SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+        ).run(tsDelete, tsDelete, String(userId), payloadUuid);
+        markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
+        ok += 1;
+        continue;
+      }
+
       throw new Error(`UNSUPPORTED_ENTITY_OR_ACTION:${entityType}:${action}`);
     } catch (err) {
       failed += 1;
@@ -2566,7 +2776,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     tradesService.getTrades().catch((err) => ({ success: false, error: err })),
     supabase
       .from('real_accounts')
-      .select('id, user_id, name, balance, prop_name, client_uuid, created_at')
+      .select('id, user_id, name, balance, prop_name, account_type, account_number, challenge_passed, disabled_by_max_dd, client_uuid, created_at')
       .eq('user_id', String(userId)),
     supabase
       .from('real_strategies')
@@ -2612,8 +2822,8 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
 
     const insert = db.prepare(`
       INSERT INTO ${localTable}
-      (user_id, client_uuid, remote_id, name, balance, prop_name, created_at, updated_at, sync_status, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
+      (user_id, client_uuid, remote_id, name, balance, prop_name, account_type, account_number, challenge_passed, disabled_by_max_dd, created_at, updated_at, sync_status, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
       ON CONFLICT(user_id, client_uuid) DO NOTHING
     `);
 
@@ -2623,6 +2833,10 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
           name = ?,
           balance = ?,
           prop_name = ?,
+          account_type = ?,
+          account_number = ?,
+          challenge_passed = ?,
+          disabled_by_max_dd = ?,
           updated_at = ?,
           sync_status = CASE
             WHEN sync_status LIKE 'pending_%' THEN sync_status
@@ -2653,6 +2867,10 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             mapped.name || '',
             Number(mapped.balance ?? 0) || 0,
             mapped.prop_name || null,
+            mapped.account_type || null,
+            mapped.account_number || null,
+            normalizeBoolInt(Boolean(mapped.challenge_passed)),
+            normalizeBoolInt(Boolean(mapped.disabled_by_max_dd)),
             mapped.created_at || nowIso(),
             mapped.updated_at || nowIso()
           );
@@ -2662,6 +2880,10 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             mapped.name || '',
             Number(mapped.balance ?? 0) || 0,
             mapped.prop_name || null,
+            mapped.account_type || null,
+            mapped.account_number || null,
+            normalizeBoolInt(Boolean(mapped.challenge_passed)),
+            normalizeBoolInt(Boolean(mapped.disabled_by_max_dd)),
             mapped.updated_at || nowIso(),
             uid,
             clientUuid || String(localHit.client_uuid)
@@ -2684,6 +2906,10 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
         name: r?.name ?? '',
         balance: Number(r?.balance ?? 0) || 0,
         prop_name: r?.prop_name != null ? String(r.prop_name) : null,
+        account_type: r?.account_type != null ? String(r.account_type) : null,
+        account_number: r?.account_number != null ? String(r.account_number) : null,
+        challenge_passed: Boolean(r?.challenge_passed),
+        disabled_by_max_dd: Boolean(r?.disabled_by_max_dd),
         created_at: r?.created_at ? String(r.created_at) : null,
         updated_at: nowIso(),
       })

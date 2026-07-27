@@ -28,6 +28,12 @@ function mergePreviousNames(prev = [], next = []) {
   return [...set];
 }
 
+const REAL_ACCOUNT_TYPES_MERGE = new Set(['challenge', 'funded', 'own_capital']);
+function normalizeAccountTypeMerge(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return REAL_ACCOUNT_TYPES_MERGE.has(v) ? v : null;
+}
+
 function normalizeAccountMerge(row = {}) {
   if (typeof row === 'string') {
     return {
@@ -36,6 +42,10 @@ function normalizeAccountMerge(row = {}) {
       commissionPerLot: 0,
       freeSwap: false,
       prop_name: null,
+      account_type: null,
+      account_number: null,
+      challenge_passed: false,
+      disabled_by_max_dd: false,
       client_uuid: null,
       remote_id: null,
       id: null,
@@ -45,12 +55,17 @@ function normalizeAccountMerge(row = {}) {
   const name = String(row?.name || '').trim();
   if (!name) return null;
   const propName = String(row?.prop_name ?? '').trim();
+  const accountNumber = String(row?.account_number ?? row?.accountNumber ?? '').trim();
   return {
     name,
     capital: Number(row?.capital ?? row?.balance ?? 0) || 0,
     commissionPerLot: Number(row?.commissionPerLot ?? row?.commission_per_lot ?? 0) || 0,
     freeSwap: Boolean(row?.freeSwap ?? row?.free_swap),
     prop_name: propName || null,
+    account_type: normalizeAccountTypeMerge(row?.account_type ?? row?.accountType),
+    account_number: accountNumber || null,
+    challenge_passed: Boolean(row?.challenge_passed ?? row?.challengePassed),
+    disabled_by_max_dd: Boolean(row?.disabled_by_max_dd ?? row?.disabledByMaxDd),
     client_uuid: row?.client_uuid ? String(row.client_uuid) : null,
     remote_id: row?.remote_id != null && row.remote_id !== '' ? String(row.remote_id) : null,
     id: row?.id != null && row.id !== '' ? row.id : null,

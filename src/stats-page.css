@@ -411,20 +411,39 @@ body.light #statsView input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--text);
 }
 #statsView .advanced-toggle {
-  align-self: flex-start;
-  background: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-#statsView .advanced-grid {
   display: none;
 }
-#statsView .advanced-grid.open {
+#statsView .advanced-grid {
   display: grid;
+}
+
+/* Pestañas de Estadísticas: Resumen / Gráficas / Retiros / Horario.
+   Los filtros y toggles quedan siempre visibles arriba, fuera de las pestañas. */
+#statsView .stats-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 4px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+#statsView .stats-tab-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 10px 6px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+#statsView .stats-tab-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--green, #22c55e);
+}
+#statsView .stats-tab-panel[hidden] {
+  display: none !important;
 }
 #statsView .advanced-item {
   background: var(--card-bg);

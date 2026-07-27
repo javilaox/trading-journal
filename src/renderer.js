@@ -3800,6 +3800,78 @@ function showConfirmModal({
   });
 }
 
+/** Variante de showConfirmModal con más de dos salidas posibles (p. ej. al borrar una Prop que
+ * ya tiene retiros/gastos asignados: "borrar también sus movimientos" / "mantener movimientos
+ * (desvincular)" / cancelar). Cada choice = { value, label, danger? }; resuelve con choice.value
+ * o null si se cancela/cierra. */
+function showChoiceModal({ title = 'Elige una opción', message = '', choices = [], cancelText = 'Cancelar' } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay app-modal-overlay active';
+    overlay.style.zIndex = '10050';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal app-modal app-confirm-modal';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header app-modal-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close app-modal-close';
+    closeBtn.setAttribute('data-cancel', '');
+    closeBtn.setAttribute('aria-label', 'Cerrar');
+    closeBtn.textContent = '×';
+    header.append(h2, closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body app-modal-body';
+    if (message) {
+      const p = document.createElement('p');
+      p.className = 'confirm-message';
+      p.textContent = message;
+      body.appendChild(p);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer app-modal-footer';
+    footer.style.flexWrap = 'wrap';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.setAttribute('data-cancel', '');
+    cancelBtn.textContent = cancelText;
+    footer.appendChild(cancelBtn);
+    choices.forEach((choice) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = choice.danger ? 'btn-danger' : 'btn-primary';
+      btn.textContent = choice.label;
+      btn.addEventListener('click', () => finish(choice.value));
+      footer.appendChild(btn);
+    });
+
+    modal.append(header, body, footer);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    overlay.querySelectorAll('[data-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => finish(null));
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(null);
+    });
+  });
+}
+
 /**
  * Confirmación simple para eliminar cuenta/estrategia (checkbox).
  * @returns {Promise<boolean>}
@@ -4515,6 +4587,12 @@ function setMode(mode) {
   }
 }
 
+const REAL_ACCOUNT_TYPES = new Set(['challenge', 'funded', 'own_capital']);
+function normalizeAccountType(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return REAL_ACCOUNT_TYPES.has(v) ? v : null;
+}
+
 function normalizeAccount(account) {
   if (typeof account === 'string') {
     return {
@@ -4523,6 +4601,10 @@ function normalizeAccount(account) {
       commissionPerLot: 0,
       freeSwap: false,
       prop_name: null,
+      account_type: null,
+      account_number: null,
+      challenge_passed: false,
+      disabled_by_max_dd: false,
       client_uuid: null,
       remote_id: null,
       id: null,
@@ -4530,12 +4612,17 @@ function normalizeAccount(account) {
     };
   }
   const propName = String(account?.prop_name ?? '').trim();
+  const accountNumber = String(account?.account_number ?? account?.accountNumber ?? '').trim();
   return {
     name: (account?.name || '').trim(),
     capital: Number(account?.capital ?? account?.balance) || 0,
     commissionPerLot: resolveAccountCommissionPerLot(account),
     freeSwap: Boolean(account?.freeSwap ?? account?.free_swap),
     prop_name: propName || null,
+    account_type: normalizeAccountType(account?.account_type ?? account?.accountType),
+    account_number: accountNumber || null,
+    challenge_passed: Boolean(account?.challenge_passed ?? account?.challengePassed),
+    disabled_by_max_dd: Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd),
     client_uuid: account?.client_uuid ? String(account.client_uuid) : null,
     remote_id: account?.remote_id != null && account.remote_id !== '' ? String(account.remote_id) : null,
     id: account?.id != null && account.id !== '' ? account.id : null,
@@ -5607,7 +5694,7 @@ function renderWithdrawalsTable(list) {
 
 async function refreshWithdrawalsUI() {
   if (!document.getElementById('managementView')) return;
-  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await Promise.all([loadWithdrawalsCache(), loadExpensePropsCache(), loadExpenseCategoriesCache()]);
   fillWithdrawalAccountSelects();
   const filtered = getFilteredWithdrawalsList();
   const accounts = getAccounts().map((account) => ({
@@ -5887,6 +5974,403 @@ function getKnownExpenseProps() {
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
+// Categorías de gasto: a diferencia de las props (que viven en Supabase vía expense_props para
+// sincronizarse entre dispositivos), las categorías son solo una lista de sugerencias de bajo
+// riesgo y se guardan localmente (localStorage, por usuario) — igual que otras listas simples de
+// la app (cuentas/estrategias "reales"). Arranca sembrada con EXPENSE_CATEGORY_SUGGESTIONS para
+// que también se puedan renombrar/eliminar desde Configuración.
+let customExpenseCategoriesCache = null;
+
+async function loadExpenseCategoriesCache() {
+  const key = await getUserScopedStorageKey('expense_categories');
+  if (!key) {
+    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
+    return;
+  }
+  const stored = getStoredList(key);
+  if (Array.isArray(stored) && stored.length) {
+    customExpenseCategoriesCache = stored.filter((s) => typeof s === 'string' && s.trim());
+  } else {
+    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
+    saveStoredList(key, customExpenseCategoriesCache);
+  }
+}
+
+async function saveCustomExpenseCategoriesList(list) {
+  const key = await getUserScopedStorageKey('expense_categories');
+  if (!key) return;
+  const seen = new Set();
+  const norm = [];
+  (list || []).forEach((raw) => {
+    const name = String(raw || '').trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    norm.push(name);
+  });
+  saveStoredList(key, norm);
+  customExpenseCategoriesCache = norm;
+}
+
+function getKnownExpenseCategories() {
+  const names = new Set();
+  (customExpenseCategoriesCache || EXPENSE_CATEGORY_SUGGESTIONS).forEach((c) => {
+    const name = String(c || '').trim();
+    if (name) names.add(name);
+  });
+  expensesCache.forEach((e) => {
+    const name = String(e.category || '').trim();
+    if (name) names.add(name);
+  });
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+async function registerExpenseCategoryIfNew(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return;
+  const list = customExpenseCategoriesCache || [];
+  if (list.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return;
+  await saveCustomExpenseCategoriesList([...list, trimmed]);
+}
+
+// ------------------------ Gestión: pestaña "Props y categorías" ------------------------
+
+function matchesPropName(row, name) {
+  const rowName = String(row?.account_name || row?.accountName || '').trim().toLowerCase();
+  return rowName === name.trim().toLowerCase();
+}
+
+function getWithdrawalLinkedAccountName(w) {
+  if (!w?.account_client_uuid) return '';
+  const acc = realAccountsCache.find((a) => a.client_uuid === w.account_client_uuid);
+  return acc?.name || '';
+}
+
+function renderMgmtConfigLists() {
+  if (!document.getElementById('managementTabConfig')) return;
+  renderMgmtConfigPropsList();
+  renderMgmtConfigCategoriesList();
+}
+
+function renderMgmtConfigPropsList() {
+  const host = document.getElementById('mgmtConfigPropsList');
+  if (!host) return;
+  const names = getKnownExpenseProps();
+  if (!names.length) {
+    host.innerHTML = `<li class="mgmt-config-empty">${escapeHtmlChipText(t('mgmt_config_no_props', 'Todavía no hay props guardadas.'))}</li>`;
+    return;
+  }
+  host.innerHTML = names
+    .map((name) => {
+      const count =
+        expensesCache.filter((e) => matchesPropName(e, name)).length +
+        withdrawalsCache.filter((w) => matchesPropName(w, name)).length;
+      const safeName = escapeAttrChip(name);
+      return `
+        <li class="mgmt-config-item" data-name="${safeName}">
+          <div class="mgmt-config-item-name">
+            <strong>${escapeHtmlChipText(name)}</strong>
+            <span class="mgmt-config-item-count">${count} ${count === 1 ? t('mgmt_config_movement_singular', 'movimiento') : t('mgmt_config_movement_plural', 'movimientos')}</span>
+          </div>
+          <div class="mgmt-config-item-edit-row">
+            <input type="text" class="input mgmt-config-edit-input" value="${safeName}" />
+          </div>
+          <div class="mgmt-config-item-actions">
+            <button type="button" class="withdrawals-action-btn" data-prop-edit>${escapeHtmlChipText(t('mgmt_config_edit_btn', 'Editar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-prop-save hidden>${escapeHtmlChipText(t('mgmt_config_save_btn', 'Guardar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-prop-cancel hidden>${escapeHtmlChipText(t('cancel', 'Cancelar'))}</button>
+            <button type="button" class="withdrawals-action-btn danger" data-prop-delete>${escapeHtmlChipText(t('mgmt_config_delete_btn', 'Eliminar'))}</button>
+          </div>
+        </li>`;
+    })
+    .join('');
+
+  host.querySelectorAll('[data-prop-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      li?.classList.add('editing');
+      li?.querySelector('[data-prop-edit]')?.setAttribute('hidden', '');
+      li?.querySelector('[data-prop-save]')?.removeAttribute('hidden');
+      li?.querySelector('[data-prop-cancel]')?.removeAttribute('hidden');
+      li?.querySelector('.mgmt-config-edit-input')?.focus();
+    });
+  });
+  host.querySelectorAll('[data-prop-cancel]').forEach((btn) => {
+    btn.addEventListener('click', () => renderMgmtConfigPropsList());
+  });
+  host.querySelectorAll('[data-prop-save]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const oldName = li?.dataset.name || '';
+      const newName = li?.querySelector('.mgmt-config-edit-input')?.value?.trim() || '';
+      void renameMgmtProp(oldName, newName);
+    });
+  });
+  host.querySelectorAll('[data-prop-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const name = li?.dataset.name || '';
+      void deleteMgmtProp(name);
+    });
+  });
+}
+
+async function renameMgmtProp(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) {
+    renderMgmtConfigLists();
+    return;
+  }
+  const backend = getBackendApi();
+  if (!backend) return;
+  const prop = expensePropsCache.find((p) => String(p.name).toLowerCase() === oldName.toLowerCase());
+  if (prop) {
+    const res = await backend.updateExpensePropLocal({ id: prop.id, client_uuid: prop.client_uuid, name: newName });
+    if (!res?.success) {
+      showToast(res?.error === 'DUPLICATE_NAME' ? t('mgmt_config_duplicate_name', 'Ya existe una prop con ese nombre') : t('mgmt_config_error', 'No se pudo guardar'), 'error');
+      return;
+    }
+  } else {
+    // Prop derivada solo del histórico de gastos/retiros (nunca se registró en la lista
+    // persistida): al renombrarla la damos de alta ya con el nombre nuevo.
+    await registerExpensePropIfNew(newName);
+  }
+
+  const matchingExpenses = expensesCache.filter((e) => matchesPropName(e, oldName));
+  const matchingWithdrawals = withdrawalsCache.filter((w) => matchesPropName(w, oldName));
+  for (const e of matchingExpenses) {
+    await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, account_name: newName });
+  }
+  for (const w of matchingWithdrawals) {
+    await backend.updateWithdrawalLocal({
+      id: w.id,
+      client_uuid: w.client_uuid,
+      account_name: newName,
+      linked_account_name: getWithdrawalLinkedAccountName(w),
+    });
+  }
+
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await Promise.all([loadExpensesCache(), loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_prop_renamed', 'Prop renombrada'), 'success');
+}
+
+async function deleteMgmtProp(name) {
+  if (!name) return;
+  const backend = getBackendApi();
+  if (!backend) return;
+
+  const matchingExpenses = expensesCache.filter((e) => matchesPropName(e, name));
+  const matchingWithdrawals = withdrawalsCache.filter((w) => matchesPropName(w, name));
+  const totalLinked = matchingExpenses.length + matchingWithdrawals.length;
+
+  let cascade = 'none';
+  if (totalLinked > 0) {
+    cascade = await showChoiceModal({
+      title: t('mgmt_config_delete_prop_title', 'Eliminar prop'),
+      message: t('mgmt_config_delete_prop_linked_msg', '"{name}" tiene {count} movimiento(s) (retiros/gastos) asignados. ¿Qué quieres hacer con ellos?')
+        .replace('{name}', name)
+        .replace('{count}', String(totalLinked)),
+      choices: [
+        { value: 'delete', label: t('mgmt_config_delete_prop_choice_delete', 'Borrar también sus movimientos'), danger: true },
+        { value: 'unlink', label: t('mgmt_config_delete_prop_choice_unlink', 'Mantener movimientos (desvincular)') },
+      ],
+      cancelText: t('cancel', 'Cancelar'),
+    });
+    if (!cascade) return;
+  } else {
+    const ok = await showConfirmModal({
+      title: t('mgmt_config_delete_prop_title', 'Eliminar prop'),
+      message: t('mgmt_config_delete_prop_confirm', '¿Eliminar la prop "{name}"?').replace('{name}', name),
+      confirmText: t('mgmt_config_delete_btn', 'Eliminar'),
+      cancelText: t('cancel', 'Cancelar'),
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
+  if (cascade === 'delete') {
+    for (const e of matchingExpenses) {
+      await backend.deleteExpenseLocal(e.client_uuid || String(e.id));
+    }
+    for (const w of matchingWithdrawals) {
+      await backend.deleteWithdrawalLocal(w.client_uuid || String(w.id));
+    }
+  } else if (cascade === 'unlink') {
+    // account_name no puede quedar vacío (validación de retiros/gastos), así que se sustituye
+    // por una etiqueta neutra: el movimiento se conserva íntegro, solo deja de estar asociado
+    // al nombre de la prop que se acaba de eliminar.
+    const placeholder = t('mgmt_config_unlinked_prop_label', 'Prop eliminada');
+    for (const e of matchingExpenses) {
+      await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, account_name: placeholder });
+    }
+    for (const w of matchingWithdrawals) {
+      await backend.updateWithdrawalLocal({
+        id: w.id,
+        client_uuid: w.client_uuid,
+        account_name: placeholder,
+        linked_account_name: getWithdrawalLinkedAccountName(w),
+      });
+    }
+  }
+
+  const prop = expensePropsCache.find((p) => String(p.name).toLowerCase() === name.toLowerCase());
+  if (prop && backend.deleteExpensePropLocal) {
+    await backend.deleteExpensePropLocal(prop.client_uuid || prop.id);
+  }
+
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await Promise.all([loadExpensesCache(), loadWithdrawalsCache(), loadExpensePropsCache()]);
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_prop_deleted', 'Prop eliminada'), 'success');
+}
+
+function renderMgmtConfigCategoriesList() {
+  const host = document.getElementById('mgmtConfigCategoriesList');
+  if (!host) return;
+  const names = getKnownExpenseCategories();
+  if (!names.length) {
+    host.innerHTML = `<li class="mgmt-config-empty">${escapeHtmlChipText(t('mgmt_config_no_categories', 'Todavía no hay categorías guardadas.'))}</li>`;
+    return;
+  }
+  host.innerHTML = names
+    .map((name) => {
+      const count = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === name.toLowerCase()).length;
+      const safeName = escapeAttrChip(name);
+      return `
+        <li class="mgmt-config-item" data-name="${safeName}">
+          <div class="mgmt-config-item-name">
+            <strong>${escapeHtmlChipText(name)}</strong>
+            <span class="mgmt-config-item-count">${count} ${count === 1 ? t('expenses_nav_singular', 'gasto') : t('expenses_nav', 'gastos')}</span>
+          </div>
+          <div class="mgmt-config-item-edit-row">
+            <input type="text" class="input mgmt-config-edit-input" value="${safeName}" />
+          </div>
+          <div class="mgmt-config-item-actions">
+            <button type="button" class="withdrawals-action-btn" data-cat-edit>${escapeHtmlChipText(t('mgmt_config_edit_btn', 'Editar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-cat-save hidden>${escapeHtmlChipText(t('mgmt_config_save_btn', 'Guardar'))}</button>
+            <button type="button" class="withdrawals-action-btn" data-cat-cancel hidden>${escapeHtmlChipText(t('cancel', 'Cancelar'))}</button>
+            <button type="button" class="withdrawals-action-btn danger" data-cat-delete>${escapeHtmlChipText(t('mgmt_config_delete_btn', 'Eliminar'))}</button>
+          </div>
+        </li>`;
+    })
+    .join('');
+
+  host.querySelectorAll('[data-cat-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      li?.classList.add('editing');
+      li?.querySelector('[data-cat-edit]')?.setAttribute('hidden', '');
+      li?.querySelector('[data-cat-save]')?.removeAttribute('hidden');
+      li?.querySelector('[data-cat-cancel]')?.removeAttribute('hidden');
+      li?.querySelector('.mgmt-config-edit-input')?.focus();
+    });
+  });
+  host.querySelectorAll('[data-cat-cancel]').forEach((btn) => {
+    btn.addEventListener('click', () => renderMgmtConfigCategoriesList());
+  });
+  host.querySelectorAll('[data-cat-save]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const oldName = li?.dataset.name || '';
+      const newName = li?.querySelector('.mgmt-config-edit-input')?.value?.trim() || '';
+      void renameMgmtCategory(oldName, newName);
+    });
+  });
+  host.querySelectorAll('[data-cat-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.mgmt-config-item');
+      const name = li?.dataset.name || '';
+      void deleteMgmtCategory(name);
+    });
+  });
+}
+
+async function renameMgmtCategory(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) {
+    renderMgmtConfigLists();
+    return;
+  }
+  if ((customExpenseCategoriesCache || []).some((c) => c.toLowerCase() === newName.toLowerCase())) {
+    showToast(t('mgmt_config_duplicate_name', 'Ya existe una categoría con ese nombre'), 'error');
+    return;
+  }
+  const list = (customExpenseCategoriesCache || []).map((c) => (c.toLowerCase() === oldName.toLowerCase() ? newName : c));
+  await saveCustomExpenseCategoriesList(list);
+
+  const backend = getBackendApi();
+  const matchingExpenses = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === oldName.toLowerCase());
+  if (backend) {
+    for (const e of matchingExpenses) {
+      await backend.updateExpenseLocal({ id: e.id, client_uuid: e.client_uuid, category: newName });
+    }
+    if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  }
+
+  await loadExpensesCache();
+  await refreshManagementUI();
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_category_renamed', 'Categoría renombrada'), 'success');
+}
+
+async function deleteMgmtCategory(name) {
+  if (!name) return;
+  const count = expensesCache.filter((e) => String(e.category || '').trim().toLowerCase() === name.toLowerCase()).length;
+  const ok = await showConfirmModal({
+    title: t('mgmt_config_delete_category_title', 'Eliminar categoría'),
+    message:
+      count > 0
+        ? t('mgmt_config_delete_category_linked_msg', '"{name}" se quita de la lista de sugerencias. Los {count} gasto(s) que ya la usan conservan su categoría tal cual.')
+            .replace('{name}', name)
+            .replace('{count}', String(count))
+        : t('mgmt_config_delete_category_confirm', '¿Eliminar la categoría "{name}"?').replace('{name}', name),
+    confirmText: t('mgmt_config_delete_btn', 'Eliminar'),
+    cancelText: t('cancel', 'Cancelar'),
+    danger: true,
+  });
+  if (!ok) return;
+
+  const list = (customExpenseCategoriesCache || []).filter((c) => c.toLowerCase() !== name.toLowerCase());
+  await saveCustomExpenseCategoriesList(list);
+  renderMgmtConfigLists();
+  showToast(t('mgmt_config_category_deleted', 'Categoría eliminada'), 'success');
+}
+
+function initMgmtConfigTab() {
+  if (!document.getElementById('managementTabConfig')) return;
+  document.getElementById('mgmtConfigAddPropBtn')?.addEventListener('click', () => {
+    void (async () => {
+      const input = document.getElementById('mgmtConfigNewPropInput');
+      const name = input?.value?.trim() || '';
+      if (!name) return;
+      await registerExpensePropIfNew(name);
+      if (input) input.value = '';
+      renderMgmtConfigLists();
+      showToast(t('mgmt_config_prop_added', 'Prop añadida'), 'success');
+    })();
+  });
+  document.getElementById('mgmtConfigNewPropInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') document.getElementById('mgmtConfigAddPropBtn')?.click();
+  });
+  document.getElementById('mgmtConfigAddCategoryBtn')?.addEventListener('click', () => {
+    void (async () => {
+      const input = document.getElementById('mgmtConfigNewCategoryInput');
+      const name = input?.value?.trim() || '';
+      if (!name) return;
+      await registerExpenseCategoryIfNew(name);
+      if (input) input.value = '';
+      renderMgmtConfigLists();
+      showToast(t('mgmt_config_category_added', 'Categoría añadida'), 'success');
+    })();
+  });
+  document.getElementById('mgmtConfigNewCategoryInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') document.getElementById('mgmtConfigAddCategoryBtn')?.click();
+  });
+}
+
 function fillExpenseAccountSelects() {
   const names = getKnownExpenseProps();
 
@@ -6029,7 +6513,7 @@ function renderExpensesTable(list) {
 
 async function refreshExpensesUI() {
   if (!document.getElementById('managementView')) return;
-  await Promise.all([loadExpensesCache(), loadExpensePropsCache()]);
+  await Promise.all([loadExpensesCache(), loadExpensePropsCache(), loadExpenseCategoriesCache()]);
   fillExpenseAccountSelects();
   const filtered = getFilteredExpensesList();
   const filteredMetrics = calculateExpenseMetrics(filtered);
@@ -6157,6 +6641,7 @@ async function saveExpenseAction() {
   }
   closeExpenseModal();
   await registerExpensePropIfNew(account);
+  await registerExpenseCategoryIfNew(category);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshExpensesUI();
   renderManagementBalanceBanner();
@@ -6202,6 +6687,27 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
       .join('');
   }
 
+  // El panel usa position:fixed (ver comentario en el CSS de .suggest-panel) porque vive dentro
+  // de un formulario con overflow-y:auto: como hijo absolute quedaba recortado por ese overflow
+  // y nunca se veía (o se veía un instante al hacer scrollIntoView y luego "se cerraba"). Con
+  // fixed hay que posicionarlo a mano con las coordenadas reales del input en pantalla.
+  function reposition() {
+    const rect = input.getBoundingClientRect();
+    const maxHeight = 220;
+    const fitsBelow = rect.bottom + 6 + Math.min(maxHeight, 160) <= window.innerHeight;
+    panel.style.left = `${Math.round(rect.left)}px`;
+    panel.style.width = `${Math.round(rect.width)}px`;
+    if (fitsBelow) {
+      panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+      panel.style.bottom = '';
+      panel.style.maxHeight = `${Math.max(120, Math.floor(window.innerHeight - rect.bottom - 16))}px`;
+    } else {
+      panel.style.bottom = `${Math.round(window.innerHeight - rect.top + 6)}px`;
+      panel.style.top = '';
+      panel.style.maxHeight = `${Math.max(120, Math.floor(rect.top - 16))}px`;
+    }
+  }
+
   function open() {
     const query = input.value.trim().toLowerCase();
     const all = (typeof getItems === 'function' ? getItems() : []) || [];
@@ -6211,12 +6717,8 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
       return;
     }
     renderItems(filtered);
+    reposition();
     panel.hidden = false;
-    // El panel vive dentro de un formulario con scroll propio; nos aseguramos de que
-    // quede visible en vez de recortado por el borde del área con overflow.
-    requestAnimationFrame(() => {
-      panel.scrollIntoView({ block: 'nearest' });
-    });
   }
 
   function close() {
@@ -6240,14 +6742,28 @@ function attachSuggestDropdown(inputId, panelId, getItems) {
     if (event.target === input || panel.contains(event.target)) return;
     close();
   });
+  // Captura (true) para enterarse también del scroll dentro del formulario del modal (que no
+  // burbujea); si el scroll viene de dentro del propio panel de sugerencias no lo cerramos.
+  window.addEventListener(
+    'scroll',
+    (event) => {
+      if (panel.hidden) return;
+      if (event.target && typeof event.target.closest === 'function' && event.target.closest('.suggest-panel')) return;
+      close();
+    },
+    true
+  );
+  window.addEventListener('resize', () => {
+    if (!panel.hidden) reposition();
+  });
 
-  return { open, close };
+  return { open, close, reposition };
 }
 
 function initExpensesUI() {
   if (!document.getElementById('managementView')) return;
   attachSuggestDropdown('expenseFormAccount', 'expenseFormAccountSuggest', getKnownExpenseProps);
-  attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => EXPENSE_CATEGORY_SUGGESTIONS);
+  attachSuggestDropdown('expenseFormCategory', 'expenseFormCategorySuggest', () => getKnownExpenseCategories());
   const openModal = () => openExpenseModal();
   document.getElementById('openExpenseModalBtn')?.addEventListener('click', openModal);
   document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);
@@ -6277,13 +6793,22 @@ function initExpensesUI() {
 let managementActiveTab = 'withdrawals';
 
 function switchManagementTab(tab) {
-  managementActiveTab = tab === 'expenses' ? 'expenses' : 'withdrawals';
+  managementActiveTab =
+    tab === 'expenses' ? 'expenses' : tab === 'config' ? 'config' : tab === 'calendar' ? 'calendar' : 'withdrawals';
   const withdrawalsPanel = document.getElementById('managementTabWithdrawals');
   const expensesPanel = document.getElementById('managementTabExpenses');
+  const calendarPanel = document.getElementById('managementTabCalendar');
+  const configPanel = document.getElementById('managementTabConfig');
   if (withdrawalsPanel) withdrawalsPanel.hidden = managementActiveTab !== 'withdrawals';
   if (expensesPanel) expensesPanel.hidden = managementActiveTab !== 'expenses';
+  if (calendarPanel) calendarPanel.hidden = managementActiveTab !== 'calendar';
+  if (configPanel) configPanel.hidden = managementActiveTab !== 'config';
   document.getElementById('mgmtTabBtnWithdrawals')?.classList.toggle('active', managementActiveTab === 'withdrawals');
   document.getElementById('mgmtTabBtnExpenses')?.classList.toggle('active', managementActiveTab === 'expenses');
+  document.getElementById('mgmtTabBtnCalendar')?.classList.toggle('active', managementActiveTab === 'calendar');
+  document.getElementById('mgmtTabBtnConfig')?.classList.toggle('active', managementActiveTab === 'config');
+  if (managementActiveTab === 'config') renderMgmtConfigLists();
+  if (managementActiveTab === 'calendar') renderMgmtCalendar();
 }
 
 let backtestingViewActiveTab = 'trades';
@@ -6340,13 +6865,211 @@ async function refreshManagementUI() {
   if (!document.getElementById('managementView')) return;
   await Promise.all([refreshWithdrawalsUI(), refreshExpensesUI()]);
   renderManagementBalanceBanner();
+  if (managementActiveTab === 'config') renderMgmtConfigLists();
+  if (managementActiveTab === 'calendar') renderMgmtCalendar();
 }
 
 function initManagementTabs() {
   if (!document.getElementById('managementView')) return;
   document.getElementById('mgmtTabBtnWithdrawals')?.addEventListener('click', () => switchManagementTab('withdrawals'));
   document.getElementById('mgmtTabBtnExpenses')?.addEventListener('click', () => switchManagementTab('expenses'));
+  document.getElementById('mgmtTabBtnCalendar')?.addEventListener('click', () => switchManagementTab('calendar'));
+  document.getElementById('mgmtTabBtnConfig')?.addEventListener('click', () => switchManagementTab('config'));
   switchManagementTab('withdrawals');
+  initMgmtConfigTab();
+  initMgmtCalendarTab();
+}
+
+// ------------------------ Gestión: pestaña Calendario (neto retirado - gastado) ------------------------
+
+let mgmtCalendarView = 'month'; // 'month' | 'year'
+const mgmtCalendarToday = new Date();
+let mgmtCalendarYear = mgmtCalendarToday.getFullYear();
+let mgmtCalendarMonth = mgmtCalendarToday.getMonth();
+let mgmtCalendarSelectedDate = '';
+
+/** Retirado/gastado/neto para una fecha exacta (YYYY-MM-DD). */
+function getManagementDayFlow(dateKey) {
+  const withdrawn = withdrawalsCache
+    .filter((w) => String(w.date || '').slice(0, 10) === dateKey)
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const spent = expensesCache
+    .filter((e) => String(e.date || '').slice(0, 10) === dateKey)
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  return { withdrawn, spent, net: withdrawn - spent };
+}
+
+/** Retirado/gastado/neto agregados para un mes completo (year, month 0-indexado). */
+function getManagementMonthFlow(year, month) {
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const withdrawn = withdrawalsCache
+    .filter((w) => String(w.date || '').slice(0, 7) === prefix)
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const spent = expensesCache
+    .filter((e) => String(e.date || '').slice(0, 7) === prefix)
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  return { withdrawn, spent, net: withdrawn - spent };
+}
+
+function mgmtCalendarFlowTitle(flow) {
+  return `${t('withdrawals_total', 'Total retirado')}: ${formatWithdrawalEuro(flow.withdrawn)}  ·  ${t('expenses_total', 'Total gastado')}: ${formatNegativeEuro(flow.spent)}`;
+}
+
+function updateMgmtCalendarPeriodLabel() {
+  const label = document.getElementById('mgmtCalendarPeriodLabel');
+  if (!label) return;
+  label.textContent =
+    mgmtCalendarView === 'month' ? formatCalendarTitle(mgmtCalendarYear, mgmtCalendarMonth) : String(mgmtCalendarYear);
+}
+
+function renderMgmtCalendarDayDetail(dateKey) {
+  const host = document.getElementById('mgmtCalendarDayDetail');
+  if (!host) return;
+  if (!dateKey) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  const flow = getManagementDayFlow(dateKey);
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="mgmt-calendar-day-detail-item"><span>${escapeHtmlChipText(formatDateEs(dateKey))}</span><strong>—</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('withdrawals_total', 'Total retirado')}</span><strong class="positive">${formatWithdrawalEuro(flow.withdrawn)}</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('expenses_total', 'Total gastado')}</span><strong class="negative">${formatNegativeEuro(flow.spent)}</strong></div>
+    <div class="mgmt-calendar-day-detail-item"><span>${t('management_balance_net', 'Retirado - Gastado')}</span><strong class="${flow.net >= 0 ? 'positive' : 'negative'}">${formatWithdrawalEuro(flow.net)}</strong></div>`;
+}
+
+function renderMgmtCalendarMonthView() {
+  const header = document.getElementById('mgmtCalendarMonthHeader');
+  const grid = document.getElementById('mgmtCalendarMonthGrid');
+  if (!header || !grid) return;
+
+  header.innerHTML = getCalendarWeekdayLabels(true)
+    .map((label) => `<span>${escapeHtmlChipText(label)}</span>`)
+    .join('');
+
+  const year = mgmtCalendarYear;
+  const month = mgmtCalendarMonth;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  const cellsHtml = [];
+  for (let i = 0; i < startOffset; i++) {
+    cellsHtml.push('<div class="mgmt-calendar-cell mgmt-calendar-cell-empty"></div>');
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateKey = toDateKey(year, month, day);
+    const flow = getManagementDayFlow(dateKey);
+    const hasData = flow.withdrawn !== 0 || flow.spent !== 0;
+    const cls = ['mgmt-calendar-cell'];
+    if (hasData) cls.push('has-data', flow.net >= 0 ? 'positive' : 'negative');
+    if (dateKey === mgmtCalendarSelectedDate) cls.push('selected');
+    cellsHtml.push(`
+      <div class="${cls.join(' ')}" data-mgmt-cal-day="${dateKey}" title="${escapeAttrChip(mgmtCalendarFlowTitle(flow))}">
+        <span class="mgmt-calendar-cell-label">${day}</span>
+        ${hasData ? `<span class="mgmt-calendar-cell-net">${flow.net > 0 ? '+' : ''}${flow.net.toFixed(2)}€</span>` : ''}
+      </div>`);
+  }
+  grid.innerHTML = cellsHtml.join('');
+
+  grid.querySelectorAll('[data-mgmt-cal-day]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      const dateKey = cell.dataset.mgmtCalDay;
+      mgmtCalendarSelectedDate = mgmtCalendarSelectedDate === dateKey ? '' : dateKey;
+      renderMgmtCalendarMonthView();
+      renderMgmtCalendarDayDetail(mgmtCalendarSelectedDate);
+    });
+  });
+}
+
+function renderMgmtCalendarYearView() {
+  const grid = document.getElementById('mgmtCalendarYearView');
+  if (!grid) return;
+  const year = mgmtCalendarYear;
+
+  grid.innerHTML = MONTH_I18N_KEYS.map((monthKey, index) => {
+    const flow = getManagementMonthFlow(year, index);
+    const hasData = flow.withdrawn !== 0 || flow.spent !== 0;
+    const cls = ['mgmt-calendar-cell'];
+    if (hasData) cls.push('has-data', flow.net >= 0 ? 'positive' : 'negative');
+    return `
+      <div class="${cls.join(' ')}" data-mgmt-cal-month="${index}" title="${escapeAttrChip(mgmtCalendarFlowTitle(flow))}">
+        <span class="mgmt-calendar-cell-label">${escapeHtmlChipText(t(monthKey))}</span>
+        ${hasData ? `<span class="mgmt-calendar-cell-net">${flow.net > 0 ? '+' : ''}${flow.net.toFixed(2)}€</span>` : ''}
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-mgmt-cal-month]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      mgmtCalendarMonth = Number(cell.dataset.mgmtCalMonth);
+      mgmtCalendarView = 'month';
+      mgmtCalendarSelectedDate = '';
+      syncMgmtCalendarViewUi();
+      renderMgmtCalendar();
+    });
+  });
+}
+
+function syncMgmtCalendarViewUi() {
+  document.getElementById('mgmtCalendarViewMonthBtn')?.classList.toggle('active', mgmtCalendarView === 'month');
+  document.getElementById('mgmtCalendarViewYearBtn')?.classList.toggle('active', mgmtCalendarView === 'year');
+  const monthWrap = document.getElementById('mgmtCalendarMonthView');
+  const yearWrap = document.getElementById('mgmtCalendarYearView');
+  if (monthWrap) monthWrap.hidden = mgmtCalendarView !== 'month';
+  if (yearWrap) yearWrap.hidden = mgmtCalendarView !== 'year';
+}
+
+function renderMgmtCalendar() {
+  if (!document.getElementById('managementTabCalendar')) return;
+  updateMgmtCalendarPeriodLabel();
+  if (mgmtCalendarView === 'month') {
+    renderMgmtCalendarMonthView();
+    renderMgmtCalendarDayDetail(mgmtCalendarSelectedDate);
+  } else {
+    renderMgmtCalendarYearView();
+    renderMgmtCalendarDayDetail('');
+  }
+}
+
+function initMgmtCalendarTab() {
+  if (!document.getElementById('managementTabCalendar')) return;
+  document.getElementById('mgmtCalendarViewMonthBtn')?.addEventListener('click', () => {
+    mgmtCalendarView = 'month';
+    syncMgmtCalendarViewUi();
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarViewYearBtn')?.addEventListener('click', () => {
+    mgmtCalendarView = 'year';
+    syncMgmtCalendarViewUi();
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarPrevBtn')?.addEventListener('click', () => {
+    if (mgmtCalendarView === 'month') {
+      mgmtCalendarMonth -= 1;
+      if (mgmtCalendarMonth < 0) {
+        mgmtCalendarMonth = 11;
+        mgmtCalendarYear -= 1;
+      }
+    } else {
+      mgmtCalendarYear -= 1;
+    }
+    mgmtCalendarSelectedDate = '';
+    renderMgmtCalendar();
+  });
+  document.getElementById('mgmtCalendarNextBtn')?.addEventListener('click', () => {
+    if (mgmtCalendarView === 'month') {
+      mgmtCalendarMonth += 1;
+      if (mgmtCalendarMonth > 11) {
+        mgmtCalendarMonth = 0;
+        mgmtCalendarYear += 1;
+      }
+    } else {
+      mgmtCalendarYear += 1;
+    }
+    mgmtCalendarSelectedDate = '';
+    renderMgmtCalendar();
+  });
+  syncMgmtCalendarViewUi();
 }
 
 function getAccountTradeNames(account) {
@@ -6450,6 +7173,57 @@ function buildAccountCardDataAttrs(account) {
     .join(' ');
 }
 
+function getAccountTypeLabel(type) {
+  if (type === 'challenge') return t('account_type_challenge', 'Challenge');
+  if (type === 'funded') return t('account_type_funded', 'Fondeada');
+  if (type === 'own_capital') return t('account_type_own_capital', 'Capital propio');
+  return '';
+}
+
+/** % de cuentas Challenge quemadas por máximo DD, % de challenges superados, y retiro medio de
+ * las cuentas Fondeadas — para poder responder a "qué % de challenges paso" / "qué % de cuentas
+ * quemo" / "cuánto retiro de media de cada cuenta que llego a fondear". */
+function renderAccountsChallengeStats(accounts) {
+  const row = document.getElementById('accountsChallengeStatsRow');
+  if (!row) return;
+
+  const challenges = accounts.filter((a) => a.account_type === 'challenge');
+  const funded = accounts.filter((a) => a.account_type === 'funded');
+
+  if (!challenges.length && !funded.length) {
+    row.hidden = true;
+    row.innerHTML = '';
+    return;
+  }
+
+  const burned = challenges.filter((a) => a.disabled_by_max_dd).length;
+  const passed = challenges.filter((a) => a.challenge_passed).length;
+  const burnedPct = challenges.length ? (burned / challenges.length) * 100 : 0;
+  const passedPct = challenges.length ? (passed / challenges.length) * 100 : 0;
+  const avgFundedWithdrawn = funded.length
+    ? funded.reduce((sum, a) => sum + getAccountWithdrawalStats(a).withdrawn, 0) / funded.length
+    : 0;
+
+  row.hidden = false;
+  row.innerHTML = `
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_challenges', 'Challenges intentados')}</span>
+      <strong>${challenges.length}</strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_passed_pct', '% challenges superados')}</span>
+      <strong>${challenges.length ? passedPct.toFixed(1) : '0.0'}% <small style="font-weight:400;color:var(--text-muted)">(${passed}/${challenges.length})</small></strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_burned_pct', '% cuentas quemadas (Máx. DD)')}</span>
+      <strong>${challenges.length ? burnedPct.toFixed(1) : '0.0'}% <small style="font-weight:400;color:var(--text-muted)">(${burned}/${challenges.length})</small></strong>
+    </div>
+    <div class="settings-accounts-stat-card">
+      <span>${t('account_stats_avg_funded_withdrawn', 'Retiro medio por cuenta fondeada')}</span>
+      <strong>${formatWithdrawalEuro(avgFundedWithdrawn)} <small style="font-weight:400;color:var(--text-muted)">(${funded.length})</small></strong>
+    </div>`;
+}
+
 function buildStrategyCardDataAttrs(record) {
   return [
     `data-entity-type="strategy"`,
@@ -6462,15 +7236,44 @@ function buildStrategyCardDataAttrs(record) {
     .join(' ');
 }
 
+// Pestaña activa en Configuración > Cuentas: 'all' | 'challenge' | 'funded' | 'own_capital' | 'disabled'.
+// 'disabled' son las cuentas Challenge marcadas como quemadas por Máximo DD (disabled_by_max_dd).
+let settingsAccountsTab = 'all';
+
+function accountMatchesSettingsTab(account, tab) {
+  if (tab === 'all') return true;
+  if (tab === 'disabled') return account.account_type === 'challenge' && Boolean(account.disabled_by_max_dd);
+  if (tab === 'challenge') return account.account_type === 'challenge' && !account.disabled_by_max_dd;
+  return account.account_type === tab;
+}
+
+function initSettingsAccountsTabs() {
+  document.querySelectorAll('.settings-accounts-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settingsAccountsTab = btn.getAttribute('data-accounts-tab') || 'all';
+      document.querySelectorAll('.settings-accounts-tab-btn').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
+      renderSettingsAccountsList();
+    });
+  });
+}
+
 function renderSettingsAccountsList() {
   const listEl = document.getElementById('settingsAccountsList');
   if (!listEl) return;
   const accounts = getAccounts();
+  renderAccountsChallengeStats(accounts);
+  const filteredAccounts = accounts.filter((account) => accountMatchesSettingsTab(account, settingsAccountsTab));
   if (!accounts.length) {
     listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_account', 'No hay cuentas todavía')}</div>`;
     return;
   }
-  listEl.innerHTML = accounts
+  if (!filteredAccounts.length) {
+    listEl.innerHTML = `<div class="settings-entity-empty">${t('accounts_tab_empty', 'No hay cuentas en esta categoría')}</div>`;
+    return;
+  }
+  listEl.innerHTML = filteredAccounts
     .map((account) => {
       const stats = getAccountWithdrawalStats(account);
       const expenseStats = getAccountExpenseStats(account);
@@ -6479,6 +7282,15 @@ function renderSettingsAccountsList() {
       const badges = [];
       if (account.freeSwap) badges.push(`<span class="settings-entity-badge">Free Swap</span>`);
       if (account.prop_name) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(account.prop_name)}</span>`);
+      const typeLabel = getAccountTypeLabel(account.account_type);
+      if (typeLabel) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(typeLabel)}</span>`);
+      if (account.account_number) badges.push(`<span class="settings-entity-badge muted">#${escapeHtmlChipText(account.account_number)}</span>`);
+      if (account.account_type === 'challenge' && account.disabled_by_max_dd) {
+        badges.push(`<span class="settings-entity-badge danger">${escapeHtmlChipText(t('account_max_dd_badge', 'Quemada (Máx. DD)'))}</span>`);
+      }
+      if (account.account_type === 'challenge' && account.challenge_passed) {
+        badges.push(`<span class="settings-entity-badge ok">${escapeHtmlChipText(t('account_challenge_passed_badge', 'Challenge superado'))}</span>`);
+      }
       return `
         <article class="settings-entity-card" role="listitem" ${buildAccountCardDataAttrs(account)}>
           <div class="settings-entity-card-main">
@@ -6588,23 +7400,63 @@ function openAccountDetailModal(account = null) {
   if (title) title.textContent = isEdit ? t('account_detail_title', 'Detalle de cuenta') : t('add_account', 'Nueva cuenta');
   if (saveBtn) saveBtn.textContent = isEdit ? t('save_changes') : t('add_account');
   if (deleteBtn) deleteBtn.hidden = !isEdit;
+  const typeSel = document.getElementById('accountModalType');
   if (account) {
     document.getElementById('accountModalName').value = account.name || '';
     document.getElementById('accountModalProp').value = account.prop_name || '';
+    document.getElementById('accountModalNumber').value = account.account_number || '';
     document.getElementById('accountModalCapital').value = String(account.capital ?? '');
     document.getElementById('accountModalCommission').value = String(account.commissionPerLot ?? '');
     document.getElementById('accountModalFreeSwap').checked = Boolean(account.freeSwap);
+    document.getElementById('accountModalChallengePassed').checked = Boolean(account.challenge_passed);
+    document.getElementById('accountModalMaxDd').checked = Boolean(account.disabled_by_max_dd);
+    if (typeSel) {
+      typeSel.value = account.account_type || '';
+      refreshCustomSelectForNative(typeSel);
+    }
     updateAccountModalSummary(account);
   } else {
     document.getElementById('accountModalName').value = '';
     document.getElementById('accountModalProp').value = '';
+    document.getElementById('accountModalNumber').value = '';
     document.getElementById('accountModalCapital').value = '';
     document.getElementById('accountModalCommission').value = '';
     document.getElementById('accountModalFreeSwap').checked = false;
+    document.getElementById('accountModalChallengePassed').checked = false;
+    document.getElementById('accountModalMaxDd').checked = false;
+    if (typeSel) {
+      typeSel.value = '';
+      refreshCustomSelectForNative(typeSel);
+    }
     const summaryEl = document.getElementById('accountModalSummary');
     if (summaryEl) summaryEl.hidden = true;
   }
+  syncAccountModalChallengeFieldsVisibility();
   showEntityModalOverlay('accountDetailModalOverlay');
+}
+
+// Los campos "Challenge superado" / "Máximo DD" solo tienen sentido si la cuenta es de tipo
+// Challenge; se ocultan para Fondeada/Capital propio/sin especificar para no confundir.
+// Además, si la cuenta es de Capital propio no tiene sentido hablar de "Prop", así que el
+// campo pasa a llamarse "Broker" (no es una prop firm, es el bróker donde opera el capital propio).
+function syncAccountModalChallengeFieldsVisibility() {
+  const type = document.getElementById('accountModalType')?.value || '';
+  const wrap = document.getElementById('accountModalChallengeFields');
+  if (wrap) wrap.hidden = type !== 'challenge';
+
+  const isOwnCapital = type === 'own_capital';
+  const label = document.getElementById('accountModalPropLabel');
+  const input = document.getElementById('accountModalProp');
+  if (label) {
+    label.setAttribute('data-i18n', isOwnCapital ? 'account_broker_label' : 'account_prop_label');
+    label.textContent = isOwnCapital ? t('account_broker_label', 'Broker (opcional)') : t('account_prop_label', 'Prop (opcional)');
+  }
+  if (input) {
+    input.setAttribute('data-i18n-placeholder', isOwnCapital ? 'account_broker_placeholder' : 'account_prop_placeholder');
+    input.placeholder = isOwnCapital
+      ? t('account_broker_placeholder', 'IC Markets, Pepperstone, IBKR...')
+      : t('account_prop_placeholder', 'Apex, Topstep, Bulenox...');
+  }
 }
 
 function closeAccountDetailModal() {
@@ -6645,9 +7497,15 @@ async function saveAccountFromModal() {
 
   const name = String(document.getElementById('accountModalName')?.value || '').trim();
   const propName = String(document.getElementById('accountModalProp')?.value || '').trim();
+  const accountNumber = String(document.getElementById('accountModalNumber')?.value || '').trim();
+  const accountType = normalizeAccountType(document.getElementById('accountModalType')?.value);
   const capital = parseNumericField(document.getElementById('accountModalCapital')?.value, 0);
   const commissionPerLot = parseNumericField(document.getElementById('accountModalCommission')?.value, 0);
   const freeSwap = Boolean(document.getElementById('accountModalFreeSwap')?.checked);
+  // Los toggles de challenge solo se guardan tal cual si la cuenta es de tipo Challenge; si se
+  // cambia el tipo a Fondeada/Capital propio no tiene sentido arrastrar un estado de challenge.
+  const challengePassed = accountType === 'challenge' && Boolean(document.getElementById('accountModalChallengePassed')?.checked);
+  const disabledByMaxDd = accountType === 'challenge' && Boolean(document.getElementById('accountModalMaxDd')?.checked);
 
   if (!name) {
     setAccountModalError('el nombre es obligatorio');
@@ -6662,7 +7520,17 @@ async function saveAccountFromModal() {
     return;
   }
 
-  const payload = { name, prop_name: propName || null, capital, commissionPerLot, freeSwap };
+  const payload = {
+    name,
+    prop_name: propName || null,
+    account_number: accountNumber || null,
+    account_type: accountType,
+    capital,
+    commissionPerLot,
+    freeSwap,
+    challenge_passed: challengePassed,
+    disabled_by_max_dd: disabledByMaxDd,
+  };
   const isEdit = hasStableIdentity(accountModalIdentity);
   const existing = isEdit ? findAccountByIdentity(accountModalIdentity) : null;
   const originalName = accountModalIdentity?.originalName || existing?.name || null;
@@ -6989,6 +7857,7 @@ function initSettingsEntityListDelegation() {
 function initAccountStrategyModals() {
   initSettingsEntityListDelegation();
   attachSuggestDropdown('accountModalProp', 'accountModalPropSuggest', getKnownExpenseProps);
+  document.getElementById('accountModalType')?.addEventListener('change', syncAccountModalChallengeFieldsVisibility);
   document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
   document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());
   document.getElementById('saveAccountDetailModalBtn')?.addEventListener('click', () => {
@@ -13668,6 +14537,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
 
   initAccountStrategyModals();
+  initSettingsAccountsTabs();
   initWithdrawalsUI();
   initExpensesUI();
   initManagementTabs();
