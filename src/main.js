@@ -635,6 +635,31 @@ ipcMain.handle('sync-pending-changes', async () => {
   }
 });
 
+/**
+ * Detalle de los elementos que no han podido sincronizarse, con el error real devuelto por
+ * Supabase. Sin esto, un fallo de sincronización solo se ve como "N elementos sin sincronizar",
+ * que no dice nada accionable ni al usuario ni a soporte.
+ */
+ipcMain.handle('get-sync-failed-details', async () => {
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return [];
+  try {
+    const rows = db
+      .prepare(
+        `SELECT entity_type, action, error_message, updated_at
+         FROM sync_queue
+         WHERE user_id = ? AND status = 'failed'
+         ORDER BY id DESC
+         LIMIT 20`
+      )
+      .all(String(userId));
+    return rows || [];
+  } catch (err) {
+    console.warn('get-sync-failed-details error:', err);
+    return [];
+  }
+});
+
 ipcMain.handle('pull-remote-data', async () => {
   const userId = await resolveUserIdForLocalCache();
   if (!userId) return { success: false, error: 'NO_USER_ID' };

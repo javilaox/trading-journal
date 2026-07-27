@@ -2529,9 +2529,29 @@ function initSyncHealthIndicator() {
   const el = document.getElementById('syncHealthIndicator');
   if (!el || el.dataset.wired) return;
   el.dataset.wired = '1';
-  el.addEventListener('click', () => {
+  el.addEventListener('click', async () => {
     const backend = getBackendApi();
-    if (backend?.syncPendingChanges) {
+    if (!backend) return;
+
+    // Antes de reintentar, mostramos el error real devuelto por Supabase: un "N sin sincronizar"
+    // a secas no permite ni al usuario ni a soporte saber qué hay que arreglar.
+    try {
+      if (backend.getSyncFailedDetails) {
+        const details = await backend.getSyncFailedDetails();
+        if (Array.isArray(details) && details.length) {
+          const first = details[0];
+          const detailMsg = String(first?.error_message || '').trim();
+          if (detailMsg) {
+            console.warn('[sync] elementos fallidos:', details);
+            showToast?.(`Motivo (${first.entity_type}/${first.action}): ${detailMsg}`, 'warning');
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('No se pudo leer el detalle de sincronización:', err);
+    }
+
+    if (backend.syncPendingChanges) {
       setSyncHealthIndicatorVisual('syncing', { pending: 0, failed: 0 });
       backend.syncPendingChanges().catch(() => {});
     }

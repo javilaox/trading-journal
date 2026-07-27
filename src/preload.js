@@ -9,6 +9,7 @@ const api = {
   getTradesLocal: () => ipcRenderer.invoke('get-trades-local'),
   syncTradesFromSupabase: () => ipcRenderer.invoke('sync-trades-from-supabase'),
   getSyncPendingCount: () => ipcRenderer.invoke('get-sync-pending-count'),
+  getSyncFailedDetails: () => ipcRenderer.invoke('get-sync-failed-details'),
   syncPendingChanges: () => ipcRenderer.invoke('sync-pending-changes'),
   pullRemoteData: () => ipcRenderer.invoke('pull-remote-data'),
   getRealAccountsLocal: () => ipcRenderer.invoke('get-real-accounts-local'),
@@ -72,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
   getTradesLocal: api.getTradesLocal,
   syncTradesFromSupabase: api.syncTradesFromSupabase,
   getSyncPendingCount: api.getSyncPendingCount,
+  getSyncFailedDetails: api.getSyncFailedDetails,
   syncPendingChanges: api.syncPendingChanges,
   pullRemoteData: api.pullRemoteData,
   getRealAccountsLocal: api.getRealAccountsLocal,
@@ -123,6 +125,7 @@ contextBridge.exposeInMainWorld('api', {
   setSupabaseSession: api.setSupabaseSession,
   getCurrentUserId: api.getCurrentUserId,
   getSyncPendingCount: api.getSyncPendingCount,
+  getSyncFailedDetails: api.getSyncFailedDetails,
   recalculateTradesCommissionForAccount: api.recalculateTradesCommissionForAccount,
 });
 
