@@ -5937,7 +5937,21 @@ function renderWithdrawalsAnalytics(filteredList, metrics) {
 
   const operationalEl = document.getElementById('withdrawalAnalyticsOperationalPnl');
   const withdrawnEl = document.getElementById('withdrawalAnalyticsWithdrawnTotal');
-  if (operationalEl) operationalEl.textContent = formatWithdrawalEuro(metrics?.operationalNet ?? 0);
+  if (operationalEl) {
+    operationalEl.textContent = formatWithdrawalEuro(metrics?.operationalNet ?? 0);
+    // Desglose al pasar el ratón: sin esto el número es una caja negra y no se puede comprobar
+    // de dónde sale (es la suma del PnL neto de TODOS los trades reales, no de los retiros).
+    const scope = getWithdrawalTradeScope();
+    const gross = scope.reduce((s, tr) => s + (Number(tr.pnl) || 0), 0);
+    const comm = scope.reduce((s, tr) => s + (Number(tr.commission) || 0), 0);
+    operationalEl.title = [
+      `${scope.length} trade${scope.length === 1 ? '' : 's'} reales`,
+      `PnL bruto: ${formatWithdrawalEuro(gross)}`,
+      `Comisiones: ${formatWithdrawalEuro(-comm)}`,
+      `Neto: ${formatWithdrawalEuro(metrics?.operationalNet ?? 0)}`,
+      'No incluye retiros ni gastos.',
+    ].join('\n');
+  }
   if (withdrawnEl) withdrawnEl.textContent = formatWithdrawalEuro(metrics?.total ?? 0);
 }
 
