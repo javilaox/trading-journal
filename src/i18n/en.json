@@ -374,8 +374,6 @@
   "withdrawals_by_account": "Total by prop",
   "withdrawals_by_month": "Withdrawals by month",
   "withdrawals_top_account": "Prop with most withdrawn",
-  "withdrawals_operational_vs_withdrawn": "Operational profit vs withdrawn",
-  "withdrawals_operational_pnl": "Net operational PnL",
   "withdrawals_config_link_desc": "Manage capital withdrawals from the dedicated view.",
   "withdrawals_manage_btn": "Manage withdrawals and expenses",
   "withdrawals_saved": "Withdrawal saved",

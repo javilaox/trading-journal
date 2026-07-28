@@ -1573,7 +1573,7 @@
       /* Retiros = dinero recuperado (verde); Gastos = salida de dinero (rojo). */
       #withdrawalSummaryTotal, #withdrawalSummaryAvg, #withdrawalSummaryLast,
       #withdrawalAnalyticsByAccount strong, #withdrawalAnalyticsByMonth strong,
-      #withdrawalAnalyticsTopAccount, #withdrawalAnalyticsWithdrawnTotal {
+      #withdrawalAnalyticsTopAccount {
         color: var(--green);
       }
       #expenseSummaryTotal, #expenseSummaryAvg, #expenseSummaryLast,
@@ -1726,14 +1726,6 @@
       #managementView .wd-analytics-block .withdrawal-report-list { font-size: 0.82rem; }
       #managementView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
       #managementView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
-      #managementView .withdrawals-vs-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 6px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        font-size: 0.82rem;
-      }
       #withdrawalModalOverlay .modal.withdrawal-modal,
       #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
@@ -7021,19 +7013,6 @@
                     <div class="wd-analytics-block">
                       <h3 data-i18n="withdrawals_top_account">Más retirado</h3>
                       <p id="withdrawalAnalyticsTopAccount" class="withdrawals-analytics-value">—</p>
-                    </div>
-                    <div class="wd-analytics-block">
-                      <h3 data-i18n="withdrawals_operational_vs_withdrawn">Operativo vs retirado</h3>
-                      <div class="withdrawals-analytics-vs">
-                        <div class="withdrawals-vs-row">
-                          <span data-i18n="withdrawals_operational_pnl">PnL operativo</span>
-                          <strong id="withdrawalAnalyticsOperationalPnl">0.00€</strong>
-                        </div>
-                        <div class="withdrawals-vs-row">
-                          <span data-i18n="withdrawals_total">Retirado</span>
-                          <strong id="withdrawalAnalyticsWithdrawnTotal">0.00€</strong>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </aside>

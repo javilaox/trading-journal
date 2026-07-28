@@ -374,8 +374,6 @@
   "withdrawals_by_account": "Total por prop",
   "withdrawals_by_month": "Retiros por mes",
   "withdrawals_top_account": "Prop con más retirado",
-  "withdrawals_operational_vs_withdrawn": "Beneficio operativo vs retirado",
-  "withdrawals_operational_pnl": "PnL neto operativo",
   "withdrawals_config_link_desc": "Gestiona los retiros de capital desde la vista dedicada.",
   "withdrawals_manage_btn": "Gestionar retiros y gastos",
   "withdrawals_saved": "Retiro guardado",
