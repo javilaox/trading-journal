@@ -355,6 +355,109 @@ ipcMain.handle('read-trade-image', async (event, filePath) => {
   }
 });
 
+/* ── Imágenes de trades en Supabase Storage ──────────────────────────────────────────────
+ * Las capturas se guardaban solo como ruta local (userData/trade-images), así que no se veían
+ * desde otro ordenador. Ahora además se suben al bucket privado 'trade-images', con la ruta
+ * <user_id>/<archivo>, y en la BD se guarda una referencia "storage:<ruta>". La copia local se
+ * mantiene como caché para que la vista sea instantánea y funcione sin conexión.
+ */
+const TRADE_IMAGES_BUCKET = 'trade-images';
+const STORAGE_REF_PREFIX = 'storage:';
+
+function mimeFromExtension(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/png';
+}
+
+/** Sube un archivo local al bucket y devuelve la referencia "storage:<user_id>/<archivo>". */
+async function uploadTradeImageToStorage(localPath) {
+  if (!localPath || typeof localPath !== 'string') {
+    return { success: false, error: 'INVALID_FILE_PATH' };
+  }
+  if (!fs.existsSync(localPath)) {
+    return { success: false, error: 'FILE_NOT_FOUND' };
+  }
+
+  const userId = await resolveUserIdForLocalCache();
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  // Sin sesión activa en este proceso, Storage rechaza la subida por RLS (auth.uid() nulo).
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData?.session?.access_token) {
+    return { success: false, error: 'NO_SUPABASE_SESSION' };
+  }
+
+  const objectPath = `${userId}/${path.basename(localPath)}`;
+  const buffer = fs.readFileSync(localPath);
+
+  const { error } = await supabase.storage
+    .from(TRADE_IMAGES_BUCKET)
+    .upload(objectPath, buffer, {
+      contentType: mimeFromExtension(localPath),
+      upsert: true,
+    });
+
+  if (error) {
+    console.warn('⚠️ No se pudo subir la imagen a Storage:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+
+  return { success: true, ref: `${STORAGE_REF_PREFIX}${objectPath}`, objectPath };
+}
+
+ipcMain.handle('upload-trade-image', async (event, localPath) => uploadTradeImageToStorage(localPath));
+
+/** URL firmada temporal para poder mostrar una imagen del bucket privado. */
+ipcMain.handle('get-trade-image-url', async (event, ref) => {
+  try {
+    const raw = String(ref || '');
+    const objectPath = raw.startsWith(STORAGE_REF_PREFIX) ? raw.slice(STORAGE_REF_PREFIX.length) : raw;
+    if (!objectPath) return { success: false, error: 'INVALID_REF' };
+
+    const { data, error } = await supabase.storage
+      .from(TRADE_IMAGES_BUCKET)
+      .createSignedUrl(objectPath, 60 * 60);
+
+    if (error || !data?.signedUrl) {
+      return { success: false, error: String(error?.message || 'NO_SIGNED_URL') };
+    }
+    return { success: true, url: data.signedUrl };
+  } catch (error) {
+    console.error('❌ get-trade-image-url:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
+/**
+ * Descarga una imagen del bucket a la caché local, para poder mostrarla al instante y sin
+ * conexión desde un ordenador donde aún no estaba.
+ */
+ipcMain.handle('cache-trade-image-locally', async (event, ref) => {
+  try {
+    const raw = String(ref || '');
+    const objectPath = raw.startsWith(STORAGE_REF_PREFIX) ? raw.slice(STORAGE_REF_PREFIX.length) : raw;
+    if (!objectPath) return { success: false, error: 'INVALID_REF' };
+
+    const imagesDir = path.join(app.getPath('userData'), 'trade-images');
+    if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
+
+    const destination = path.join(imagesDir, path.basename(objectPath));
+    if (fs.existsSync(destination)) return { success: true, path: destination, cached: true };
+
+    const { data, error } = await supabase.storage.from(TRADE_IMAGES_BUCKET).download(objectPath);
+    if (error || !data) return { success: false, error: String(error?.message || 'DOWNLOAD_FAILED') };
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    fs.writeFileSync(destination, buffer);
+    return { success: true, path: destination };
+  } catch (error) {
+    console.error('❌ cache-trade-image-locally:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
 function resolveWindowIcon() {
   const packagedIcon = path.join(process.resourcesPath, 'jlx-app-icon.ico');
   if (app.isPackaged && fs.existsSync(packagedIcon)) {

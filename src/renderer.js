@@ -5591,6 +5591,12 @@ function isPersistentImagePath(value) {
   return true;
 }
 
+const STORAGE_IMAGE_PREFIX = 'storage:';
+
+function isStorageImageRef(value) {
+  return String(value || '').startsWith(STORAGE_IMAGE_PREFIX);
+}
+
 async function selectTradeImagePersistently() {
   const backend = getBackendApi();
 
@@ -5607,6 +5613,20 @@ async function selectTradeImagePersistently() {
     console.error('❌ No se pudo seleccionar/copiar imagen:', result);
     showToast('No se pudo guardar la imagen', 'error');
     return '';
+  }
+
+  // Se sube a Supabase Storage para poder verla desde cualquier ordenador. La copia local se
+  // conserva como caché. Si la subida falla (sin conexión, sesión caducada...), no se pierde
+  // nada: se guarda la ruta local como antes y seguirá viéndose en este equipo.
+  if (backend.uploadTradeImage) {
+    try {
+      const uploaded = await backend.uploadTradeImage(result.path);
+      if (uploaded?.success && uploaded?.ref) return uploaded.ref;
+      console.warn('⚠️ Imagen guardada solo en local (no se pudo subir):', uploaded?.error);
+      showToast('Imagen guardada en este equipo; no se pudo subir a la nube', 'warning');
+    } catch (err) {
+      console.warn('⚠️ Error subiendo imagen a Storage:', err);
+    }
   }
 
   return result.path;
@@ -5639,6 +5659,99 @@ function normalizeImageSrc(imagePath) {
   return '';
 }
 
+// Caché en memoria de las imágenes de Storage ya resueltas, para no pedir una signed URL (o
+// releer el archivo) cada vez que se repinta una lista de trades.
+const storageImageSrcCache = new Map();
+
+/**
+ * Migración en segundo plano: sube a Supabase Storage las imágenes que aún están guardadas como
+ * ruta local (de antes de que existiera la nube) y actualiza la referencia en la BD, para que
+ * también se puedan ver desde otros ordenadores.
+ *
+ * Silenciosa y tolerante a fallos: si algo no se puede subir, se deja como está y se reintentará
+ * en el siguiente arranque. Nunca borra el archivo local (sigue siendo la caché).
+ */
+let tradeImagesMigrationDone = false;
+
+async function migrateLocalTradeImagesToStorage() {
+  if (tradeImagesMigrationDone) return;
+  tradeImagesMigrationDone = true;
+
+  const backend = getBackendApi();
+  if (!backend?.uploadTradeImage) return;
+  if (!isOnline() || isOfflineModeActive()) return;
+
+  const needsUpload = (v) => {
+    const s = String(v || '').trim();
+    return Boolean(s) && !isStorageImageRef(s) && !s.startsWith('http://') && !s.startsWith('https://');
+  };
+
+  let migrated = 0;
+
+  // 1) Trades reales
+  try {
+    for (const trade of Array.isArray(cachedTrades) ? cachedTrades : []) {
+      const before = trade.image_before || trade.beforeImage || '';
+      const after = trade.image_after || trade.afterImage || '';
+      if (!needsUpload(before) && !needsUpload(after)) continue;
+
+      const patch = {};
+      if (needsUpload(before)) {
+        const up = await backend.uploadTradeImage(before);
+        if (up?.success && up.ref) patch.image_before = up.ref;
+      }
+      if (needsUpload(after)) {
+        const up = await backend.uploadTradeImage(after);
+        if (up?.success && up.ref) patch.image_after = up.ref;
+      }
+      if (!Object.keys(patch).length) continue;
+
+      const res = await backend.updateTrade({ ...trade, ...patch });
+      if (res?.success) {
+        Object.assign(trade, patch);
+        migrated += 1;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Migración de imágenes (trades reales) interrumpida:', err);
+  }
+
+  // 2) Trades de backtesting
+  try {
+    if (backend.updateBacktestTrade) {
+      for (const trade of Array.isArray(cachedBacktestingTrades) ? cachedBacktestingTrades : []) {
+        const before = trade.image_before || '';
+        const after = trade.image_after || '';
+        if (!needsUpload(before) && !needsUpload(after)) continue;
+
+        const patch = {};
+        if (needsUpload(before)) {
+          const up = await backend.uploadTradeImage(before);
+          if (up?.success && up.ref) patch.image_before = up.ref;
+        }
+        if (needsUpload(after)) {
+          const up = await backend.uploadTradeImage(after);
+          if (up?.success && up.ref) patch.image_after = up.ref;
+        }
+        if (!Object.keys(patch).length) continue;
+
+        const res = await backend.updateBacktestTrade({ ...trade, ...patch });
+        if (res?.success) {
+          Object.assign(trade, patch);
+          migrated += 1;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Migración de imágenes (backtesting) interrumpida:', err);
+  }
+
+  if (migrated > 0) {
+    console.log(`✅ Imágenes migradas a la nube: ${migrated} trade(s)`);
+    showToast?.(`${migrated} trade${migrated === 1 ? '' : 's'} con imágenes subidas a la nube`, 'success');
+  }
+}
+
 async function getDisplayImageSrc(imagePath) {
   if (!imagePath) return '';
 
@@ -5654,6 +5767,42 @@ async function getDisplayImageSrc(imagePath) {
   }
 
   const backend = getBackendApi();
+
+  // Imagen en la nube: primero se intenta la copia local (instantánea y funciona sin conexión);
+  // si no está en este equipo, se descarga a la caché y, como último recurso, se muestra con una
+  // signed URL temporal.
+  if (isStorageImageRef(value)) {
+    if (storageImageSrcCache.has(value)) return storageImageSrcCache.get(value);
+
+    if (backend?.cacheTradeImageLocally && backend?.readTradeImage) {
+      try {
+        const cached = await backend.cacheTradeImageLocally(value);
+        if (cached?.success && cached?.path) {
+          const local = await backend.readTradeImage(cached.path);
+          if (local?.success && local?.src) {
+            storageImageSrcCache.set(value, local.src);
+            return local.src;
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudo cachear la imagen en local:', err);
+      }
+    }
+
+    if (backend?.getTradeImageUrl) {
+      try {
+        const signed = await backend.getTradeImageUrl(value);
+        if (signed?.success && signed?.url) {
+          storageImageSrcCache.set(value, signed.url);
+          return signed.url;
+        }
+        console.warn('⚠️ No se pudo obtener la URL de la imagen:', signed?.error);
+      } catch (err) {
+        console.warn('⚠️ Error obteniendo URL firmada:', err);
+      }
+    }
+    return '';
+  }
 
   if (backend?.readTradeImage) {
     const result = await backend.readTradeImage(value);
@@ -14499,6 +14648,10 @@ async function loadTrades(preloadedTrades, options = {}) {
   } finally {
     isSyncing = false;
   }
+
+  // Una sola vez por arranque y en segundo plano: sube a la nube las imágenes que aún estaban
+  // solo en local. No se espera (void) para no retrasar el pintado del dashboard.
+  void migrateLocalTradeImagesToStorage();
 }
 
 async function renderDashboard() {
