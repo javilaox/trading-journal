@@ -3,6 +3,7 @@ const {
   filterTradesByScheduleCompliance,
   computeDurationMinutes,
   strategyHasEvaluableSchedule,
+  buildScheduleInsights,
 } = require('./scheduleUtils');
 
 function normalizeTimeField(value) {
@@ -85,12 +86,20 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
   const durationsIn = [];
   const durationsOut = [];
   const durationsAll = [];
+  // Datos crudos para el resumen compartido (winrates + concentración horaria de TP/SL).
+  const insightItems = [];
 
   list.forEach((trade) => {
     const pnl = Number(trade?.pnl ?? trade?.pnl_estimated ?? 0) || 0;
     const entryTime = trade?.entry_time ?? trade?.entryTime ?? null;
     const exitTime = trade?.exit_time ?? trade?.exitTime ?? null;
     const status = classifyBacktestingTrade(trade, classifyCtx);
+    insightItems.push({
+      status,
+      result: String(trade?.result || '').toUpperCase(),
+      pnl,
+      entryTime,
+    });
 
     if (status === 'no_schedule') {
       tradesNoSchedule += 1;
@@ -133,8 +142,8 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
     pnlMissingTime,
     winsIn,
     winsOut,
-    winRateIn: tradesIn ? (winsIn / tradesIn) * 100 : null,
-    winRateOut: tradesOut ? (winsOut / tradesOut) * 100 : null,
+    // Winrates y concentración horaria vienen del helper compartido con Real (TP vs SL, sin BE).
+    ...buildScheduleInsights(insightItems),
     avgDurationIn: avg(durationsIn),
     avgDurationOut: avg(durationsOut),
     avgDurationTotal: avg(durationsAll),

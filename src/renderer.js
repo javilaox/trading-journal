@@ -12966,7 +12966,66 @@ function renderBacktestingScheduleDiscipline(trades) {
   set('btStatAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
   set('btStatAvgDurationTotal', formatMinutesAsHm(sched.avgDurationTotal));
 
+  const pctOrDash = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  set('btStatWinrateInSchedule', pctOrDash(sched.winRateIn));
+  set('btStatWinrateOutSchedule', pctOrDash(sched.winRateOut));
+  set('btStatWinrateTotal', pctOrDash(sched.winRateTotal));
+
+  renderHourConcentration('btHourConcentration', sched);
   renderBacktestingScheduleVerdict(sched);
+}
+
+/**
+ * En qué horas se concentran los TP y los SL. Barras apiladas por hora de entrada (verde TP,
+ * rojo SL) más un resumen en texto de las 3 franjas con más de cada uno.
+ * Compartido por Real y Backtesting: ambos reciben el mismo objeto del helper scheduleUtils.
+ */
+function renderHourConcentration(containerId, sched) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+
+  const hours = Array.isArray(sched?.hoursWithData) ? sched.hoursWithData : [];
+  const decided = hours.filter((h) => h.tp > 0 || h.sl > 0);
+  if (!decided.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+
+  const label = (h) => `${String(h).padStart(2, '0')}:00`;
+  const range = (h) => `${label(h)}–${label((h + 1) % 24)}`;
+  const listOf = (arr, key, cls) =>
+    arr.length
+      ? arr.map((h) => `<span class="${cls}">${range(h.hour)}</span> (${h[key]})`).join(' · ')
+      : '<span class="muted">—</span>';
+
+  const maxTotal = Math.max(...decided.map((h) => h.tp + h.sl), 1);
+  const bars = decided
+    .map((h) => {
+      const total = h.tp + h.sl;
+      const height = (total / maxTotal) * 100;
+      const tpShare = total ? (h.tp / total) * 100 : 0;
+      const slShare = total ? (h.sl / total) * 100 : 0;
+      return `
+        <div class="hour-bar" title="${range(h.hour)} · ${h.tp} TP · ${h.sl} SL">
+          <div class="hour-bar-stack" style="height:${Math.max(10, height)}%">
+            <div class="hour-bar-tp" style="height:${tpShare}%"></div>
+            <div class="hour-bar-sl" style="height:${slShare}%"></div>
+          </div>
+          <span class="hour-bar-label">${String(h.hour).padStart(2, '0')}</span>
+        </div>`;
+    })
+    .join('');
+
+  box.innerHTML = `
+    <p class="hour-concentration-title">¿A qué horas ganas y a qué horas pierdes?</p>
+    <p class="hour-concentration-sub">Por hora de entrada. Verde = TP, rojo = SL (los BE no cuentan).</p>
+    <div class="hour-concentration-highlights">
+      <span>Más TP: ${listOf(sched.topTpHours || [], 'tp', 'hc-tp')}</span>
+      <span>Más SL: ${listOf(sched.topSlHours || [], 'sl', 'hc-sl')}</span>
+    </div>
+    <div class="hour-bars">${bars}</div>`;
+  box.hidden = false;
 }
 
 /**

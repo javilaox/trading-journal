@@ -299,8 +299,65 @@ function filterTradesByScheduleCompliance(trades, strategies, options = {}) {
   };
 }
 
+/**
+ * Winrates (dentro / fuera / total) y concentración horaria de TPs y SLs.
+ *
+ * Compartido entre Real y Backtesting para que ambos calculen exactamente lo mismo: son dos
+ * implementaciones distintas de la clasificación por horario, pero este resumen debe coincidir.
+ *
+ * @param {Array<{status:string, result:string, pnl:number, entryTime:string|null}>} items
+ * El winrate se calcula sobre TP vs SL (los BE se excluyen), que es el criterio que ya usa el
+ * resto de la app y el que encaja con "dónde están mis TPs y mis SLs".
+ */
+function buildScheduleInsights(items) {
+  const list = Array.isArray(items) ? items : [];
+
+  const rate = (subset) => {
+    const decided = subset.filter((i) => i.result === 'TP' || i.result === 'SL');
+    if (!decided.length) return null;
+    return (decided.filter((i) => i.result === 'TP').length / decided.length) * 100;
+  };
+
+  const evaluable = list.filter((i) => i.status === 'inside' || i.status === 'outside');
+  const inside = evaluable.filter((i) => i.status === 'inside');
+  const outside = evaluable.filter((i) => i.status === 'outside');
+
+  // Reparto por hora de entrada (0-23). Solo entran trades con hora conocida.
+  const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, trades: 0, tp: 0, sl: 0, pnl: 0 }));
+  list.forEach((item) => {
+    const raw = String(item.entryTime || '');
+    const match = /^(\d{1,2}):(\d{2})/.exec(raw);
+    if (!match) return;
+    const hour = Number(match[1]);
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return;
+    const bucket = byHour[hour];
+    bucket.trades += 1;
+    bucket.pnl += Number(item.pnl) || 0;
+    if (item.result === 'TP') bucket.tp += 1;
+    else if (item.result === 'SL') bucket.sl += 1;
+  });
+
+  const withData = byHour.filter((b) => b.trades > 0);
+  const topBy = (key) =>
+    withData
+      .filter((b) => b[key] > 0)
+      .sort((a, b) => b[key] - a[key] || a.hour - b.hour)
+      .slice(0, 3);
+
+  return {
+    winRateIn: rate(inside),
+    winRateOut: rate(outside),
+    winRateTotal: rate(list),
+    byHour,
+    hoursWithData: withData,
+    topTpHours: topBy('tp'),
+    topSlHours: topBy('sl'),
+  };
+}
+
 module.exports = {
   DAY_KEYS,
+  buildScheduleInsights,
   parseTimeToMinutes,
   formatMinutesAsHm,
   parseOperatingHours,

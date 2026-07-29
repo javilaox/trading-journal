@@ -24,6 +24,7 @@ const {
   computeDurationMinutes,
   formatMinutesAsHm,
   filterTradesByScheduleCompliance,
+  buildScheduleInsights,
 } = require('./services/scheduleUtils');
 const { navigateTo } = require('./navigation.js');
 const { logout } = require('./auth.js');
@@ -227,12 +228,20 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
   let pnlMissingTime = 0;
   const durationsIn = [];
   const durationsOut = [];
+  // Datos crudos para el resumen compartido con Backtesting (winrates + concentración horaria).
+  const insightItems = [];
 
   (Array.isArray(trades) ? trades : []).forEach((trade) => {
     const pnl = Number(trade?.pnl ?? 0) || 0;
     const entryTime = trade?.entry_time ?? trade?.entryTime ?? null;
     const exitTime = trade?.exit_time ?? trade?.exitTime ?? null;
     const status = classifyTradeForStats(trade, strategyByName, context);
+    insightItems.push({
+      status,
+      result: String(trade?.result || '').toUpperCase(),
+      pnl,
+      entryTime,
+    });
 
     if (status === 'no_schedule') {
       tradesNoSchedule += 1;
@@ -269,6 +278,7 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
     pnlIn,
     pnlOut,
     pnlMissingTime,
+    ...buildScheduleInsights(insightItems),
     avgDurationIn: avg(durationsIn),
     avgDurationOut: avg(durationsOut),
     hasDisciplineData: disciplineTotal > 0 || tradesNoSchedule > 0,
@@ -1770,6 +1780,65 @@ async function renderScheduleStats(trades) {
   );
   set('statAvgDurationInSchedule', formatMinutesAsHm(sched.avgDurationIn));
   set('statAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
+
+  const pctOrDash = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  set('statWinrateInSchedule', pctOrDash(sched.winRateIn));
+  set('statWinrateOutSchedule', pctOrDash(sched.winRateOut));
+  set('statWinrateTotal', pctOrDash(sched.winRateTotal));
+
+  renderStatsHourConcentration(sched);
+}
+
+/**
+ * Concentración horaria de TP/SL en Estadísticas (real). Misma presentación que en Backtesting;
+ * ambos parten del mismo objeto calculado por buildScheduleInsights().
+ */
+function renderStatsHourConcentration(sched) {
+  const box = document.getElementById('statHourConcentration');
+  if (!box) return;
+
+  const hours = Array.isArray(sched?.hoursWithData) ? sched.hoursWithData : [];
+  const decided = hours.filter((h) => h.tp > 0 || h.sl > 0);
+  if (!decided.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+
+  const label = (h) => `${String(h).padStart(2, '0')}:00`;
+  const range = (h) => `${label(h)}–${label((h + 1) % 24)}`;
+  const listOf = (arr, key, cls) =>
+    arr.length
+      ? arr.map((h) => `<span class="${cls}">${range(h.hour)}</span> (${h[key]})`).join(' · ')
+      : '<span class="muted">—</span>';
+
+  const maxTotal = Math.max(...decided.map((h) => h.tp + h.sl), 1);
+  const bars = decided
+    .map((h) => {
+      const total = h.tp + h.sl;
+      const height = (total / maxTotal) * 100;
+      const tpShare = total ? (h.tp / total) * 100 : 0;
+      const slShare = total ? (h.sl / total) * 100 : 0;
+      return `
+        <div class="hour-bar" title="${range(h.hour)} · ${h.tp} TP · ${h.sl} SL">
+          <div class="hour-bar-stack" style="height:${Math.max(10, height)}%">
+            <div class="hour-bar-tp" style="height:${tpShare}%"></div>
+            <div class="hour-bar-sl" style="height:${slShare}%"></div>
+          </div>
+          <span class="hour-bar-label">${String(h.hour).padStart(2, '0')}</span>
+        </div>`;
+    })
+    .join('');
+
+  box.innerHTML = `
+    <p class="hour-concentration-title">¿A qué horas ganas y a qué horas pierdes?</p>
+    <p class="hour-concentration-sub">Por hora de entrada. Verde = TP, rojo = SL (los BE no cuentan).</p>
+    <div class="hour-concentration-highlights">
+      <span>Más TP: ${listOf(sched.topTpHours || [], 'tp', 'hc-tp')}</span>
+      <span>Más SL: ${listOf(sched.topSlHours || [], 'sl', 'hc-sl')}</span>
+    </div>
+    <div class="hour-bars">${bars}</div>`;
+  box.hidden = false;
 }
 
 function renderAllCharts(trades, compareEnabled = compareMode) {

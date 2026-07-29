@@ -5846,6 +5846,66 @@
       }
       .bt-metric-verdict.good { color: var(--green); }
       .bt-metric-verdict.bad { color: var(--red); }
+
+      /* Concentración horaria: en qué franjas se acumulan los TP y los SL. Se usa una barra
+         apilada por hora (verde = TP, rojo = SL) para captarlo de un vistazo, sin leer tablas. */
+      .hour-concentration {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+      .hour-concentration[hidden] { display: none; }
+      .hour-concentration-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin: 0 0 4px;
+        color: var(--text);
+      }
+      .hour-concentration-sub {
+        margin: 0 0 14px;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+      }
+      .hour-concentration-highlights {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 26px;
+        margin-bottom: 14px;
+        font-size: 0.86rem;
+      }
+      .hour-concentration-highlights strong { color: var(--text); }
+      .hour-concentration-highlights .hc-tp { color: var(--green); font-weight: 700; }
+      .hour-concentration-highlights .hc-sl { color: var(--red); font-weight: 700; }
+      .hour-bars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+        gap: 8px;
+        align-items: end;
+      }
+      .hour-bar {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+      }
+      .hour-bar-stack {
+        width: 100%;
+        max-width: 34px;
+        height: 74px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        border-radius: 6px;
+        overflow: hidden;
+        background: rgba(148, 163, 184, 0.12);
+      }
+      .hour-bar-tp { background: var(--green); }
+      .hour-bar-sl { background: var(--red); }
+      .hour-bar-label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
       .bt-metrics-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -7402,6 +7462,18 @@
             <h2 id="statScheduleCompliance">—</h2>
           </div>
           <div class="advanced-item">
+            <span data-i18n="stat_winrate_in_schedule">Winrate dentro de horario</span>
+            <h2 id="statWinrateInSchedule">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_winrate_out_schedule">Winrate fuera de horario</span>
+            <h2 id="statWinrateOutSchedule">—</h2>
+          </div>
+          <div class="advanced-item">
+            <span data-i18n="stat_winrate_total">Winrate total</span>
+            <h2 id="statWinrateTotal">—</h2>
+          </div>
+          <div class="advanced-item">
             <span data-i18n="stat_pnl_in_schedule">PnL dentro de horario</span>
             <h2 id="statPnlInSchedule">0.00€</h2>
           </div>
@@ -7422,6 +7494,7 @@
             <h2 id="statAvgDurationOutSchedule">—</h2>
           </div>
         </div>
+        <div id="statHourConcentration" class="hour-concentration" hidden></div>
       </section>
 
       <div id="advancedStats" class="stats-grid advanced-grid stats-tab-panel" data-stats-tab="summary">
@@ -7757,6 +7830,18 @@
                   <h2 id="btStatScheduleCompliance">—</h2>
                 </div>
                 <div class="advanced-item">
+                  <span data-i18n="stat_winrate_in_schedule">Winrate dentro de horario</span>
+                  <h2 id="btStatWinrateInSchedule">—</h2>
+                </div>
+                <div class="advanced-item">
+                  <span data-i18n="stat_winrate_out_schedule">Winrate fuera de horario</span>
+                  <h2 id="btStatWinrateOutSchedule">—</h2>
+                </div>
+                <div class="advanced-item">
+                  <span data-i18n="stat_winrate_total">Winrate total</span>
+                  <h2 id="btStatWinrateTotal">—</h2>
+                </div>
+                <div class="advanced-item">
                   <span data-i18n="stat_pnl_in_schedule">PnL dentro de horario</span>
                   <h2 id="btStatPnlInSchedule">0.00€</h2>
                 </div>
@@ -7781,6 +7866,7 @@
                   <h2 id="btStatAvgDurationTotal">—</h2>
                 </div>
               </div>
+              <div id="btHourConcentration" class="hour-concentration" hidden></div>
             </section>
             </div>
 
