@@ -12856,6 +12856,65 @@ function renderBacktestingScheduleDiscipline(trades) {
   set('btStatAvgDurationInSchedule', formatMinutesAsHm(sched.avgDurationIn));
   set('btStatAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
   set('btStatAvgDurationTotal', formatMinutesAsHm(sched.avgDurationTotal));
+
+  renderBacktestingScheduleVerdict(sched);
+}
+
+/**
+ * Traduce las métricas de disciplina a una conclusión directa: ¿compensa operar fuera del
+ * horario definido? Se muestra arriba del todo para que no haya que interpretar 11 cifras.
+ */
+function renderBacktestingScheduleVerdict(sched) {
+  const box = document.getElementById('btScheduleVerdict');
+  const headlineEl = document.getElementById('btScheduleVerdictHeadline');
+  const detailEl = document.getElementById('btScheduleVerdictDetail');
+  const compareEl = document.getElementById('btScheduleVerdictCompare');
+  if (!box || !headlineEl || !detailEl || !compareEl) return;
+
+  box.classList.remove('is-negative', 'is-positive');
+
+  // Sin horarios configurados (o sin trades evaluables) no hay nada que concluir.
+  if (!sched.hasEvaluableDiscipline) {
+    box.hidden = true;
+    return;
+  }
+
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}€`;
+  const pct = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
+  const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+
+  let headline = '';
+  let detail = '';
+
+  if (sched.tradesOut === 0) {
+    box.classList.add('is-positive');
+    headline = 'Has respetado tu horario en todos los trades.';
+    detail = `Los ${plural(sched.tradesIn, 'trade', 'trades')} evaluados están dentro de tu horario operativo.`;
+  } else if (sched.pnlOut < 0) {
+    box.classList.add('is-negative');
+    headline = `Operar fuera de tu horario te resta ${money(sched.pnlOut)}.`;
+    detail = `Esos ${plural(sched.tradesOut, 'trade', 'trades')} fuera de horario están en negativo. Ceñirte a tu horario habría mejorado tu resultado.`;
+  } else if (sched.pnlOut > 0 && sched.pnlIn > 0) {
+    box.classList.add('is-positive');
+    headline = `Fuera de tu horario también ganas (${money(sched.pnlOut)}).`;
+    detail = `Los ${plural(sched.tradesOut, 'trade', 'trades')} fuera de horario suman en positivo. Quizá merezca la pena ampliar tu franja horaria.`;
+  } else {
+    headline = `Fuera de tu horario sumas ${money(sched.pnlOut)}.`;
+    detail = `Con ${plural(sched.tradesOut, 'trade', 'trades')} fuera de horario todavía hay pocos datos para concluir. Sigue registrando operaciones.`;
+  }
+
+  // Aviso honesto: con muy pocos trades fuera de horario la conclusión no es fiable.
+  if (sched.tradesOut > 0 && sched.tradesOut < 5) {
+    detail += ' Ojo: son pocos trades, tómalo como un indicio y no como una conclusión.';
+  }
+
+  headlineEl.textContent = headline;
+  detailEl.textContent = detail;
+  compareEl.innerHTML = `
+    <span>Dentro: <strong>${money(sched.pnlIn)}</strong> · ${plural(sched.tradesIn, 'trade', 'trades')} · acierto <strong>${pct(sched.winRateIn)}</strong></span>
+    <span>Fuera: <strong>${money(sched.pnlOut)}</strong> · ${plural(sched.tradesOut, 'trade', 'trades')} · acierto <strong>${pct(sched.winRateOut)}</strong></span>
+  `;
+  box.hidden = false;
 }
 
 function getBacktestingStrategyRiskEuroForForm(strategy) {

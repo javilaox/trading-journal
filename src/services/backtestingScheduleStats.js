@@ -78,6 +78,10 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
   let pnlIn = 0;
   let pnlOut = 0;
   let pnlMissingTime = 0;
+  // Se cuentan también los ganadores para poder comparar win rate dentro vs fuera de horario,
+  // que es lo que permite decir si "renta" o no operar fuera del horario definido.
+  let winsIn = 0;
+  let winsOut = 0;
   const durationsIn = [];
   const durationsOut = [];
   const durationsAll = [];
@@ -100,9 +104,11 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
     if (status === 'inside') {
       tradesIn += 1;
       pnlIn += pnl;
+      if (pnl > 0) winsIn += 1;
     } else if (status === 'outside') {
       tradesOut += 1;
       pnlOut += pnl;
+      if (pnl > 0) winsOut += 1;
     }
 
     const dur = computeDurationMinutes(entryTime, exitTime);
@@ -125,6 +131,10 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
     pnlIn,
     pnlOut,
     pnlMissingTime,
+    winsIn,
+    winsOut,
+    winRateIn: tradesIn ? (winsIn / tradesIn) * 100 : null,
+    winRateOut: tradesOut ? (winsOut / tradesOut) * 100 : null,
     avgDurationIn: avg(durationsIn),
     avgDurationOut: avg(durationsOut),
     avgDurationTotal: avg(durationsAll),

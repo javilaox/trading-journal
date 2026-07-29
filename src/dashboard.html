@@ -4918,6 +4918,55 @@
         margin: 8px 0 4px;
         padding: 12px 0;
       }
+      /* Veredicto de horarios: la conclusión debe leerse de un vistazo, sin interpretar métricas.
+         El color comunica el mensaje (rojo = operar fuera te resta; verde = disciplina/positivo). */
+      #backtestingView .bt-schedule-verdict {
+        margin: 4px 0 4px;
+        padding: 16px 18px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(148, 163, 184, 0.07);
+        border-left: 4px solid var(--text-muted);
+      }
+      #backtestingView .bt-schedule-verdict[hidden] { display: none; }
+      #backtestingView .bt-schedule-verdict.is-negative {
+        border-left-color: var(--red);
+        background: rgba(239, 68, 68, 0.08);
+      }
+      #backtestingView .bt-schedule-verdict.is-positive {
+        border-left-color: var(--green);
+        background: rgba(34, 197, 94, 0.08);
+      }
+      #backtestingView .bt-schedule-verdict-headline {
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: var(--text);
+      }
+      #backtestingView .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #fca5a5; }
+      #backtestingView .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #86efac; }
+      body.light #backtestingView .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #b91c1c; }
+      body.light #backtestingView .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #15803d; }
+      #backtestingView .bt-schedule-verdict-detail {
+        margin-top: 6px;
+        font-size: 0.88rem;
+        color: var(--text-muted);
+        line-height: 1.45;
+      }
+      #backtestingView .bt-schedule-verdict-compare {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        margin-top: 12px;
+        font-size: 0.85rem;
+      }
+      #backtestingView .bt-schedule-verdict-compare span {
+        color: var(--text-muted);
+      }
+      #backtestingView .bt-schedule-verdict-compare strong {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
       #backtestingView *,
       #backtestingView *::before,
       #backtestingView *::after {
@@ -7647,6 +7696,13 @@
               </h2>
               <div id="btScheduleStatsEmpty" class="empty-state schedule-discipline-empty" hidden data-i18n="schedule_discipline_empty">
                 No hay suficientes trades con horario configurado.
+              </div>
+              <!-- Veredicto en lenguaje llano: responde directamente a "¿me renta operar fuera
+                   de mi horario?", en vez de obligar a interpretar 11 métricas sueltas. -->
+              <div id="btScheduleVerdict" class="bt-schedule-verdict" hidden>
+                <div class="bt-schedule-verdict-headline" id="btScheduleVerdictHeadline"></div>
+                <div class="bt-schedule-verdict-detail" id="btScheduleVerdictDetail"></div>
+                <div class="bt-schedule-verdict-compare" id="btScheduleVerdictCompare"></div>
               </div>
               <div id="btScheduleStatsMetrics" class="stats-grid schedule-discipline-metrics">
                 <div class="advanced-item">
