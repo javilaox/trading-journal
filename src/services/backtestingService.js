@@ -69,6 +69,10 @@ function normalizeBacktestingTradePayload(trade = {}, userId) {
     notes: trade.notes || '',
     entry_time: normalizeTimeField(trade.entry_time ?? trade.entryTime),
     exit_time: normalizeTimeField(trade.exit_time ?? trade.exitTime),
+    // Rutas locales de las capturas (mismo enfoque que los trades reales: se guarda la ruta
+    // del archivo copiado a userData/trade-images, no la imagen en sí).
+    image_before: trade.image_before || null,
+    image_after: trade.image_after || null,
     custom_metrics
   };
 }
@@ -105,7 +109,9 @@ function normalizeRow(row) {
     pnl: pnlVal,
     pnl_estimated: pnlVal,
     entry_time: normalizeTimeField(row.entry_time),
-    exit_time: normalizeTimeField(row.exit_time)
+    exit_time: normalizeTimeField(row.exit_time),
+    image_before: row.image_before || '',
+    image_after: row.image_after || ''
   };
 }
 

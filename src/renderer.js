@@ -3427,6 +3427,9 @@ let createBeforeImagePath = '';
 let createAfterImagePath = '';
 let editBeforeImagePath = '';
 let editAfterImagePath = '';
+// Capturas del trade de backtesting en edición/creación (mismo patrón que los trades reales).
+let btBeforeImagePath = '';
+let btAfterImagePath = '';
 let tradeDatepickerRoot = null;
 // Todas las instancias del datepicker personalizado (Nuevo trade, Retiro, Gasto...). Antes solo
 // se guardaba la última en tradeDatepickerRoot, así que al montar varias no se podían cerrar bien.
@@ -12203,6 +12206,10 @@ function openBacktestingTradeEditor(trade) {
   setValueIfExists('btNotes', trade.notes || '');
 
   renderBacktestingCustomMetricFields(cm);
+  btBeforeImagePath = trade.image_before || '';
+  btAfterImagePath = trade.image_after || '';
+  void updateImagePreview('btBeforeImagePreview', 'openBtBeforeImageBtn', btBeforeImagePath);
+  void updateImagePreview('btAfterImagePreview', 'openBtAfterImageBtn', btAfterImagePath);
   updateBacktestingTradeScheduleHints();
 
   backtestingAssetComboboxState?.rebuildFromSettings?.();
@@ -13791,6 +13798,14 @@ function clearBacktestForm() {
   if (riskEl) riskEl.value = '';
   if (rrEl) rrEl.value = '';
   renderBacktestingCustomMetricFields({});
+  btBeforeImagePath = '';
+  btAfterImagePath = '';
+  const btBeforeInput = document.getElementById('btBeforeImage');
+  if (btBeforeInput) btBeforeInput.value = '';
+  const btAfterInput = document.getElementById('btAfterImage');
+  if (btAfterInput) btAfterInput.value = '';
+  void updateImagePreview('btBeforeImagePreview', 'openBtBeforeImageBtn', '');
+  void updateImagePreview('btAfterImagePreview', 'openBtAfterImageBtn', '');
   const msg = document.getElementById('btFormMsg');
   if (msg) {
     msg.textContent = '';
@@ -15239,7 +15254,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       pnl: btPnlFinal,
       notes: document.getElementById('btNotes')?.value.trim() || '',
       entry_time: normalizeBtTimeField(document.getElementById('btEntryTime')?.value),
-      exit_time: normalizeBtTimeField(document.getElementById('btExitTime')?.value)
+      exit_time: normalizeBtTimeField(document.getElementById('btExitTime')?.value),
+      image_before: isPersistentImagePath(btBeforeImagePath) ? btBeforeImagePath : null,
+      image_after: isPersistentImagePath(btAfterImagePath) ? btAfterImagePath : null
     };
     payload.rr_result = getBacktestingTradeRValue(payload);
     const payloadEditId = Number(editingBacktestingTradeId);
@@ -15353,6 +15370,23 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     createAfterImagePath = savedPath;
     await updateImagePreview('afterImagePreview', 'openAfterImageBtnCreate', createAfterImagePath);
+  });
+
+  // Capturas del formulario de Backtesting (mismo flujo que en los trades reales: el archivo se
+  // copia a userData/trade-images y solo se guarda la ruta).
+  document.getElementById('btBeforeImage')?.addEventListener('click', async (event) => {
+    event.preventDefault();
+    const savedPath = await selectTradeImagePersistently();
+    if (!savedPath) return;
+    btBeforeImagePath = savedPath;
+    await updateImagePreview('btBeforeImagePreview', 'openBtBeforeImageBtn', btBeforeImagePath);
+  });
+  document.getElementById('btAfterImage')?.addEventListener('click', async (event) => {
+    event.preventDefault();
+    const savedPath = await selectTradeImagePersistently();
+    if (!savedPath) return;
+    btAfterImagePath = savedPath;
+    await updateImagePreview('btAfterImagePreview', 'openBtAfterImageBtn', btAfterImagePath);
   });
   const editBeforeInput = document.getElementById('editBeforeImage');
   editBeforeInput?.addEventListener('click', async (event) => {

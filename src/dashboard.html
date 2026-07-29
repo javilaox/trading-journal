@@ -7827,6 +7827,28 @@
                     </div>
 
                     <div class="bt-operation-form-section">
+                      <h4 class="subsection-title bt-form-section-heading" data-i18n="bt_images_section">Imágenes</h4>
+                      <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
+                        <div class="field">
+                          <label for="btBeforeImage" data-i18n="label_image_before">Imagen antes</label>
+                          <input id="btBeforeImage" class="input" type="file" accept="image/*" />
+                          <div class="image-preview-box">
+                            <img id="btBeforeImagePreview" alt="Imagen antes" />
+                            <button type="button" id="openBtBeforeImageBtn" class="image-preview-open" data-i18n="view_image">Ver imagen</button>
+                          </div>
+                        </div>
+                        <div class="field">
+                          <label for="btAfterImage" data-i18n="label_image_after">Imagen después</label>
+                          <input id="btAfterImage" class="input" type="file" accept="image/*" />
+                          <div class="image-preview-box">
+                            <img id="btAfterImagePreview" alt="Imagen después" />
+                            <button type="button" id="openBtAfterImageBtn" class="image-preview-open" data-i18n="view_image">Ver imagen</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="bt-operation-form-section">
                       <h4 class="subsection-title bt-form-section-heading" data-i18n="bt_notes">Notas</h4>
                       <div class="form-grid bt-operation-form-grid backtesting-form-grid pro-form-grid">
                         <div class="field field-full"><label for="btNotes" data-i18n="bt_notes">Notas</label><textarea id="btNotes" class="input" rows="2" data-i18n-placeholder="bt_placeholder_notes" placeholder="Notas"></textarea></div>
