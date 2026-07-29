@@ -4202,8 +4202,10 @@ function parseIsoDate(isoDate) {
   return { year, month: month - 1, day };
 }
 
-function initTradeDatepicker(inputId = 'date') {
-  const nativeInput = document.getElementById(inputId);
+// Acepta un id o directamente el elemento (mismo motivo que en initTradeTimepicker).
+function initTradeDatepicker(inputIdOrEl = 'date') {
+  const nativeInput =
+    typeof inputIdOrEl === 'string' ? document.getElementById(inputIdOrEl) : inputIdOrEl;
   if (!nativeInput || nativeInput.dataset.customDatepickerBound === 'true') return;
 
   nativeInput.dataset.customDatepickerBound = 'true';
@@ -4540,7 +4542,14 @@ function initTradeDatepicker(inputId = 'date') {
     syncViewWithValue();
     syncLabel();
   };
-  nativeInput.dataset.customDatepickerId = String(inputId);
+  nativeInput.dataset.customDatepickerId = nativeInput.id || '';
+  // Además, escuchar 'change' del input nativo: así basta con hacer
+  // input.dispatchEvent(new Event('change')) tras asignar .value por código (mismo patrón que ya
+  // usa el timepicker) y la etiqueta visible se actualiza sola en cualquier formulario.
+  nativeInput.addEventListener('change', () => {
+    syncViewWithValue();
+    syncLabel();
+  });
 
   syncViewWithValue();
   syncLabel();
@@ -4563,8 +4572,11 @@ function closeTradeTimepickers(exceptElement = null) {
  * original se mantiene oculto como fuente de verdad del valor (formato HH:MM) para no romper
  * el resto de lógica (validaciones de horario, cálculos de duración, etc.) que ya lee/escribe
  * ese input directamente. */
-function initTradeTimepicker(inputId) {
-  const nativeInput = document.getElementById(inputId);
+// Acepta un id o directamente el elemento, para poder montarlo también sobre inputs creados
+// dinámicamente (p. ej. las filas de horarios operativos, que no tienen id).
+function initTradeTimepicker(inputIdOrEl) {
+  const nativeInput =
+    typeof inputIdOrEl === 'string' ? document.getElementById(inputIdOrEl) : inputIdOrEl;
   if (!nativeInput || nativeInput.dataset.customTimepickerBound === 'true') return;
 
   nativeInput.dataset.customTimepickerBound = 'true';
@@ -4682,6 +4694,30 @@ function initTradeTimepicker(inputId) {
     positionPopup();
     custom.classList.add('open');
     scrollSelectedIntoView();
+  });
+
+  // El popup es position:fixed y los modales tienen overflow-y:auto: si no se recoloca al hacer
+  // scroll, se queda "flotando" separado de su campo. Se cierra solo si el campo sale de vista.
+  window.addEventListener(
+    'scroll',
+    (event) => {
+      if (!custom.classList.contains('open')) return;
+      if (event.target && typeof event.target.closest === 'function' && event.target.closest('.timepicker-popup')) return;
+      const rect = trigger.getBoundingClientRect();
+      const scroller = event.target && event.target.getBoundingClientRect ? event.target.getBoundingClientRect() : null;
+      const outOfView = scroller
+        ? rect.bottom < scroller.top || rect.top > scroller.bottom
+        : rect.bottom < 0 || rect.top > window.innerHeight;
+      if (outOfView) {
+        custom.classList.remove('open');
+        return;
+      }
+      positionPopup();
+    },
+    true
+  );
+  window.addEventListener('resize', () => {
+    if (custom.classList.contains('open')) positionPopup();
   });
 
   nowBtn?.addEventListener('click', (event) => {
@@ -5240,6 +5276,9 @@ function renderStrategyHoursList(hours, listId = 'strategyModalHoursList') {
     `;
     list.appendChild(row);
   });
+  // Selector de hora propio también aquí: el nativo de Chromium no se puede tematizar y
+  // desentonaba con el resto de la app.
+  list.querySelectorAll('input[type="time"]').forEach((input) => initTradeTimepicker(input));
   list.querySelectorAll('.strategy-hour-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
       const i = Number(btn.dataset.index);
@@ -6161,8 +6200,12 @@ function clearWithdrawalFilters() {
   const from = document.getElementById('withdrawalFilterFrom');
   const to = document.getElementById('withdrawalFilterTo');
   if (account) account.value = '';
-  if (from) from.value = '';
-  if (to) to.value = '';
+  // dispatch change: refresca la etiqueta del selector de fecha propio al limpiar.
+  [from, to].forEach((el) => {
+    if (!el) return;
+    el.value = '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 function setWithdrawalModalTitle(isEdit) {
@@ -7016,8 +7059,11 @@ function clearExpenseFilters() {
   const from = document.getElementById('expenseFilterFrom');
   const to = document.getElementById('expenseFilterTo');
   if (account) account.value = '';
-  if (from) from.value = '';
-  if (to) to.value = '';
+  [from, to].forEach((el) => {
+    if (!el) return;
+    el.value = '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 function setExpenseModalTitle(isEdit) {
@@ -12682,6 +12728,8 @@ function renderBtStrategyHoursList(hours) {
     `;
     list.appendChild(row);
   });
+  // Selector de hora propio (el nativo de Chromium no se puede tematizar).
+  list.querySelectorAll('input[type="time"]').forEach((input) => initTradeTimepicker(input));
   list.querySelectorAll('.strategy-hour-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
       const i = Number(btn.dataset.index);
@@ -13974,6 +14022,7 @@ function clearBacktestForm() {
   // etiqueta visible del timepicker se quedaría mostrando la hora anterior.
   document.getElementById('btEntryTime')?.dispatchEvent(new Event('change', { bubbles: true }));
   document.getElementById('btExitTime')?.dispatchEvent(new Event('change', { bubbles: true }));
+  document.getElementById('btDate')?.dispatchEvent(new Event('change', { bubbles: true }));
   const slMode = document.getElementById('btSlMode');
   const tpMode = document.getElementById('btTpMode');
   const pnlMode = document.getElementById('btPnlMode');
@@ -14252,7 +14301,10 @@ function openBacktestingSessionModal(sessionId) {
     if (sess) {
       const setv = (id, v) => {
         const el = document.getElementById(id);
-        if (el) el.value = v ?? '';
+        if (!el) return;
+        el.value = v ?? '';
+        // Necesario para que los selectores propios de fecha refresquen su etiqueta visible.
+        el.dispatchEvent(new Event('change', { bubbles: true }));
       };
       setv('btSessionName', sess.name);
       setv('btSessionStartDate', sess.start_date || '');
@@ -14276,7 +14328,9 @@ function openBacktestingSessionModal(sessionId) {
     if (hid) hid.value = '';
     ['btSessionName', 'btSessionStartDate', 'btSessionEndDate', 'btSessionNotes', 'btSessionCapital'].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.value = '';
+      if (!el) return;
+      el.value = '';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
     });
     const st = document.getElementById('btSessionStatus');
     if (st) st.value = 'in_progress';
@@ -15743,9 +15797,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   })();
   initCustomSelects();
   initAssetCombobox();
-  initTradeDatepicker('date');
-  initTradeTimepicker('btEntryTime');
-  initTradeTimepicker('btExitTime');
+  // Selectores propios en TODOS los campos de fecha/hora: los nativos de Chromium no se pueden
+  // tematizar y rompían la coherencia visual de la app.
+  ['date', 'editDate', 'btDate', 'btSessionStartDate', 'btSessionEndDate',
+   'withdrawalFilterFrom', 'withdrawalFilterTo', 'expenseFilterFrom', 'expenseFilterTo']
+    .forEach((id) => initTradeDatepicker(id));
+  ['entryTime', 'exitTime', 'editEntryTime', 'editExitTime', 'btEntryTime', 'btExitTime']
+    .forEach((id) => initTradeTimepicker(id));
   applyModeUI();
   updateCreateDerivedFields();
   recalculateCreateNetPnl();
