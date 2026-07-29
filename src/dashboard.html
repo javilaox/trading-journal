@@ -5272,6 +5272,19 @@
       body.light .config-chip {
         background: rgba(15, 23, 42, 0.05);
       }
+      /* Texto del chip clicable (editar etiqueta): debe parecer texto, no un botón. */
+      .config-chip-label {
+        margin: 0;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .config-chip-label:hover {
+        text-decoration: underline;
+      }
       .config-chip-remove {
         margin: 0;
         padding: 0 2px;
@@ -5814,7 +5827,25 @@
         padding: 8px 10px;
         border-bottom: 1px solid var(--border);
         text-align: left;
+        vertical-align: top;
       }
+      /* Cada celda muestra el dato principal (PnL) y debajo el contexto (ops y acierto), para que
+         se capte de un vistazo sin tener que cruzar 6 columnas de números. */
+      .bt-metric-analysis-table .bt-metric-cell strong {
+        display: block;
+        font-variant-numeric: tabular-nums;
+      }
+      .bt-metric-analysis-table .bt-metric-sub {
+        display: block;
+        margin-top: 2px;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+      }
+      .bt-metric-verdict {
+        font-weight: 600;
+      }
+      .bt-metric-verdict.good { color: var(--green); }
+      .bt-metric-verdict.bad { color: var(--red); }
       .bt-metrics-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -7965,17 +7996,15 @@
 
                 <div class="bt-analysis-card card panel-card" id="btMetricAnalysisSection">
                   <h3 class="subsection-title">Análisis por métricas</h3>
-                  <p class="muted small mb-md">Solo métricas tipo checkbox activas. Datos según filtros actuales.</p>
+                  <p class="muted small mb-md">Compara tus resultados cuando cumples cada métrica y cuando no. Solo métricas tipo checkbox activas.</p>
                   <div class="table-wrap">
                     <table class="bt-metric-analysis-table" id="btMetricAnalysisTable">
                       <thead>
                         <tr>
                           <th>Métrica</th>
-                          <th>Trades</th>
-                          <th>Winrate</th>
-                          <th>PnL €</th>
-                          <th>R Σ</th>
-                          <th>RR medio</th>
+                          <th>Cumpliéndola</th>
+                          <th>Sin cumplirla</th>
+                          <th>Conclusión</th>
                         </tr>
                       </thead>
                       <tbody id="btMetricAnalysisBody"></tbody>
@@ -8035,10 +8064,7 @@
                   <h3>Sesiones rápidas</h3>
                   <p>Etiquetas para la columna «Franja» del formulario (ej. Londres).</p>
                 </div>
-              </div>
-              <div class="backtesting-config-input-row">
-                <input id="btSessionInput" class="input" placeholder="Ej: Londres, NY, Asia" />
-                <button type="button" id="addBtSession" class="button button-add">Añadir etiqueta</button>
+                <button type="button" id="openBtSessionTagModalBtn" class="button primary compact">Nueva etiqueta</button>
               </div>
               <div id="btSessionsList" class="chips-list"></div>
               </div>
@@ -8051,31 +8077,80 @@
                   <h3>Métricas personalizadas</h3>
                   <p>Checks y campos opcionales para evaluar cada operación.</p>
                 </div>
+                <button type="button" id="openBtMetricModalBtn" class="button primary compact">Nueva métrica</button>
               </div>
               <div id="btMetricsConfigList" class="bt-metrics-grid"></div>
-              <div class="bt-metric-form-card pro-card pro-metric-form-card">
-                <p class="pro-section-sub pro-section-sub--flush">Nueva métrica</p>
-                <div class="bt-metric-form-grid">
-                  <input id="btMetricNameInput" class="input" placeholder="Nombre" />
-                  <input id="btMetricDescInput" class="input" placeholder="Descripción (opcional)" />
-                </div>
-                <div class="bt-metric-form-bottom">
-                  <div class="bt-metric-form-bottom-left">
-                    <select id="btMetricTypeInput" class="input">
-                      <option value="checkbox">Checkbox</option>
-                      <option value="number">Número</option>
-                      <option value="text">Texto</option>
-                    </select>
-                    <label class="toggle-row"><input type="checkbox" id="btMetricActiveInput" checked /> <span>Activa</span></label>
-                  </div>
-                  <button type="button" id="btMetricAddBtn" class="button button-add">Añadir métrica</button>
-                </div>
-              </div>
               </div>
             </div>
 
           </div>
         </section>
+      </div>
+    </div>
+
+    <div id="btMetricModalOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal bt-strategy-modal" role="dialog" aria-modal="true" aria-labelledby="btMetricModalTitle">
+        <div class="app-modal-header modal-header">
+          <h2 id="btMetricModalTitle">Nueva métrica</h2>
+          <button type="button" id="closeBtMetricModal" class="app-modal-close modal-close" aria-label="Cerrar">Cerrar</button>
+        </div>
+        <div class="app-modal-body modal-body">
+          <input type="hidden" id="btMetricEditId" />
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Nombre</span>
+              <input id="btMetricNameInput" class="input" placeholder="Ej: Siguió el plan" />
+            </label>
+            <label class="field field-full">
+              <span>Descripción (opcional)</span>
+              <input id="btMetricDescInput" class="input" placeholder="Para qué sirve esta métrica" />
+            </label>
+            <label class="field field-full">
+              <span>Tipo</span>
+              <select id="btMetricTypeInput" class="input">
+                <option value="checkbox">Checkbox (sí / no)</option>
+                <option value="number">Número</option>
+                <option value="text">Texto</option>
+              </select>
+            </label>
+            <p class="form-hint field-full" style="margin:0;">
+              Solo las métricas de tipo <strong>Checkbox</strong> aparecen en «Análisis por métricas».
+            </p>
+            <div class="strategy-active-row field-full">
+              <span>Métrica activa</span>
+              <label class="switch">
+                <input type="checkbox" id="btMetricActiveInput" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="app-modal-footer modal-footer">
+          <button type="button" id="cancelBtMetricBtn" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="btMetricAddBtn" class="btn btn-primary full">Guardar métrica</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="btSessionTagModalOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal bt-strategy-modal" role="dialog" aria-modal="true" aria-labelledby="btSessionTagModalTitle">
+        <div class="app-modal-header modal-header">
+          <h2 id="btSessionTagModalTitle">Nueva etiqueta</h2>
+          <button type="button" id="closeBtSessionTagModal" class="app-modal-close modal-close" aria-label="Cerrar">Cerrar</button>
+        </div>
+        <div class="app-modal-body modal-body">
+          <input type="hidden" id="btSessionTagOriginal" />
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Nombre de la franja</span>
+              <input id="btSessionInput" class="input" placeholder="Ej: Londres, NY, Asia" />
+            </label>
+          </div>
+        </div>
+        <div class="app-modal-footer modal-footer">
+          <button type="button" id="cancelBtSessionTagBtn" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="addBtSession" class="btn btn-primary full">Guardar etiqueta</button>
+        </div>
       </div>
     </div>
 

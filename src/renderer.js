@@ -12099,12 +12099,10 @@ function collectBacktestingCustomMetrics() {
   return out;
 }
 
-function analyzeCheckboxMetric(trades, metricName) {
-  const subset = trades.filter((t) => parseTradeCustomMetrics(t)[metricName] === true);
+/** Métricas de un subconjunto de trades (bloque reutilizable para comparar "con" vs "sin"). */
+function summarizeBacktestingSubset(subset) {
   const n = subset.length;
-  if (!n) {
-    return { n: 0, winrate: '0.0', pnl: 0, sumR: 0, avgRr: '0.00' };
-  }
+  if (!n) return { n: 0, winrate: null, pnl: 0, sumR: 0, avgRr: null };
   let sumR = 0;
   let pnl = 0;
   subset.forEach((t) => {
@@ -12117,9 +12115,35 @@ function analyzeCheckboxMetric(trades, metricName) {
     : subset.filter((tr) => String(tr.result || '').toUpperCase() !== 'BE');
   const wrN = winrateBase.length;
   const wins = winrateBase.filter((tr) => String(tr.result || '').toUpperCase() === 'TP').length;
-  const winrate = wrN ? ((wins / wrN) * 100).toFixed(1) : '0.0';
-  const avgRr = (sumR / n).toFixed(2);
-  return { n, winrate, pnl, sumR, avgRr };
+  return {
+    n,
+    winrate: wrN ? (wins / wrN) * 100 : null,
+    pnl,
+    sumR,
+    avgRr: sumR / n,
+  };
+}
+
+/**
+ * Compara los trades donde la métrica está marcada frente a los que no. Sin esa comparación el
+ * dato no dice nada: saber que con "Siguió el plan" ganas 300€ solo es útil si sabes cuánto
+ * ganas (o pierdes) cuando NO la cumples.
+ */
+function analyzeCheckboxMetric(trades, metricName) {
+  const marked = [];
+  const unmarked = [];
+  trades.forEach((t) => {
+    const value = parseTradeCustomMetrics(t)[metricName];
+    if (value === true) marked.push(t);
+    else if (value === false) unmarked.push(t);
+    // undefined/null => el trade es anterior a la métrica: no cuenta en ninguno de los dos lados.
+  });
+  return {
+    yes: summarizeBacktestingSubset(marked),
+    no: summarizeBacktestingSubset(unmarked),
+    evaluated: marked.length + unmarked.length,
+    total: trades.length,
+  };
 }
 
 function renderBacktestingMetricAnalysis(filtered) {
@@ -12129,14 +12153,51 @@ function renderBacktestingMetricAnalysis(filtered) {
   tbody.innerHTML = '';
   if (!checkboxes.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="6" class="muted">No hay métricas checkbox activas. Configúralas en Config. Backtesting.</td>`;
+    tr.innerHTML = `<td colspan="4" class="muted">No hay métricas checkbox activas. Configúralas en Config. Backtesting.</td>`;
     tbody.appendChild(tr);
     return;
   }
+  const money = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}€`;
+  const wr = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  const cell = (s) =>
+    s.n
+      ? `<strong>${money(s.pnl)}</strong><span class="bt-metric-sub">${s.n} ops · ${wr(s.winrate)} acierto</span>`
+      : '<span class="muted">—</span>';
+
   checkboxes.forEach((m) => {
     const a = analyzeCheckboxMetric(filtered, m.name);
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtmlAssetLabel(m.name)}</td><td>${a.n}</td><td>${a.winrate}%</td><td>${a.pnl >= 0 ? '+' : ''}${a.pnl.toFixed(2)}€</td><td>${a.sumR >= 0 ? '+' : ''}${a.sumR.toFixed(2)}R</td><td>${a.avgRr}</td>`;
+
+    // Métrica recién creada (o nunca marcada): decirlo explícitamente en vez de mostrar ceros,
+    // que parecerían un mal resultado cuando en realidad es falta de datos.
+    if (!a.evaluated) {
+      tr.innerHTML = `
+        <td>${escapeHtmlAssetLabel(m.name)}</td>
+        <td colspan="3" class="muted">Aún sin datos: márcala al registrar o editar tus operaciones y aparecerá aquí.</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    let verdict = '<span class="muted">Pocos datos</span>';
+    if (a.yes.n && a.no.n) {
+      const diff = a.yes.pnl - a.no.pnl;
+      verdict =
+        diff > 0
+          ? `<span class="bt-metric-verdict good">Mejor cumpliéndola (${money(diff)})</span>`
+          : diff < 0
+            ? `<span class="bt-metric-verdict bad">Peor cumpliéndola (${money(diff)})</span>`
+            : '<span class="muted">Sin diferencia</span>';
+    } else if (a.yes.n && !a.no.n) {
+      verdict = '<span class="muted">Sin casos sin marcar para comparar</span>';
+    } else if (!a.yes.n && a.no.n) {
+      verdict = '<span class="muted">Nunca la has marcado</span>';
+    }
+
+    tr.innerHTML = `
+      <td>${escapeHtmlAssetLabel(m.name)}</td>
+      <td class="bt-metric-cell">${cell(a.yes)}</td>
+      <td class="bt-metric-cell">${cell(a.no)}</td>
+      <td>${verdict}</td>`;
     tbody.appendChild(tr);
   });
 }
@@ -13443,7 +13504,18 @@ function renderChipList(containerId, key) {
   (backtestingSettings[key] || []).forEach((item) => {
     const span = document.createElement('span');
     span.className = 'config-chip';
-    span.appendChild(document.createTextNode(item));
+    // Las etiquetas de sesión se pueden renombrar: al pulsar el texto se abre el modal de edición.
+    if (key === 'sessions') {
+      const label = document.createElement('button');
+      label.type = 'button';
+      label.className = 'config-chip-label';
+      label.textContent = item;
+      label.title = 'Editar etiqueta';
+      label.addEventListener('click', () => openBtSessionTagModal(item));
+      span.appendChild(label);
+    } else {
+      span.appendChild(document.createTextNode(item));
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'config-chip-remove';
@@ -14484,6 +14556,103 @@ function btMetricTypeDisplayLabel(metricType) {
   }
 }
 
+/* ── Modales de Métricas y Etiquetas de sesión ──────────────────────────────────────────────
+ * Antes eran formularios inline dentro de la página de configuración; ahora siguen el mismo
+ * patrón que Estrategias (botón «Nueva…» + modal), que es más limpio y permite editar sin que
+ * el formulario quede descolgado del elemento que se está editando.
+ */
+function openBtMetricModal(metric = null) {
+  const overlay = document.getElementById('btMetricModalOverlay');
+  if (!overlay) return;
+  editingBtMetricId = metric ? Number(metric.id) : null;
+
+  const title = document.getElementById('btMetricModalTitle');
+  if (title) title.textContent = metric ? 'Editar métrica' : 'Nueva métrica';
+  const setVal = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v ?? '';
+  };
+  setVal('btMetricEditId', metric ? String(metric.id) : '');
+  setVal('btMetricNameInput', metric?.name || '');
+  setVal('btMetricDescInput', metric?.description || '');
+  const typeSel = document.getElementById('btMetricTypeInput');
+  if (typeSel) {
+    typeSel.value = metric?.metric_type || 'checkbox';
+    refreshCustomSelectForNative(typeSel);
+  }
+  const activeEl = document.getElementById('btMetricActiveInput');
+  if (activeEl) activeEl.checked = metric ? metric.is_active !== false : true;
+
+  overlay.classList.add('active');
+  document.getElementById('btMetricNameInput')?.focus();
+}
+
+function closeBtMetricModal() {
+  document.getElementById('btMetricModalOverlay')?.classList.remove('active');
+  editingBtMetricId = null;
+}
+
+let editingBtSessionTag = null;
+
+function openBtSessionTagModal(tag = null) {
+  const overlay = document.getElementById('btSessionTagModalOverlay');
+  if (!overlay) return;
+  editingBtSessionTag = tag;
+  const title = document.getElementById('btSessionTagModalTitle');
+  if (title) title.textContent = tag ? 'Editar etiqueta' : 'Nueva etiqueta';
+  const input = document.getElementById('btSessionInput');
+  if (input) input.value = tag || '';
+  const original = document.getElementById('btSessionTagOriginal');
+  if (original) original.value = tag || '';
+  overlay.classList.add('active');
+  input?.focus();
+}
+
+function closeBtSessionTagModal() {
+  document.getElementById('btSessionTagModalOverlay')?.classList.remove('active');
+  editingBtSessionTag = null;
+}
+
+/** Crea o renombra una etiqueta de franja horaria. */
+async function saveBtSessionTagFromModal() {
+  const input = document.getElementById('btSessionInput');
+  const value = String(input?.value || '').trim();
+  if (!value) {
+    showToast('Indica un nombre para la etiqueta', 'error');
+    return;
+  }
+  if (!Array.isArray(backtestingSettings.sessions)) backtestingSettings.sessions = [];
+
+  const exists = backtestingSettings.sessions.some(
+    (s) => String(s).toLowerCase() === value.toLowerCase() && s !== editingBtSessionTag
+  );
+  if (exists) {
+    showToast('Ya existe una etiqueta con ese nombre', 'error');
+    return;
+  }
+
+  if (editingBtSessionTag) {
+    const idx = backtestingSettings.sessions.indexOf(editingBtSessionTag);
+    if (idx >= 0) backtestingSettings.sessions[idx] = value;
+  } else {
+    backtestingSettings.sessions.push(value);
+  }
+
+  closeBtSessionTagModal();
+  renderBacktestingSettings();
+
+  const api = getBackendApi();
+  if (api?.saveBacktestingSettings) {
+    const result = await api.saveBacktestingSettings(backtestingSettings);
+    if (!result?.success) {
+      showToast('No se pudo guardar la etiqueta', 'error');
+      return;
+    }
+  }
+  populateBacktestingSelects();
+  showToast('Etiqueta guardada', 'success');
+}
+
 function renderBtMetricsConfigList() {
   const host = document.getElementById('btMetricsConfigList');
   if (!host) return;
@@ -14527,16 +14696,7 @@ function renderBtMetricsConfigList() {
       const mid = Number(b.getAttribute('data-mid'));
       const m = list.find((x) => Number(x.id) === mid);
       if (!m) return;
-      editingBtMetricId = mid;
-      const n = document.getElementById('btMetricNameInput');
-      const d = document.getElementById('btMetricDescInput');
-      const t = document.getElementById('btMetricTypeInput');
-      const a = document.getElementById('btMetricActiveInput');
-      if (n) n.value = m.name;
-      if (d) d.value = m.description || '';
-      if (t) t.value = m.metric_type;
-      if (a) a.checked = m.is_active !== false;
-      document.getElementById('btMetricAddBtn') && (document.getElementById('btMetricAddBtn').textContent = 'Guardar cambios');
+      openBtMetricModal(m);
     });
   });
   host.querySelectorAll('.bt-metric-del').forEach((b) => {
@@ -15353,9 +15513,29 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.getElementById('btClearBacktestForm')?.addEventListener('click', () => clearBacktestForm());
-  document.getElementById('addBtSession')?.addEventListener('click', () => {
-    void addBacktestingItem('sessions', 'btSessionInput');
+  // --- Etiquetas de sesión (modal crear/editar, mismo patrón que estrategias) ---
+  document.getElementById('openBtSessionTagModalBtn')?.addEventListener('click', () => {
+    openBtSessionTagModal(null);
   });
+  document.getElementById('closeBtSessionTagModal')?.addEventListener('click', closeBtSessionTagModal);
+  document.getElementById('cancelBtSessionTagBtn')?.addEventListener('click', closeBtSessionTagModal);
+  document.getElementById('btSessionTagModalOverlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'btSessionTagModalOverlay') closeBtSessionTagModal();
+  });
+  document.getElementById('addBtSession')?.addEventListener('click', () => {
+    void saveBtSessionTagFromModal();
+  });
+
+  // --- Métricas personalizadas (modal crear/editar) ---
+  document.getElementById('openBtMetricModalBtn')?.addEventListener('click', () => {
+    openBtMetricModal(null);
+  });
+  document.getElementById('closeBtMetricModal')?.addEventListener('click', closeBtMetricModal);
+  document.getElementById('cancelBtMetricBtn')?.addEventListener('click', closeBtMetricModal);
+  document.getElementById('btMetricModalOverlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'btMetricModalOverlay') closeBtMetricModal();
+  });
+
   ensureBtStrategyModalScheduleListeners();
   document.getElementById('openBtStrategyModalBtn')?.addEventListener('click', () => {
     openBacktestingStrategyModal(null);
@@ -15433,13 +15613,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     showToast('Métrica guardada', 'success');
-    editingBtMetricId = null;
-    const addBtn = document.getElementById('btMetricAddBtn');
-    if (addBtn) addBtn.textContent = 'Añadir métrica';
-    const n = document.getElementById('btMetricNameInput');
-    const d = document.getElementById('btMetricDescInput');
-    if (n) n.value = '';
-    if (d) d.value = '';
+    closeBtMetricModal();
     await loadBacktestingMetrics();
     renderBtMetricsConfigList();
     renderBacktestingCustomMetricFields({});
