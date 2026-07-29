@@ -14159,10 +14159,14 @@ async function saveBacktestingSessionFromModal() {
 async function deleteBacktestingSessionById(sessionId) {
   const id = Number(sessionId);
   if (!Number.isFinite(id) || id <= 0) return;
+  const tradesInSession = (Array.isArray(cachedBacktestingTrades) ? cachedBacktestingTrades : []).filter(
+    (tr) => Number(tr?.session_id) === id
+  ).length;
   const okSession = await showConfirmModal({
     title: 'Eliminar sesión',
-    message:
-      '¿Seguro que quieres eliminar esta sesión de backtesting? Los trades asociados quedarán sin sesión.',
+    message: tradesInSession
+      ? `¿Seguro que quieres eliminar esta sesión de backtesting? Se eliminarán también sus ${tradesInSession} trade${tradesInSession === 1 ? '' : 's'}. Esta acción no se puede deshacer.`
+      : '¿Seguro que quieres eliminar esta sesión de backtesting? Esta acción no se puede deshacer.',
     confirmText: 'Eliminar',
     cancelText: 'Cancelar',
     danger: true,

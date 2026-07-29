@@ -177,6 +177,21 @@ async function deleteBacktestingSession(sessionId) {
     return { success: false, error: 'Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar, e inténtalo de nuevo.' };
   }
 
+  // Los trades de la sesión se borran ANTES que la sesión. La FK en Supabase es
+  // ON DELETE SET NULL, así que sin esto los trades sobrevivían con session_id = NULL y quedaban
+  // "sueltos" (invisibles desde cualquier sesión pero contando en las estadísticas globales).
+  // Se hace explícito aquí para no depender del comportamiento de la FK.
+  const { error: tradesError } = await supabase
+    .from('backtesting_trades')
+    .delete()
+    .eq('session_id', id)
+    .eq('user_id', userId);
+
+  if (tradesError) {
+    console.error('❌ deleteBacktestingSession (trades):', tradesError);
+    return { success: false, error: friendlyServiceError(tradesError) };
+  }
+
   const { error } = await supabase
     .from('backtesting_sessions')
     .delete()
