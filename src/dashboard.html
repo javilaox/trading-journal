@@ -1595,47 +1595,73 @@
       .withdrawals-action-btn.danger:hover { color: #fecaca; border-color: rgba(239, 68, 68, 0.35); }
       .withdrawals-empty { text-align: center; color: var(--text-muted); padding: 16px !important; }
       /* Cabeceras plegables de los listados de retiros/gastos (Hoy, Ayer, Esta semana, meses).
-         Evitan la "lista infinita": cada bloque resume cuántos movimientos hay y cuánto suman. */
+         Evitan la "lista infinita": cada bloque resume cuántos movimientos hay y cuánto suman.
+         Deben leerse como SEPARADORES, no como una fila más: por eso llevan barra de acento,
+         fondo más marcado, texto en versalitas y separación superior respecto al bloque anterior. */
       .wd-group-row > td {
         padding: 0 !important;
-        background: rgba(148, 163, 184, 0.07);
         border-bottom: 1px solid var(--border);
       }
-      body.light .wd-group-row > td { background: rgba(15, 23, 42, 0.04); }
       .wd-group-toggle {
         width: 100%;
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 9px 12px;
-        background: transparent;
+        padding: 12px 14px;
+        background: rgba(148, 163, 184, 0.14);
         border: none;
+        border-left: 3px solid var(--text-muted);
         color: var(--text);
         font: inherit;
-        font-weight: 600;
         cursor: pointer;
         text-align: left;
+        transition: background 0.12s ease;
       }
-      .wd-group-toggle:hover { background: rgba(148, 163, 184, 0.08); }
+      body.light .wd-group-toggle { background: rgba(15, 23, 42, 0.07); }
+      .wd-group-toggle:hover { background: rgba(148, 163, 184, 0.22); }
+      /* Separación visual entre bloques (no en el primero, para no dejar hueco arriba). */
+      .wd-group-row:not(:first-child) > td { border-top: 10px solid transparent; }
       .wd-group-caret {
-        font-size: 11px;
+        font-size: 10px;
         color: var(--text-muted);
         transition: transform 0.15s ease;
+        flex: 0 0 auto;
       }
       .wd-group-row.is-collapsed .wd-group-caret { transform: rotate(-90deg); }
-      .wd-group-label { flex: 0 0 auto; }
-      .wd-group-count {
-        flex: 1 1 auto;
-        color: var(--text-muted);
-        font-weight: 500;
-        font-size: 0.82rem;
-      }
-      .wd-group-count::before { content: '· '; }
-      .wd-group-total {
+      .wd-group-label {
         flex: 0 0 auto;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      /* El nº de movimientos como píldora: se distingue del texto y no se confunde con importes. */
+      .wd-group-count {
+        flex: 0 0 auto;
+        min-width: 20px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.22);
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-align: center;
+      }
+      .wd-group-total {
+        flex: 1 1 auto;
+        text-align: right;
         font-variant-numeric: tabular-nums;
         font-weight: 700;
+        font-size: 0.95rem;
       }
+      /* El total del bloque se colorea como los importes (verde retiros, rojo gastos). Las reglas
+         existentes exigen la clase .wd-amount, que aquí no aplica, así que se declaran aparte. */
+      .wd-group-total.wd-amount-withdrawal { color: var(--green); }
+      .wd-group-total.wd-amount-expense { color: var(--red); }
+      .wd-group-row:has(.wd-amount-withdrawal) .wd-group-toggle { border-left-color: var(--green); }
+      .wd-group-row:has(.wd-amount-expense) .wd-group-toggle { border-left-color: var(--red); }
+      /* Las filas de detalle se indentan levemente para que se lean como "hijas" del bloque. */
+      .wd-group-item > td:first-child { padding-left: 22px !important; }
       .account-withdrawal-summary {
         margin-top: 12px;
         padding: 12px 14px;

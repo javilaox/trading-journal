@@ -6191,7 +6191,7 @@ function buildMovementDateGroups(list) {
 }
 
 /** Pinta un grupo (cabecera plegable + filas) dentro de un tbody. */
-function appendMovementGroup(tbody, group, colspan, formatTotal, renderRow, defaultOpen) {
+function appendMovementGroup(tbody, group, colspan, formatTotal, renderRow, defaultOpen, totalClass = '') {
   const groupId = `${tbody.id}:${group.key}`;
   // Por defecto se abren los grupos más recientes; el resto llegan plegados para que la vista
   // quepa de un vistazo. Las preferencias del usuario se recuerdan durante la sesión.
@@ -6209,7 +6209,7 @@ function appendMovementGroup(tbody, group, colspan, formatTotal, renderRow, defa
         <span class="wd-group-caret" aria-hidden="true">▾</span>
         <span class="wd-group-label">${escapeHtmlChipText(group.label)}</span>
         <span class="wd-group-count">${group.items.length}</span>
-        <span class="wd-group-total">${formatTotal(group.total)}</span>
+        <span class="wd-group-total ${totalClass}">${formatTotal(group.total)}</span>
       </button>
     </td>`;
   tbody.appendChild(headerRow);
@@ -6262,7 +6262,7 @@ function renderWithdrawalsTable(list) {
   };
 
   buildMovementDateGroups(list).forEach((group, index) => {
-    appendMovementGroup(tbody, group, 5, formatWithdrawalEuro, renderRow, index < 2);
+    appendMovementGroup(tbody, group, 5, formatWithdrawalEuro, renderRow, index < 2, 'wd-amount-withdrawal');
   });
 
   tbody.querySelectorAll('[data-withdrawal-edit]').forEach((btn) => {
@@ -7132,7 +7132,7 @@ function renderExpensesTable(list) {
   };
 
   buildMovementDateGroups(list).forEach((group, index) => {
-    appendMovementGroup(tbody, group, 7, formatExpenseEuro, renderRow, index < 2);
+    appendMovementGroup(tbody, group, 7, formatExpenseEuro, renderRow, index < 2, 'wd-amount-expense');
   });
 
   tbody.querySelectorAll('[data-expense-edit]').forEach((btn) => {
