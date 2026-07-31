@@ -4585,10 +4585,11 @@ function initTradeTimepicker(inputIdOrEl) {
   const custom = document.createElement('div');
   custom.className = 'custom-timepicker';
   custom.innerHTML = `
-    <button type="button" class="timepicker-trigger">
-      <span class="timepicker-trigger-label"></span>
+    <div class="timepicker-trigger">
+      <input type="text" class="timepicker-trigger-input" inputmode="numeric" autocomplete="off"
+             placeholder="HH:MM" maxlength="5" />
       <span class="timepicker-trigger-icon"><i data-lucide="clock"></i></span>
-    </button>
+    </div>
     <div class="timepicker-popup">
       <div class="timepicker-columns">
         <div class="timepicker-col timepicker-col-hours"></div>
@@ -4604,7 +4605,7 @@ function initTradeTimepicker(inputIdOrEl) {
   tradeTimepickerRoots.push(custom);
 
   const trigger = custom.querySelector('.timepicker-trigger');
-  const triggerLabel = custom.querySelector('.timepicker-trigger-label');
+  const triggerInput = custom.querySelector('.timepicker-trigger-input');
   const popup = custom.querySelector('.timepicker-popup');
   const hoursCol = custom.querySelector('.timepicker-col-hours');
   const minutesCol = custom.querySelector('.timepicker-col-minutes');
@@ -4632,8 +4633,20 @@ function initTradeTimepicker(inputIdOrEl) {
 
   const syncLabel = () => {
     const value = nativeInput.value || '';
-    triggerLabel.textContent = value || t('select_time', 'Selecciona hora');
+    // No pisar lo que el usuario esté tecleando: solo se refresca si el campo no tiene el foco.
+    if (document.activeElement !== triggerInput) triggerInput.value = value;
+    triggerInput.placeholder = t('time_format_placeholder', 'HH:MM');
     custom.classList.toggle('has-value', Boolean(value));
+  };
+
+  /** Interpreta lo tecleado como HH:MM (admite «930», «9:30», «0930») y valida rangos reales. */
+  const parseTypedTime = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length !== 3 && digits.length !== 4) return '';
+    const h = Number(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2));
+    const m = Number(digits.slice(-2));
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h > 23 || m > 59) return '';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
   const renderColumns = () => {
@@ -4683,7 +4696,12 @@ function initTradeTimepicker(inputIdOrEl) {
     });
   };
 
-  trigger?.addEventListener('click', (event) => {
+  // Solo el icono del reloj abre/cierra la lista; el resto del recuadro es un campo de texto
+  // donde se puede escribir la hora directamente (HH:MM).
+  const clockIcon = custom.querySelector('.timepicker-trigger-icon');
+  clockIcon?.addEventListener('mousedown', (event) => {
+    // mousedown (no click) para adelantarse al blur del input y no reabrirlo tras cerrarlo.
+    event.preventDefault();
     event.stopPropagation();
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects();
@@ -4694,6 +4712,47 @@ function initTradeTimepicker(inputIdOrEl) {
     positionPopup();
     custom.classList.add('open');
     scrollSelectedIntoView();
+  });
+
+  // Auto-formato al escribir: 930 → 09:30, 1745 → 17:45.
+  triggerInput?.addEventListener('input', () => {
+    const digits = triggerInput.value.replace(/\D/g, '').slice(0, 4);
+    triggerInput.value = digits.length > 2 ? `${digits.slice(0, -2)}:${digits.slice(-2)}` : digits;
+
+    const normalized = parseTypedTime(digits);
+    if (normalized) {
+      nativeInput.value = normalized;
+      nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+      custom.classList.add('has-value');
+      custom.classList.remove('is-invalid');
+      if (custom.classList.contains('open')) renderColumns();
+    } else {
+      custom.classList.toggle('is-invalid', digits.length >= 3);
+    }
+  });
+
+  // Al salir del campo se normaliza (09:30) o se revierte si lo escrito no es una hora válida.
+  triggerInput?.addEventListener('blur', () => {
+    const normalized = parseTypedTime(triggerInput.value);
+    if (normalized) {
+      triggerInput.value = normalized;
+    } else if (triggerInput.value.trim()) {
+      triggerInput.value = nativeInput.value || '';
+    } else {
+      nativeInput.value = '';
+      nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+      custom.classList.remove('has-value');
+    }
+    custom.classList.remove('is-invalid');
+  });
+
+  triggerInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      closeTradeTimepickers();
+      triggerInput.blur();
+    }
+    if (event.key === 'Escape') closeTradeTimepickers();
   });
 
   // El popup es position:fixed y los modales tienen overflow-y:auto: si no se recoloca al hacer
@@ -7325,6 +7384,8 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
   // se revierte al último valor válido. Se usa para Prop en Gastos/Retiros: ya no se puede crear
   // una prop nueva escribiendo en ese campo, hay que darla de alta antes en Configuración.
   const strict = Boolean(options.strict);
+  // Muestra la lista completa al enfocar aunque no sea estricto (comportamiento de desplegable).
+  const openAllOnFocus = Boolean(options.openAllOnFocus) || strict;
   let lastValidValue = strict ? String(input.value || '').trim() : '';
   // Contenedor con apariencia de <select> (flecha): hay que marcarlo abierto/cerrado para girarla.
   const selectWrap = input.closest('.suggest-wrap--select');
@@ -7394,7 +7455,7 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
     const filtered = query ? all.filter((v) => String(v).toLowerCase().includes(query)) : all;
     // En modo selector siempre abrimos el panel (aunque no haya props todavía) para poder mostrar
     // el "Sin sugerencias" y que se comporte como un desplegable de verdad.
-    if (!filtered.length && !query && !strict) {
+    if (!filtered.length && !query && !openAllOnFocus) {
       panel.hidden = true;
       setOpenState(false);
       return;
@@ -7418,11 +7479,11 @@ function attachSuggestDropdown(inputId, panelId, getItems, options = {}) {
   // Al abrirlo se muestra la lista COMPLETA (como un <select>), no filtrada por lo que ya
   // hubiera escrito; el texto queda seleccionado para que empezar a teclear lo reemplace y filtre.
   input.addEventListener('focus', () => {
-    if (strict) input.select();
-    open({ showAll: strict });
+    if (openAllOnFocus) input.select();
+    open({ showAll: openAllOnFocus });
   });
   input.addEventListener('mousedown', () => {
-    if (!strict) return;
+    if (!openAllOnFocus) return;
     // Si ya está abierto, un segundo clic lo cierra (comportamiento esperado de un desplegable).
     if (!panel.hidden) {
       setTimeout(closeAndValidate, 0);
@@ -8189,6 +8250,17 @@ function openAccountDetailModal(account = null) {
   }
   syncAccountModalChallengeFieldsVisibility();
   showEntityModalOverlay('accountDetailModalOverlay');
+
+  // Las props/brokers configurados viven en las cachés de Gestión, que hasta ahora solo se
+  // cargaban al abrir esa sección: si entrabas directo a Configuración > Nueva cuenta, el
+  // desplegable salía vacío ("Sin sugerencias"). Se cargan aquí también.
+  void (async () => {
+    try {
+      await Promise.all([loadExpensePropsCache(), loadWithdrawalsCache(), loadExpensesCache()]);
+    } catch (err) {
+      console.warn('No se pudieron cargar las props para el selector de cuenta:', err);
+    }
+  })();
 }
 
 // Los campos "Challenge superado" / "Máximo DD" solo tienen sentido si la cuenta es de tipo
@@ -8612,7 +8684,15 @@ function initSettingsEntityListDelegation() {
 
 function initAccountStrategyModals() {
   initSettingsEntityListDelegation();
-  attachSuggestDropdown('accountModalProp', 'accountModalPropSuggest', getKnownExpenseProps);
+  // Selector de props/brokers ya configurados. No es estricto a propósito: para cuentas de
+  // Capital propio el bróker puede no estar en la lista de props de Gestión y hay que poder
+  // escribirlo. Aun así se abre la lista completa al pulsar, como un desplegable.
+  attachSuggestDropdown(
+    'accountModalProp',
+    'accountModalPropSuggest',
+    getKnownExpensePropsRecentFirst,
+    { openAllOnFocus: true }
+  );
   document.getElementById('accountModalType')?.addEventListener('change', syncAccountModalChallengeFieldsVisibility);
   document.getElementById('openNewAccountModalBtn')?.addEventListener('click', () => openAccountDetailModal());
   document.getElementById('openNewStrategyModalBtn')?.addEventListener('click', () => openStrategyDetailModal());

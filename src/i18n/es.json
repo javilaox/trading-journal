@@ -361,6 +361,7 @@
   "prop_selector_invalid": "Selecciona una Prop de la lista (o créala antes en Configuración > Props y categorías)",
   "prop_selector_empty": "No hay props. Créalas en Configuración > Props y categorías",
   "date_format_placeholder": "DD-MM-AAAA",
+  "time_format_placeholder": "HH:MM",
   "withdrawals_account_optional": "Cuenta (opcional)",
   "withdrawals_account_optional_placeholder": "Sin vincular a una cuenta",
   "withdrawals_filter_from": "Desde",

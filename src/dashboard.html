@@ -4220,7 +4220,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        cursor: pointer;
+        cursor: text;
       }
       .timepicker-trigger:hover {
         border-color: var(--green);
@@ -4229,18 +4229,30 @@
         border-color: var(--green);
         box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
       }
-      .timepicker-trigger-label {
-        color: var(--text-muted);
-        font-variant-numeric: tabular-nums;
-      }
-      .custom-timepicker.has-value .timepicker-trigger-label {
+      /* El trigger contiene un input real para poder escribir la hora a mano (HH:MM); se funde
+         con el recuadro (sin borde ni fondo propios) y el icono del reloj abre la lista. */
+      .timepicker-trigger-input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: transparent;
         color: var(--text);
+        font-size: 14px;
+        font-family: inherit;
+        font-variant-numeric: tabular-nums;
+        padding: 0;
+        outline: none;
       }
+      .timepicker-trigger-input::placeholder { color: var(--text-muted); }
+      .custom-timepicker.is-invalid .timepicker-trigger { border-color: var(--red); }
       .timepicker-trigger-icon {
         opacity: 0.7;
         display: flex;
         align-items: center;
+        cursor: pointer;
+        padding-left: 4px;
       }
+      .timepicker-trigger-icon:hover { opacity: 1; }
       .timepicker-trigger-icon svg {
         width: 15px;
         height: 15px;
@@ -8717,7 +8729,7 @@
           </div>
           <div class="field">
             <label for="accountModalProp" id="accountModalPropLabel" data-i18n="account_prop_label">Prop (opcional)</label>
-            <div class="suggest-wrap">
+            <div class="suggest-wrap suggest-wrap--select">
               <input id="accountModalProp" class="input" type="text" autocomplete="off" data-i18n-placeholder="account_prop_placeholder" placeholder="Apex, Topstep, Bulenox..." />
               <div id="accountModalPropSuggest" class="suggest-panel" hidden></div>
             </div>
