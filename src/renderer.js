@@ -7949,19 +7949,42 @@ function countTradesForAccount(account) {
 // de cuenta como "prop"), hace match por account.prop_name: así un retiro/gasto registrado con
 // la prop vinculada a esta cuenta cuenta también para su balance estimado, aunque no se haya
 // elegido explícitamente esta cuenta en el campo opcional del formulario.
-function getAccountWithdrawalStats(account) {
+/**
+ * Retiros atribuibles a UNA cuenta concreta.
+ *
+ * OJO: los retiros se registran por PROP, no por cuenta; solo son de una cuenta concreta si el
+ * usuario los vinculó a ella (campo "Cuenta (opcional)" del retiro). Antes esta función sumaba
+ * todos los retiros de la prop, así que dos cuentas de la misma prop mostraban ambas el total
+ * de la prop (cifras duplicadas que no eran de esa cuenta).
+ *
+ * @param {object|string} account
+ * @param {{ scope?: 'account'|'prop' }} [options] 'prop' devuelve el total de la prop entera.
+ */
+function getAccountWithdrawalStats(account, options = {}) {
+  const scope = options.scope === 'prop' ? 'prop' : 'account';
   const name = typeof account === 'string' ? account : String(account?.name || '');
   const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
+
   const list = withdrawalsCache.filter((w) => {
     const wName = String(w.account_name || w.accountName || '');
-    return wName === name || (propName && wName === propName);
+    if (scope === 'prop') return wName === name || (propName && wName === propName);
+    // Ámbito cuenta: solo lo explícitamente vinculado a ella (o registros antiguos que usaban
+    // el nombre de la cuenta como "prop", por compatibilidad).
+    if (findLinkedAccountNameForWithdrawal(w) === name && name) return true;
+    return wName === name && name !== propName;
   });
+
   const withdrawn = list.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const count = list.length;
   const last = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
   return { withdrawn, count, last };
 }
 
+/**
+ * Gastos de la PROP a la que pertenece la cuenta. Los gastos no tienen vínculo con una cuenta
+ * concreta (solo prop + tamaño), así que este dato es siempre de ámbito prop: la UI debe
+ * etiquetarlo como tal para no dar a entender que es el gasto de esa cuenta.
+ */
 function getAccountExpenseStats(account) {
   const name = typeof account === 'string' ? account : String(account?.name || '');
   const propName = typeof account === 'string' ? '' : String(account?.prop_name || '').trim();
@@ -7975,14 +7998,19 @@ function getAccountExpenseStats(account) {
   return { spent, count, last };
 }
 
+/**
+ * Balance estimado DE LA CUENTA: capital + PnL de sus trades − retiros vinculados a ella.
+ *
+ * No se restan los gastos: van asociados a la prop (evaluaciones, resets...), no a una cuenta,
+ * y restarlos aquí los duplicaba en cada cuenta de la misma prop y falseaba el balance.
+ */
 function getAccountEstimatedBalance(account) {
   const names = getAccountTradeNames(account);
   const stats = getAccountWithdrawalStats(account);
-  const expenseStats = getAccountExpenseStats(account);
   const operationalNet = cachedTrades
     .filter((t) => names.has(String(t.account || '')))
     .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
-  return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn - expenseStats.spent;
+  return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn;
 }
 
 function countTradesForStrategy(record) {
@@ -8077,7 +8105,7 @@ function renderAccountsChallengeStats(accounts) {
       <span>${t('account_stats_burned_pct', '% cuentas quemadas (Máx. DD)')}</span>
       <strong>${challenges.length ? burnedPct.toFixed(1) : '0.0'}% <small style="font-weight:400;color:var(--text-muted)">(${burned}/${challenges.length})</small></strong>
     </div>
-    <div class="settings-accounts-stat-card">
+    <div class="settings-accounts-stat-card" title="Solo cuenta los retiros que hayas vinculado a una cuenta concreta (campo «Cuenta» al registrar el retiro)">
       <span>${t('account_stats_avg_funded_withdrawn', 'Retiro medio por cuenta fondeada')}</span>
       <strong>${formatWithdrawalEuro(avgFundedWithdrawn)} <small style="font-weight:400;color:var(--text-muted)">(${funded.length})</small></strong>
     </div>`;
@@ -8194,9 +8222,9 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Capital<strong>${formatWithdrawalEuro(account.capital)}</strong></div>
               <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
-              <div class="settings-entity-stat">Retirado<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
-              <div class="settings-entity-stat">Gastado<strong>${formatNegativeEuro(expenseStats.spent)}</strong></div>
-              <div class="settings-entity-stat">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
+              <div class="settings-entity-stat" title="Solo retiros vinculados a esta cuenta">Retirado (cuenta)<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
+              <div class="settings-entity-stat" title="Gastos de la prop (evaluaciones, resets...), no de esta cuenta en concreto">Gastado (prop)<strong>${formatNegativeEuro(expenseStats.spent)}</strong></div>
+              <div class="settings-entity-stat" title="Capital + PnL de sus trades − retiros vinculados a esta cuenta">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
             </div>
             ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}
           </div>
@@ -8262,9 +8290,9 @@ function updateAccountModalSummary(account) {
   summaryEl.hidden = false;
   summaryEl.innerHTML = `
     <div><strong>Resumen</strong></div>
-    <div>Total retirado: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
+    <div>Retirado de esta cuenta: <strong>${formatWithdrawalEuro(stats.withdrawn)}</strong> · Nº retiros: <strong>${stats.count}</strong></div>
     <div>Último retiro: <strong>${stats.last ? `${formatWithdrawalEuro(stats.last.amount)} (${formatDateEs(stats.last.date)})` : '—'}</strong></div>
-    <div>Total gastado: <strong>${formatNegativeEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
+    <div>Gastado en la prop: <strong>${formatNegativeEuro(expenseStats.spent)}</strong> · Nº gastos: <strong>${expenseStats.count}</strong></div>
     <div>Balance estimado: <strong>${formatWithdrawalEuro(balance)}</strong></div>
     <div>Trades asociados: <strong>${tradeCount}</strong></div>`;
 }
