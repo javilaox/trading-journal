@@ -233,6 +233,8 @@
   "stats_tab_charts": "Charts",
   "stats_tab_withdrawals": "Withdrawals",
   "stats_tab_schedule": "Schedule",
+  "accounts_prop_filter_all": "All props",
+  "filter_all_account_types": "All types",
   "accounts_tab_all": "All",
   "accounts_tab_challenge": "Challenges",
   "accounts_tab_funded": "Funded",

@@ -3414,6 +3414,9 @@ let backtestingSettings = {
 /** Filtros dashboard multiselect (solo vista; datos completos en cachedTrades). */
 let selectedDashboardAccounts = new Set(['ALL']);
 let selectedDashboardStrategies = new Set(['ALL']);
+// Filtro por tipo de cuenta (Challenge / Fondeada / Capital propio). Se guardan los valores
+// internos ('challenge', 'funded', 'own_capital') y se muestran sus etiquetas traducidas.
+let selectedDashboardAccountTypes = new Set(['ALL']);
 
 /** @type {{ client_uuid: string|null, remote_id: string|null, id: string|number|null, originalName: string|null } | null} */
 let accountModalIdentity = null;
@@ -3466,6 +3469,16 @@ function getDashboardFilteredTrades() {
 
   const allAccounts = selectedDashboardAccounts.has('ALL') || selectedDashboardAccounts.size === 0;
   const allStrategies = selectedDashboardStrategies.has('ALL') || selectedDashboardStrategies.size === 0;
+  const allTypes = selectedDashboardAccountTypes.has('ALL') || selectedDashboardAccountTypes.size === 0;
+
+  // Nombres de cuenta que cumplen el filtro de tipo (los trades guardan el nombre, no el tipo).
+  const namesMatchingType = allTypes
+    ? null
+    : new Set(
+        (typeof getAccounts === 'function' ? getAccounts() : [])
+          .filter((acc) => selectedDashboardAccountTypes.has(String(acc.account_type || '')))
+          .map((acc) => acc.name)
+      );
 
   return source.filter((trade) => {
     const accountValue = trade.account || '';
@@ -3473,8 +3486,9 @@ function getDashboardFilteredTrades() {
 
     const accountOk = allAccounts || selectedDashboardAccounts.has(accountValue);
     const strategyOk = allStrategies || selectedDashboardStrategies.has(strategyValue);
+    const typeOk = allTypes || namesMatchingType.has(accountValue);
 
-    return accountOk && strategyOk;
+    return accountOk && strategyOk && typeOk;
   });
 }
 
@@ -3513,13 +3527,19 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
 
   container.classList.add('dashboard-multiselect');
 
+  // Las opciones pueden ser strings (valor = etiqueta) o {value,label}, necesario para el filtro
+  // por tipo de cuenta, donde el valor interno ('funded') no es lo que se muestra ('Fondeada').
+  const items = (options || []).map((opt) =>
+    typeof opt === 'string' ? { value: opt, label: opt } : { value: opt.value, label: opt.label }
+  );
+
   const isAll = selectedSet.has('ALL') || selectedSet.size === 0;
 
   const selectedLabels = isAll
     ? escapeHtmlChipText(allLabel)
-    : options
-        .filter((opt) => selectedSet.has(opt))
-        .map((opt) => escapeHtmlChipText(opt))
+    : items
+        .filter((opt) => selectedSet.has(opt.value))
+        .map((opt) => escapeHtmlChipText(opt.label))
         .join(', ');
 
   container.innerHTML = `
@@ -3532,12 +3552,12 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
         <input type="checkbox" value="ALL" ${isAll ? 'checked' : ''}>
         <span>${escapeHtmlChipText(allLabel)}</span>
       </label>
-      ${options
+      ${items
         .map(
           (opt) => `
       <label class="dashboard-multiselect-option">
-        <input type="checkbox" value="${escapeAttrChip(opt)}" ${!isAll && selectedSet.has(opt) ? 'checked' : ''}>
-        <span>${escapeHtmlChipText(opt)}</span>
+        <input type="checkbox" value="${escapeAttrChip(opt.value)}" ${!isAll && selectedSet.has(opt.value) ? 'checked' : ''}>
+        <span>${escapeHtmlChipText(opt.label)}</span>
       </label>`
         )
         .join('')}
@@ -3599,8 +3619,16 @@ async function renderDashboardFilters(trades = cachedTrades) {
   await syncRealListsFromStorage();
 
   // Solo cuentas/estrategias configuradas por el usuario actual (localStorage scoped).
-  const configuredAccounts =
-    typeof getAccounts === 'function' ? getAccounts().map((acc) => acc.name).filter(Boolean) : [];
+  const allAccountObjects = typeof getAccounts === 'function' ? getAccounts() : [];
+
+  // El filtro por tipo acota la lista de cuentas: si eliges "Fondeada", el desplegable de
+  // Cuenta solo ofrece las fondeadas, para no poder combinar filtros que no devuelven nada.
+  const allTypes = selectedDashboardAccountTypes.has('ALL') || selectedDashboardAccountTypes.size === 0;
+  const accountsMatchingType = allAccountObjects.filter(
+    (acc) => allTypes || selectedDashboardAccountTypes.has(String(acc.account_type || ''))
+  );
+
+  const configuredAccounts = accountsMatchingType.map((acc) => acc.name).filter(Boolean);
   const accounts = [...new Set(configuredAccounts)].sort((a, b) =>
     String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
   );
@@ -3611,6 +3639,20 @@ async function renderDashboardFilters(trades = cachedTrades) {
   );
 
   pruneDashboardFilterSelections(accounts, strategies);
+
+  // Solo se ofrecen los tipos que el usuario realmente usa en sus cuentas.
+  const usedTypes = ['challenge', 'funded', 'own_capital'].filter((type) =>
+    allAccountObjects.some((acc) => String(acc.account_type || '') === type)
+  );
+  createDashboardMultiSelect(
+    'dashboardAccountTypeMulti',
+    usedTypes.map((value) => ({ value, label: getAccountTypeLabel(value) })),
+    selectedDashboardAccountTypes,
+    t('filter_all_account_types', 'Todos los tipos'),
+    () => {
+      void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
+    }
+  );
 
   createDashboardMultiSelect(
     'dashboardAccountMulti',
@@ -8056,6 +8098,8 @@ function buildStrategyCardDataAttrs(record) {
 // Pestaña activa en Configuración > Cuentas: 'all' | 'challenge' | 'funded' | 'own_capital' | 'disabled'.
 // 'disabled' son las cuentas Challenge marcadas como quemadas por Máximo DD (disabled_by_max_dd).
 let settingsAccountsTab = 'all';
+// Prop/broker seleccionada en Configuración > Cuentas ('' = todas).
+let settingsAccountsPropFilter = '';
 
 function accountMatchesSettingsTab(account, tab) {
   if (tab === 'all') return true;
@@ -8074,14 +8118,48 @@ function initSettingsAccountsTabs() {
       renderSettingsAccountsList();
     });
   });
+  document.getElementById('settingsAccountsPropFilter')?.addEventListener('change', (event) => {
+    settingsAccountsPropFilter = event.target.value || '';
+    renderSettingsAccountsList();
+  });
+}
+
+/** Rellena el desplegable de props/brokers con los realmente usados en las cuentas. */
+function refreshSettingsAccountsPropFilter(accounts) {
+  const select = document.getElementById('settingsAccountsPropFilter');
+  if (!select) return;
+  const props = [...new Set(accounts.map((a) => String(a.prop_name || '').trim()).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+  // Si la prop seleccionada ya no existe (renombrada/eliminada), se vuelve a "todas".
+  if (settingsAccountsPropFilter && !props.includes(settingsAccountsPropFilter)) {
+    settingsAccountsPropFilter = '';
+  }
+  const allLabel = t('accounts_prop_filter_all', 'Todas las props');
+  select.innerHTML = `<option value="">${escapeHtmlChipText(allLabel)}</option>${props
+    .map((p) => `<option value="${escapeAttrChip(p)}">${escapeHtmlChipText(p)}</option>`)
+    .join('')}`;
+  select.value = settingsAccountsPropFilter;
+  refreshCustomSelectForNative(select);
+  // Sin props configuradas el filtro no aporta nada: se oculta para no añadir ruido.
+  const bar = select.closest('.settings-accounts-propbar');
+  if (bar) bar.hidden = props.length === 0;
 }
 
 function renderSettingsAccountsList() {
   const listEl = document.getElementById('settingsAccountsList');
   if (!listEl) return;
   const accounts = getAccounts();
-  renderAccountsChallengeStats(accounts);
-  const filteredAccounts = accounts.filter((account) => accountMatchesSettingsTab(account, settingsAccountsTab));
+  refreshSettingsAccountsPropFilter(accounts);
+  // Las estadísticas de challenges se calculan sobre la prop seleccionada, para poder comparar
+  // el rendimiento de cada prop firm por separado.
+  const propScoped = settingsAccountsPropFilter
+    ? accounts.filter((a) => String(a.prop_name || '').trim() === settingsAccountsPropFilter)
+    : accounts;
+  renderAccountsChallengeStats(propScoped);
+  const filteredAccounts = propScoped.filter((account) =>
+    accountMatchesSettingsTab(account, settingsAccountsTab)
+  );
   if (!accounts.length) {
     listEl.innerHTML = `<div class="settings-entity-empty">${t('placeholder_select_account', 'No hay cuentas todavía')}</div>`;
     return;

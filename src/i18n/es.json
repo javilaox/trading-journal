@@ -233,6 +233,8 @@
   "stats_tab_charts": "Gráficas",
   "stats_tab_withdrawals": "Retiros",
   "stats_tab_schedule": "Horario",
+  "accounts_prop_filter_all": "Todas las props",
+  "filter_all_account_types": "Todos los tipos",
   "accounts_tab_all": "Todas",
   "accounts_tab_challenge": "Challenges",
   "accounts_tab_funded": "Fondeadas",
