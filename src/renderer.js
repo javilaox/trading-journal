@@ -6140,6 +6140,100 @@ function updateWithdrawalsLayoutState(hasAnyWithdrawals) {
   if (filterBar) filterBar.hidden = !hasAnyWithdrawals;
 }
 
+/* ── Agrupación por fecha de retiros/gastos ────────────────────────────────────────────────
+ * Una lista plana de decenas de movimientos es difícil de leer. Se agrupa por cercanía
+ * (Hoy / Ayer / Esta semana / Este mes) y, más atrás, por mes, con cabeceras plegables que
+ * muestran cuántos movimientos hay y cuánto suman.
+ */
+const collapsedMovementGroups = new Set();
+
+function buildMovementDateGroups(list) {
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = startOfDay(new Date());
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  // Inicio de la semana en lunes (convención europea).
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const groups = new Map();
+  const push = (key, label, order, item) => {
+    if (!groups.has(key)) groups.set(key, { key, label, order, items: [], total: 0 });
+    const g = groups.get(key);
+    g.items.push(item);
+    g.total += Number(item.amount) || 0;
+  };
+
+  [...list]
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    .forEach((item) => {
+      const parsed = parseIsoDate(String(item.date || '').slice(0, 10));
+      if (!parsed) {
+        push('unknown', t('mov_group_undated', 'Sin fecha'), 9e15, item);
+        return;
+      }
+      const d = new Date(parsed.year, parsed.month, parsed.day);
+      const time = d.getTime();
+      if (time === today.getTime()) push('today', t('mov_group_today', 'Hoy'), 0, item);
+      else if (time === yesterday.getTime()) push('yesterday', t('mov_group_yesterday', 'Ayer'), 1, item);
+      else if (d >= weekStart) push('week', t('mov_group_week', 'Esta semana'), 2, item);
+      else if (d >= monthStart) push('month', t('mov_group_month', 'Este mes'), 3, item);
+      else {
+        const key = `m-${parsed.year}-${String(parsed.month + 1).padStart(2, '0')}`;
+        const label = formatMonthYear(parsed.year, parsed.month);
+        // Orden descendente por fecha para los meses anteriores.
+        push(key, label.charAt(0).toUpperCase() + label.slice(1), 1e13 - time, item);
+      }
+    });
+
+  return [...groups.values()].sort((a, b) => a.order - b.order);
+}
+
+/** Pinta un grupo (cabecera plegable + filas) dentro de un tbody. */
+function appendMovementGroup(tbody, group, colspan, formatTotal, renderRow, defaultOpen) {
+  const groupId = `${tbody.id}:${group.key}`;
+  // Por defecto se abren los grupos más recientes; el resto llegan plegados para que la vista
+  // quepa de un vistazo. Las preferencias del usuario se recuerdan durante la sesión.
+  if (!collapsedMovementGroups.has(groupId) && !defaultOpen && !collapsedMovementGroups.has(`seen:${groupId}`)) {
+    collapsedMovementGroups.add(groupId);
+  }
+  collapsedMovementGroups.add(`seen:${groupId}`);
+  const isCollapsed = collapsedMovementGroups.has(groupId);
+
+  const headerRow = document.createElement('tr');
+  headerRow.className = `wd-group-row${isCollapsed ? ' is-collapsed' : ''}`;
+  headerRow.innerHTML = `
+    <td colspan="${colspan}">
+      <button type="button" class="wd-group-toggle" aria-expanded="${!isCollapsed}">
+        <span class="wd-group-caret" aria-hidden="true">▾</span>
+        <span class="wd-group-label">${escapeHtmlChipText(group.label)}</span>
+        <span class="wd-group-count">${group.items.length}</span>
+        <span class="wd-group-total">${formatTotal(group.total)}</span>
+      </button>
+    </td>`;
+  tbody.appendChild(headerRow);
+
+  const rows = group.items.map((item) => {
+    const tr = renderRow(item);
+    tr.classList.add('wd-group-item');
+    if (isCollapsed) tr.hidden = true;
+    tbody.appendChild(tr);
+    return tr;
+  });
+
+  headerRow.querySelector('.wd-group-toggle')?.addEventListener('click', () => {
+    const nowCollapsed = !collapsedMovementGroups.has(groupId);
+    if (nowCollapsed) collapsedMovementGroups.add(groupId);
+    else collapsedMovementGroups.delete(groupId);
+    headerRow.classList.toggle('is-collapsed', nowCollapsed);
+    headerRow.querySelector('.wd-group-toggle')?.setAttribute('aria-expanded', String(!nowCollapsed));
+    rows.forEach((tr) => {
+      tr.hidden = nowCollapsed;
+    });
+  });
+}
+
 function renderWithdrawalsTable(list) {
   const tbody = document.getElementById('withdrawalsTableBody');
   if (!tbody) return;
@@ -6152,7 +6246,8 @@ function renderWithdrawalsTable(list) {
     tbody.innerHTML = `<tr><td colspan="5" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
     return;
   }
-  list.forEach((w) => {
+
+  const renderRow = (w) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtmlChipText(formatDateEs(w.date))}</td>
@@ -6163,8 +6258,13 @@ function renderWithdrawalsTable(list) {
         <button type="button" class="withdrawals-action-btn" data-withdrawal-edit="${w.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
         <button type="button" class="withdrawals-action-btn danger" data-withdrawal-delete="${w.id}">${escapeHtmlChipText(t('withdrawals_delete_btn', 'Eliminar'))}</button>
       </td>`;
-    tbody.appendChild(tr);
+    return tr;
+  };
+
+  buildMovementDateGroups(list).forEach((group, index) => {
+    appendMovementGroup(tbody, group, 5, formatWithdrawalEuro, renderRow, index < 2);
   });
+
   tbody.querySelectorAll('[data-withdrawal-edit]').forEach((btn) => {
     btn.addEventListener('click', () => startEditWithdrawal(Number(btn.dataset.withdrawalEdit)));
   });
@@ -7015,7 +7115,7 @@ function renderExpensesTable(list) {
     tbody.innerHTML = `<tr><td colspan="7" class="withdrawals-empty">${escapeHtmlChipText(msg)}</td></tr>`;
     return;
   }
-  list.forEach((e) => {
+  const renderRow = (e) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtmlChipText(formatDateEs(e.date))}</td>
@@ -7028,8 +7128,13 @@ function renderExpensesTable(list) {
         <button type="button" class="withdrawals-action-btn" data-expense-edit="${e.id}">${escapeHtmlChipText(t('withdrawals_edit_btn', 'Editar'))}</button>
         <button type="button" class="withdrawals-action-btn danger" data-expense-delete="${e.id}">${escapeHtmlChipText(t('withdrawals_delete_btn', 'Eliminar'))}</button>
       </td>`;
-    tbody.appendChild(tr);
+    return tr;
+  };
+
+  buildMovementDateGroups(list).forEach((group, index) => {
+    appendMovementGroup(tbody, group, 7, formatExpenseEuro, renderRow, index < 2);
   });
+
   tbody.querySelectorAll('[data-expense-edit]').forEach((btn) => {
     btn.addEventListener('click', () => startEditExpense(Number(btn.dataset.expenseEdit)));
   });
