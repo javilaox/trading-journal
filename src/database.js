@@ -159,6 +159,10 @@ function ensureTradesSchema() {
   addColumnIfMissing('trades', 'exit_time', 'exit_time TEXT');
   addColumnIfMissing('trades', 'is_composite_position', 'is_composite_position INTEGER DEFAULT 0');
   addColumnIfMissing('trades', 'position_legs', "position_legs TEXT DEFAULT '[]'");
+  // Dirección (LONG/SHORT) y métricas personalizadas por estrategia. Opcionales en BD para no
+  // invalidar los trades ya guardados sin estos datos.
+  addColumnIfMissing('trades', 'direction', 'direction TEXT');
+  addColumnIfMissing('trades', 'custom_metrics', "custom_metrics TEXT DEFAULT '{}'");
 
   // Índice único solo después de asegurar client_uuid
   const cols = getTableColumns('trades');
@@ -212,6 +216,8 @@ function ensureOfflineTables() {
     ['description', 'description TEXT'],
     ['schedule_enabled', 'schedule_enabled INTEGER DEFAULT 0'],
     ["operating_hours", "operating_hours TEXT DEFAULT '[]'"],
+    // Checklist de métricas propio de cada estrategia (JSON).
+    ["custom_metrics", "custom_metrics TEXT DEFAULT '[]'"],
     ["sync_status", "sync_status TEXT DEFAULT 'synced'"],
     ['deleted_at', 'deleted_at TEXT'],
     ['updated_at', 'updated_at TEXT'],
@@ -297,6 +303,8 @@ db.prepare(`
     pnl_net REAL,
     image_before TEXT,
     image_after TEXT,
+    direction TEXT,
+    custom_metrics TEXT DEFAULT '{}',
     updated_at TEXT,
     user_id TEXT,
     sync_status TEXT,
@@ -343,6 +351,7 @@ db.prepare(`
     risk_value REAL,
     rr REAL,
     notes TEXT,
+    custom_metrics TEXT DEFAULT '[]',
     is_active INTEGER DEFAULT 1,
     created_at TEXT,
     updated_at TEXT,

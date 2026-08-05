@@ -627,7 +627,24 @@ function strategyFieldsFromPayload(strategy = {}) {
     description: strategy.description != null ? String(strategy.description) : '',
     schedule_enabled: scheduleEnabled ? 1 : 0,
     operating_hours: stringifyOperatingHoursForSqlite(strategy.operating_hours ?? strategy.operatingHours ?? '[]'),
+    custom_metrics: JSON.stringify(normalizeStrategyMetrics(strategy.custom_metrics)),
   };
+}
+
+/** Checklist de la estrategia: array de nombres únicos y no vacíos. */
+function normalizeStrategyMetrics(value) {
+  const raw = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return []; } })() : value;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  raw.forEach((m) => {
+    const name = String(typeof m === 'string' ? m : m?.name || '').trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  });
+  return out;
 }
 
 function strategyFieldsForSupabase(strategy = {}) {
@@ -636,6 +653,7 @@ function strategyFieldsForSupabase(strategy = {}) {
     description: fields.description || null,
     schedule_enabled: Boolean(fields.schedule_enabled),
     operating_hours: parseOperatingHours(fields.operating_hours),
+    custom_metrics: normalizeStrategyMetrics(fields.custom_metrics),
   };
 }
 
@@ -670,9 +688,31 @@ function normalizeTrade(trade = {}) {
     image_after: trade.image_after || trade.afterImage || '',
     entry_time: normalizeTimeField(trade.entry_time ?? trade.entryTime),
     exit_time: normalizeTimeField(trade.exit_time ?? trade.exitTime),
+    direction: normalizeTradeDirection(trade.direction),
+    custom_metrics: normalizeTradeCustomMetrics(trade.custom_metrics),
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: applied.position_legs ?? legs,
   };
+}
+
+/** Dirección del trade: solo LONG (compra) o SHORT (venta); cualquier otra cosa queda a null. */
+function normalizeTradeDirection(value) {
+  const v = String(value || '').trim().toUpperCase();
+  return v === 'LONG' || v === 'SHORT' ? v : null;
+}
+
+/** Valores del checklist de la estrategia. Siempre un objeto plano (nunca array ni null). */
+function normalizeTradeCustomMetrics(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return { ...value };
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function mapRowToTradeResponse(row) {
@@ -698,6 +738,8 @@ function mapRowToTradeResponse(row) {
     image_after: row.image_after || '',
     entry_time: row.entry_time || null,
     exit_time: row.exit_time || null,
+    direction: row.direction || null,
+    custom_metrics: normalizeTradeCustomMetrics(row.custom_metrics),
     is_composite_position: row.is_composite_position,
     position_legs: row.position_legs ?? row.positionLegs,
   });
@@ -910,13 +952,14 @@ ipcMain.handle('add-real-strategy-local', async (_event, strategy) => {
 
   db.prepare(`
     INSERT INTO real_strategies
-    (user_id, client_uuid, remote_id, name, description, schedule_enabled, operating_hours, risk_type, risk_value, rr, notes, is_active, created_at, updated_at, sync_status, deleted_at)
-    VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 1, ?, ?, ?, NULL)
+    (user_id, client_uuid, remote_id, name, description, schedule_enabled, operating_hours, custom_metrics, risk_type, risk_value, rr, notes, is_active, created_at, updated_at, sync_status, deleted_at)
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 1, ?, ?, ?, NULL)
     ON CONFLICT(user_id, client_uuid) DO UPDATE SET
       name = excluded.name,
       description = excluded.description,
       schedule_enabled = excluded.schedule_enabled,
       operating_hours = excluded.operating_hours,
+      custom_metrics = excluded.custom_metrics,
       updated_at = excluded.updated_at,
       sync_status = CASE
         WHEN real_strategies.sync_status LIKE 'pending_%' THEN real_strategies.sync_status
@@ -930,6 +973,7 @@ ipcMain.handle('add-real-strategy-local', async (_event, strategy) => {
     meta.description,
     meta.schedule_enabled,
     meta.operating_hours,
+    meta.custom_metrics,
     ts,
     ts,
     syncAction === 'create' ? 'pending_create' : 'pending_update'
@@ -948,6 +992,7 @@ ipcMain.handle('add-real-strategy-local', async (_event, strategy) => {
       description: meta.description,
       schedule_enabled: Boolean(meta.schedule_enabled),
       operating_hours: parseOperatingHours(meta.operating_hours),
+      custom_metrics: normalizeStrategyMetrics(meta.custom_metrics),
     },
   });
 
@@ -1144,6 +1189,7 @@ ipcMain.handle('update-real-strategy-local', async (_event, strategy) => {
       description = ?,
       schedule_enabled = ?,
       operating_hours = ?,
+      custom_metrics = ?,
       updated_at = ?,
       sync_status = CASE
         WHEN sync_status = 'pending_create' THEN 'pending_create'
@@ -1156,6 +1202,7 @@ ipcMain.handle('update-real-strategy-local', async (_event, strategy) => {
     meta.description,
     meta.schedule_enabled,
     meta.operating_hours,
+    meta.custom_metrics,
     ts,
     String(userId),
     finalUuid
@@ -1174,6 +1221,7 @@ ipcMain.handle('update-real-strategy-local', async (_event, strategy) => {
       description: meta.description,
       schedule_enabled: Boolean(meta.schedule_enabled),
       operating_hours: parseOperatingHours(meta.operating_hours),
+      custom_metrics: normalizeStrategyMetrics(meta.custom_metrics),
     },
   });
 
@@ -1912,9 +1960,9 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
 
     db.prepare(`
       INSERT INTO trades
-      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, is_composite_position, position_legs, updated_at, user_id, sync_status, deleted_at)
+      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, direction, custom_metrics, is_composite_position, position_legs, updated_at, user_id, sync_status, deleted_at)
       VALUES
-      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     `).run(
       tempId,
       clientUuid,
@@ -1932,6 +1980,8 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
       mapped.image_after || '',
       mapped.entry_time,
       mapped.exit_time,
+      mapped.direction,
+      JSON.stringify(mapped.custom_metrics || {}),
       mapped.is_composite_position ? 1 : 0,
       legsJson,
       createdAt,
@@ -2013,6 +2063,8 @@ async function upsertTradeRemote({ userId, payload }) {
     image_after: payload.image_after ?? null,
     entry_time: normalizeTimeField(payload.entry_time) ?? null,
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
+    direction: normalizeTradeDirection(payload.direction),
+    custom_metrics: normalizeTradeCustomMetrics(payload.custom_metrics),
     is_composite_position: Boolean(payload.is_composite_position),
     // Conservamos position_legs incluso cuando no es posición construida.
     position_legs: payload.position_legs || [],
@@ -2058,6 +2110,8 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
     image_after: payload.image_after ?? null,
     entry_time: normalizeTimeField(payload.entry_time) ?? null,
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
+    direction: normalizeTradeDirection(payload.direction),
+    custom_metrics: normalizeTradeCustomMetrics(payload.custom_metrics),
     is_composite_position: composite,
     position_legs: legs,
     updated_at: nowIso(),
@@ -2447,6 +2501,7 @@ async function syncPendingChanges(userId) {
                 description = ?,
                 schedule_enabled = ?,
                 operating_hours = ?,
+                custom_metrics = ?,
                 sync_status = 'synced',
                 updated_at = ?
             WHERE user_id = ? AND client_uuid = ?
@@ -2455,6 +2510,7 @@ async function syncPendingChanges(userId) {
             meta.description,
             meta.schedule_enabled,
             meta.operating_hours,
+            meta.custom_metrics,
             nowIso(),
             String(userId),
             payloadUuid
@@ -2929,7 +2985,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       .eq('user_id', String(userId)),
     supabase
       .from('real_strategies')
-      .select('id, user_id, name, client_uuid, created_at, description, schedule_enabled, operating_hours')
+      .select('id, user_id, name, client_uuid, created_at, description, schedule_enabled, operating_hours, custom_metrics')
       .eq('user_id', String(userId)),
     supabase
       .from('real_account_withdrawals')
@@ -3072,8 +3128,8 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     const selectByRemote = db.prepare(`SELECT client_uuid, sync_status FROM real_strategies WHERE user_id = ? AND remote_id = ? LIMIT 1`);
     const insert = db.prepare(`
       INSERT INTO real_strategies
-      (user_id, client_uuid, remote_id, name, description, schedule_enabled, operating_hours, is_active, created_at, updated_at, sync_status, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'synced', NULL)
+      (user_id, client_uuid, remote_id, name, description, schedule_enabled, operating_hours, custom_metrics, is_active, created_at, updated_at, sync_status, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'synced', NULL)
       ON CONFLICT(user_id, client_uuid) DO NOTHING
     `);
     const update = db.prepare(`
@@ -3083,6 +3139,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
           description = ?,
           schedule_enabled = ?,
           operating_hours = ?,
+          custom_metrics = ?,
           updated_at = ?,
           sync_status = CASE
             WHEN sync_status LIKE 'pending_%' THEN sync_status
@@ -3106,6 +3163,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             meta.description,
             meta.schedule_enabled,
             meta.operating_hours,
+            meta.custom_metrics,
             r?.created_at ? String(r.created_at) : nowIso(),
             nowIso()
           );
@@ -3116,6 +3174,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
             meta.description,
             meta.schedule_enabled,
             meta.operating_hours,
+            meta.custom_metrics,
             nowIso(),
             uid,
             clientUuid
@@ -3283,7 +3342,8 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     UPDATE trades
     SET date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
         lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
-        entry_time = ?, exit_time = ?, is_composite_position = ?, position_legs = ?,
+        entry_time = ?, exit_time = ?, direction = ?, custom_metrics = ?,
+        is_composite_position = ?, position_legs = ?,
         updated_at = ?, sync_status = ?
     WHERE user_id = ? AND id = ?
   `).run(
@@ -3301,6 +3361,8 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     mapped.image_after || '',
     mapped.entry_time ?? null,
     mapped.exit_time ?? null,
+    mapped.direction ?? null,
+    JSON.stringify(mapped.custom_metrics || {}),
     mapped.is_composite_position ? 1 : 0,
     legsJson,
     now,

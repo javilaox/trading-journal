@@ -110,6 +110,28 @@ function computeDurationMinutes(entryTime, exitTime) {
   return 24 * 60 - entry + exit;
 }
 
+/** Nombres de métricas de una estrategia. Tolera array, JSON string o basura. Nunca lanza. */
+function parseStrategyMetricNamesLocal(value) {
+  let list = value;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (_err) {
+      list = [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const out = [];
+  list.forEach((item) => {
+    const name = String(typeof item === 'string' ? item : item?.name || '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    out.push(name);
+  });
+  return out;
+}
+
 function normalizeStrategyFromRow(row) {
   const name = String(row?.name || '').trim();
   if (!name) return null;
@@ -124,6 +146,9 @@ function normalizeStrategyFromRow(row) {
     description: String(row?.description || '').trim(),
     schedule_enabled,
     operating_hours: parseOperatingHours(row?.operating_hours ?? row?.operatingHours ?? '[]'),
+    // Métricas personalizadas de la estrategia (checks que se marcan en cada trade).
+    // Se normalizan aquí para que Estadísticas no tenga que volver a parsear el JSON.
+    custom_metrics: parseStrategyMetricNamesLocal(row?.custom_metrics ?? row?.customMetrics ?? '[]'),
     previous_names: Array.isArray(row?.previous_names) ? row.previous_names.map(String) : [],
   };
 }

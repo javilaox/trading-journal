@@ -30,6 +30,10 @@ const { navigateTo } = require('./navigation.js');
 const { logout } = require('./auth.js');
 const { getLastOfflineUser } = require('./services/offlineAuth.js');
 const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawals');
+const {
+  buildDirectionStats,
+  buildStrategyMetricStats,
+} = require('./services/tradeBreakdownStats');
 
 const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
 let statsEventsBound = false;
@@ -1874,11 +1878,184 @@ function renderStatsHourConcentration(sched) {
   box.hidden = false;
 }
 
+/** Nombres de estrategia/métrica vienen del usuario: se escapan antes de inyectarlos. */
+function escapeStatsHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const statsMoney = (v) => `${v >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+const statsPct = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
+const statsPnlClass = (v) => (v > 0 ? 'positive' : v < 0 ? 'negative' : '');
+
+/**
+ * Compras vs Ventas. Se pintan dos tarjetas enfrentadas + una conclusión en una frase, en vez
+ * de una tabla: el usuario tiene que poder decidir «opero mejor largo o corto» de un vistazo.
+ */
+function renderDirectionStats(trades) {
+  const section = document.getElementById('statsDirectionSection');
+  if (!section) return;
+  const cardsEl = document.getElementById('statsDirectionCards');
+  const emptyEl = document.getElementById('statsDirectionEmpty');
+  const verdictEl = document.getElementById('statsDirectionVerdict');
+  const missingEl = document.getElementById('statsDirectionMissing');
+
+  const stats = buildDirectionStats(trades);
+
+  if (emptyEl) emptyEl.hidden = stats.hasData;
+  if (cardsEl) cardsEl.hidden = !stats.hasData;
+  if (!stats.hasData) {
+    if (cardsEl) cardsEl.innerHTML = '';
+    if (verdictEl) verdictEl.hidden = true;
+    if (missingEl) missingEl.hidden = true;
+    return;
+  }
+
+  const card = (kind, label, s) => `
+    <div class="direction-card is-${kind}">
+      <div class="direction-card-head">
+        <span class="direction-card-title"><span class="direction-dot"></span>${escapeStatsHtml(label)}</span>
+        <span class="direction-card-ops">${s.n} ${s.n === 1 ? 'op' : 'ops'}</span>
+      </div>
+      <div class="direction-card-pnl ${statsPnlClass(s.pnl)}">${s.n ? statsMoney(s.pnl) : '—'}</div>
+      <div class="direction-bar"><span style="width:${s.winrate == null ? 0 : Math.max(0, Math.min(100, s.winrate))}%"></span></div>
+      <div class="direction-card-rows">
+        <div><span>${t('stats_direction_winrate', 'Acierto')}</span><strong>${statsPct(s.winrate)}</strong></div>
+        <div><span>${t('stats_direction_avg', 'Media por op.')}</span><strong class="${statsPnlClass(s.avgPnl)}">${s.n ? statsMoney(s.avgPnl) : '—'}</strong></div>
+        <div><span>TP / SL / BE</span><strong>${s.wins} / ${s.losses} / ${s.be}</strong></div>
+        <div><span>${t('profit_factor', 'Factor de beneficio')}</span><strong>${s.profitFactor == null ? '—' : s.profitFactor.toFixed(2)}</strong></div>
+      </div>
+    </div>`;
+
+  if (cardsEl) {
+    cardsEl.innerHTML =
+      card('long', t('stats_direction_long', 'Compras (Long)'), stats.long) +
+      card('short', t('stats_direction_short', 'Ventas (Short)'), stats.short);
+  }
+
+  if (verdictEl) {
+    if (!stats.comparable) {
+      verdictEl.hidden = false;
+      verdictEl.className = 'direction-verdict muted';
+      verdictEl.textContent = t(
+        'stats_direction_need_both',
+        'Aún no hay trades en las dos direcciones para poder compararlas.'
+      );
+    } else {
+      const diff = stats.long.pnl - stats.short.pnl;
+      verdictEl.hidden = false;
+      if (diff === 0) {
+        verdictEl.className = 'direction-verdict muted';
+        verdictEl.textContent = t('stats_direction_tie', 'Compras y ventas te dan el mismo resultado.');
+      } else {
+        const better = diff > 0 ? t('stats_direction_long', 'Compras (Long)') : t('stats_direction_short', 'Ventas (Short)');
+        verdictEl.className = 'direction-verdict good';
+        verdictEl.textContent = `${t('stats_direction_better', 'Te va mejor en')} ${better} (${statsMoney(Math.abs(diff))} ${t('stats_direction_of_difference', 'de diferencia')}).`;
+      }
+    }
+  }
+
+  if (missingEl) {
+    if (stats.unknown.n > 0) {
+      missingEl.hidden = false;
+      missingEl.textContent = `${stats.unknown.n} ${t('stats_direction_missing', 'trades sin dirección no entran en esta comparación (son anteriores a este campo).')}`;
+    } else {
+      missingEl.hidden = true;
+    }
+  }
+}
+
+/**
+ * Análisis por métricas de estrategia. Mismo criterio que en Backtesting: se distingue
+ * «sin datos» de «mal resultado», porque una métrica recién creada mostraría ceros y
+ * parecería mala cuando en realidad todavía no se ha marcado en ningún trade.
+ */
+async function renderStrategyMetricStats(trades) {
+  const section = document.getElementById('statsMetricsSection');
+  if (!section) return;
+  const groupsEl = document.getElementById('statsMetricsGroups');
+  const emptyEl = document.getElementById('statsMetricsEmpty');
+
+  const strategyByName = await getStrategyMetaByName();
+  const groups = buildStrategyMetricStats(trades, strategyByName);
+
+  if (emptyEl) emptyEl.hidden = groups.length > 0;
+  if (!groupsEl) return;
+  if (!groups.length) {
+    groupsEl.innerHTML = '';
+    return;
+  }
+
+  const cell = (s) =>
+    s.n
+      ? `<strong class="${statsPnlClass(s.pnl)}">${statsMoney(s.pnl)}</strong><span class="bt-metric-sub">${s.n} ${s.n === 1 ? 'op' : 'ops'} · ${statsPct(s.winrate)} ${t('stats_metrics_hit', 'acierto')}</span>`
+      : '<span class="muted">—</span>';
+
+  groupsEl.innerHTML = groups
+    .map((group) => {
+      const rows = group.rows
+        .map((row) => {
+          if (!row.evaluated) {
+            return `<tr>
+              <td>${escapeStatsHtml(row.metric)}</td>
+              <td colspan="3" class="muted">${t('stats_metrics_no_data', 'Aún sin datos: márcala al registrar o editar tus trades y aparecerá aquí.')}</td>
+            </tr>`;
+          }
+          let verdict = `<span class="muted">${t('stats_metrics_few_data', 'Pocos datos')}</span>`;
+          if (row.comparable) {
+            verdict =
+              row.pnlDiff > 0
+                ? `<span class="bt-metric-verdict good">${t('stats_metrics_better', 'Mejor cumpliéndola')} (${statsMoney(row.pnlDiff)})</span>`
+                : row.pnlDiff < 0
+                  ? `<span class="bt-metric-verdict bad">${t('stats_metrics_worse', 'Peor cumpliéndola')} (${statsMoney(row.pnlDiff)})</span>`
+                  : `<span class="muted">${t('stats_metrics_tie', 'Sin diferencia')}</span>`;
+          } else if (row.yes.n && !row.no.n) {
+            verdict = `<span class="muted">${t('stats_metrics_always', 'Siempre la cumples: no hay con qué comparar')}</span>`;
+          } else if (!row.yes.n && row.no.n) {
+            verdict = `<span class="muted">${t('stats_metrics_never', 'Nunca la has cumplido')}</span>`;
+          }
+          return `<tr>
+            <td>${escapeStatsHtml(row.metric)}</td>
+            <td class="bt-metric-cell">${cell(row.yes)}</td>
+            <td class="bt-metric-cell">${cell(row.no)}</td>
+            <td>${verdict}</td>
+          </tr>`;
+        })
+        .join('');
+
+      return `
+        <div class="stats-metric-group">
+          <h3>${escapeStatsHtml(group.strategy)}</h3>
+          <p class="stats-metric-group-sub">${group.trades} ${group.trades === 1 ? 'trade' : 'trades'} ${t('stats_metrics_in_filter', 'con los filtros actuales')}</p>
+          <div class="table-wrap">
+            <table class="bt-metric-analysis-table">
+              <thead>
+                <tr>
+                  <th>${t('stats_metrics_col_metric', 'Métrica')}</th>
+                  <th>${t('stats_metrics_col_yes', 'Cumpliéndola')}</th>
+                  <th>${t('stats_metrics_col_no', 'Sin cumplirla')}</th>
+                  <th>${t('stats_metrics_col_verdict', 'Conclusión')}</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    })
+    .join('');
+}
+
 function renderAllCharts(trades, compareEnabled = compareMode) {
   console.log('Trades para gráfica:', trades);
   // Disciplina por horario: siempre sobre el listado completo (switch OFF no oculta trades aquí).
   void renderScheduleStats(getFilteredTrades());
   void renderWithdrawalStats(trades);
+  renderDirectionStats(trades);
+  void renderStrategyMetricStats(trades);
   const sortedTrades = sortTradesByDate(trades);
   const dailyData = groupTradesByDay(sortedTrades);
   const daily = getDailyPnL(dailyData);
@@ -2302,6 +2479,8 @@ async function applyFilters() {
     renderStrategyWinrateList([]);
     void renderScheduleStats(getFilteredTrades());
     void renderWithdrawalStats([]);
+    renderDirectionStats([]);
+    void renderStrategyMetricStats([]);
     return;
   }
 

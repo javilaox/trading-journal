@@ -82,6 +82,7 @@ function normalizeStrategyMerge(row = {}) {
       description: '',
       schedule_enabled: false,
       operating_hours: [],
+      custom_metrics: [],
       client_uuid: null,
       remote_id: null,
       id: null,
@@ -99,11 +100,26 @@ function normalizeStrategyMerge(row = {}) {
     }
   }
   if (!Array.isArray(operating_hours)) operating_hours = [];
+  // Checklist propio de la estrategia (array de nombres). Igual que operating_hours, puede venir
+  // como texto JSON desde SQLite o como array desde Supabase.
+  let custom_metrics = row?.custom_metrics;
+  if (typeof custom_metrics === 'string') {
+    try {
+      custom_metrics = JSON.parse(custom_metrics);
+    } catch {
+      custom_metrics = [];
+    }
+  }
+  if (!Array.isArray(custom_metrics)) custom_metrics = [];
+  custom_metrics = custom_metrics
+    .map((m) => String(typeof m === 'string' ? m : m?.name || '').trim())
+    .filter(Boolean);
   return {
     name,
     description: row?.description != null ? String(row.description) : '',
     schedule_enabled: Boolean(row?.schedule_enabled),
     operating_hours,
+    custom_metrics,
     client_uuid: row?.client_uuid ? String(row.client_uuid) : null,
     remote_id: row?.remote_id != null && row.remote_id !== '' ? String(row.remote_id) : null,
     id: row?.id != null && row.id !== '' ? row.id : null,
@@ -173,6 +189,10 @@ function mergeEntityFields(prev, norm) {
       Array.isArray(norm.operating_hours) && norm.operating_hours.length
         ? norm.operating_hours
         : prev.operating_hours,
+    custom_metrics:
+      Array.isArray(norm.custom_metrics) && norm.custom_metrics.length
+        ? norm.custom_metrics
+        : prev.custom_metrics,
   };
 }
 
@@ -319,6 +339,7 @@ function extractStrategiesFromTrades(trades = []) {
     description: '',
     schedule_enabled: false,
     operating_hours: [],
+    custom_metrics: [],
   }));
 }
 
@@ -350,6 +371,7 @@ function mapSqliteStrategyRows(rows = []) {
         description: r?.description,
         schedule_enabled: r?.schedule_enabled,
         operating_hours: r?.operating_hours,
+        custom_metrics: r?.custom_metrics,
         client_uuid: r?.client_uuid,
         remote_id: r?.remote_id,
       })

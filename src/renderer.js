@@ -5402,6 +5402,114 @@ function collectStrategyHoursFromDom(listId = 'strategyModalHoursList') {
   return out;
 }
 
+/* ── Métricas personalizadas por estrategia ────────────────────────────────────────────────
+ * Cada estrategia real guarda su propio checklist (array de nombres). Al elegir esa estrategia
+ * en un trade se muestran esas casillas, y lo marcado se guarda en trade.custom_metrics.
+ * Se eligió guardarlas dentro de la estrategia (y no como entidad aparte) porque son propias
+ * de ella: así no hay que mantener una tabla nueva ni relaciones extra.
+ */
+function parseStrategyMetrics(value) {
+  const raw = typeof value === 'string' ? safeJsonParse(value, []) : value;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((m) => (typeof m === 'string' ? m : String(m?.name || '')))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function safeJsonParse(text, fallback) {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Métricas definidas por la estrategia con ese nombre. */
+function getStrategyMetricsByName(strategyName) {
+  const record = getStrategyRecordByName(String(strategyName || '').trim());
+  return parseStrategyMetrics(record?.custom_metrics);
+}
+
+function renderStrategyMetricsList(metrics) {
+  const host = document.getElementById('strategyModalMetricsList');
+  if (!host) return;
+  const list = parseStrategyMetrics(metrics);
+  host.innerHTML = '';
+  if (!list.length) {
+    host.innerHTML = `<p class="muted" style="margin:0;font-size:0.84rem;">${escapeHtmlChipText(
+      t('strategy_metrics_empty', 'Sin métricas. Pulsa «Añadir métrica».')
+    )}</p>`;
+    return;
+  }
+  list.forEach((name, idx) => {
+    const row = document.createElement('div');
+    row.className = 'strategy-metric-row';
+    row.innerHTML = `
+      <input type="text" class="input strategy-metric-name" value="${escapeAttrChip(name)}" placeholder="Ej: Siguió el plan" />
+      <button type="button" class="button button-delete strategy-metric-remove" data-index="${idx}" aria-label="Eliminar">×</button>`;
+    host.appendChild(row);
+  });
+  host.querySelectorAll('.strategy-metric-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = collectStrategyMetricsFromDom();
+      next.splice(Number(btn.dataset.index), 1);
+      renderStrategyMetricsList(next);
+    });
+  });
+}
+
+function collectStrategyMetricsFromDom() {
+  const host = document.getElementById('strategyModalMetricsList');
+  if (!host) return [];
+  const seen = new Set();
+  const out = [];
+  host.querySelectorAll('.strategy-metric-name').forEach((input) => {
+    const name = String(input.value || '').trim();
+    // Los nombres son la clave en custom_metrics del trade: no puede haber duplicados.
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  });
+  return out;
+}
+
+/** Casillas del checklist en el formulario de trade (create | edit). */
+function renderTradeCustomMetricFields(form, strategyName, values = {}) {
+  const section = document.getElementById(form === 'edit' ? 'editCustomMetricsSection' : 'tradeCustomMetricsSection');
+  const host = document.getElementById(form === 'edit' ? 'editCustomMetricsFields' : 'tradeCustomMetricsFields');
+  if (!section || !host) return;
+
+  const metrics = getStrategyMetricsByName(strategyName);
+  host.innerHTML = '';
+  if (!metrics.length) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  metrics.forEach((name) => {
+    const label = document.createElement('label');
+    label.className = 'trade-metric-check';
+    const checked = values && values[name] === true ? 'checked' : '';
+    label.innerHTML = `<input type="checkbox" data-metric-name="${escapeAttrChip(name)}" ${checked} /><span>${escapeHtmlChipText(name)}</span>`;
+    host.appendChild(label);
+  });
+}
+
+/** Valores marcados. Se guardan TODAS las métricas (true/false), no solo las marcadas: así el
+ * análisis puede distinguir «no cumplida» de «el trade es anterior a la métrica». */
+function collectTradeCustomMetrics(form) {
+  const host = document.getElementById(form === 'edit' ? 'editCustomMetricsFields' : 'tradeCustomMetricsFields');
+  if (!host) return {};
+  const out = {};
+  host.querySelectorAll('input[type="checkbox"][data-metric-name]').forEach((cb) => {
+    out[cb.dataset.metricName] = Boolean(cb.checked);
+  });
+  return out;
+}
+
 function collectStrategyModalPayload() {
   const name = String(document.getElementById('strategyModalName')?.value || '').trim();
   const description = String(document.getElementById('strategyModalDescription')?.value || '').trim();
@@ -5419,6 +5527,7 @@ function collectStrategyModalPayload() {
     description,
     schedule_enabled,
     operating_hours,
+    custom_metrics: collectStrategyMetricsFromDom(),
     client_uuid: existing?.client_uuid || strategyModalIdentity?.client_uuid || null,
     remote_id: existing?.remote_id || strategyModalIdentity?.remote_id || null,
     id: existing?.id ?? strategyModalIdentity?.id ?? null,
@@ -5434,6 +5543,7 @@ function loadStrategyModalFromRecord(record) {
   if (desc) desc.value = record?.description || '';
   if (sched) sched.checked = Boolean(record?.schedule_enabled);
   renderStrategyHoursList(record?.operating_hours || [], 'strategyModalHoursList');
+  renderStrategyMetricsList(record?.custom_metrics || []);
   syncStrategyModalHoursVisibility();
 }
 
@@ -5445,6 +5555,7 @@ function clearStrategyModalFields() {
   if (desc) desc.value = '';
   if (sched) sched.checked = false;
   renderStrategyHoursList([], 'strategyModalHoursList');
+  renderStrategyMetricsList([]);
   syncStrategyModalHoursVisibility();
 }
 
@@ -8829,6 +8940,22 @@ function initAccountStrategyModals() {
     const next = collectStrategyHoursFromDom('strategyModalHoursList');
     next.push({ start: '08:00', end: '10:30' });
     renderStrategyHoursList(next, 'strategyModalHoursList');
+  });
+  document.getElementById('strategyModalAddMetricBtn')?.addEventListener('click', () => {
+    const next = collectStrategyMetricsFromDom();
+    next.push('');
+    renderStrategyMetricsList(next);
+    // Foco en la métrica recién añadida para poder escribir directamente.
+    const inputs = document.querySelectorAll('#strategyModalMetricsList .strategy-metric-name');
+    inputs[inputs.length - 1]?.focus();
+  });
+
+  // Al cambiar de estrategia, el checklist del formulario debe reflejar el de esa estrategia.
+  document.getElementById('strategy')?.addEventListener('change', () => {
+    renderTradeCustomMetricFields('create', document.getElementById('strategy')?.value || '', collectTradeCustomMetrics('create'));
+  });
+  document.getElementById('editStrategy')?.addEventListener('change', () => {
+    renderTradeCustomMetricFields('edit', document.getElementById('editStrategy')?.value || '', collectTradeCustomMetrics('edit'));
   });
 }
 
@@ -15151,6 +15278,7 @@ async function openTradeForEdit(tradeId) {
   };
 
   setValue('editTradeId', String(trade.id));
+  setValue('editDirection', String(trade.direction || '').toUpperCase());
   setValue('editDate', toInputDate(trade.date || ''));
   setValue('editEntryTime', trade.entry_time || '');
   setValue('editExitTime', trade.exit_time || '');
@@ -15168,6 +15296,8 @@ async function openTradeForEdit(tradeId) {
 
   editBeforeImagePath = trade.image_before || trade.beforeImage || '';
   editAfterImagePath = trade.image_after || trade.afterImage || '';
+
+  renderTradeCustomMetricFields('edit', trade.strategy || '', parseTradeCustomMetrics(trade));
 
   await updateImagePreview('editBeforeImagePreview', 'openBeforeImageBtn', editBeforeImagePath);
   await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
@@ -15340,11 +15470,21 @@ async function saveTrade() {
     entry_time: document.getElementById('entryTime')?.value || null,
     exit_time: document.getElementById('exitTime')?.value || null,
 
+    direction: document.getElementById('direction')?.value || '',
+    custom_metrics: collectTradeCustomMetrics('create'),
+
     image_before: isPersistentImagePath(createBeforeImagePath) ? createBeforeImagePath : null,
     image_after: isPersistentImagePath(createAfterImagePath) ? createAfterImagePath : null,
     beforeImage: isPersistentImagePath(createBeforeImagePath) ? createBeforeImagePath : '',
     afterImage: isPersistentImagePath(createAfterImagePath) ? createAfterImagePath : ''
   };
+
+  // La dirección es obligatoria: sin ella no se pueden separar estadísticas de compras y ventas.
+  if (!trade.direction) {
+    showToast(t('direction_required', 'Indica si el trade es de compra o de venta'), 'error');
+    document.getElementById('direction')?.focus();
+    return;
+  }
 
   const compositeMerge = appendCompositeFieldsToTradePayload(trade, 'create');
   if (compositeMerge.error) {
@@ -15504,11 +15644,20 @@ async function saveEditedTrade() {
     entry_time: document.getElementById('editEntryTime')?.value || null,
     exit_time: document.getElementById('editExitTime')?.value || null,
 
+    direction: document.getElementById('editDirection')?.value || '',
+    custom_metrics: collectTradeCustomMetrics('edit'),
+
     image_before: isPersistentImagePath(editBeforeImagePath) ? editBeforeImagePath : null,
     image_after: isPersistentImagePath(editAfterImagePath) ? editAfterImagePath : null,
     beforeImage: isPersistentImagePath(editBeforeImagePath) ? editBeforeImagePath : '',
     afterImage: isPersistentImagePath(editAfterImagePath) ? editAfterImagePath : ''
   };
+
+  if (!payload.direction) {
+    showToast(t('direction_required', 'Indica si el trade es de compra o de venta'), 'error');
+    document.getElementById('editDirection')?.focus();
+    return;
+  }
 
   const compositeMerge = appendCompositeFieldsToTradePayload(payload, 'edit');
   if (compositeMerge.error) {
