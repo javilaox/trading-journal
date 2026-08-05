@@ -5976,6 +5976,46 @@
       .bt-metric-verdict.good { color: var(--green); }
       .bt-metric-verdict.bad { color: var(--red); }
 
+      /* Atajos del calendario de backtesting (Último trade / Hoy). */
+      .bt-calendar-quick {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 0 0 10px;
+      }
+      .bt-quick-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      .bt-quick-btn:hover:not(:disabled) {
+        color: var(--text);
+        border-color: var(--accent, var(--green));
+      }
+      .bt-quick-btn:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .bt-quick-btn i,
+      .bt-quick-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .bt-quick-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: auto;
+      }
+
       /* Compras vs Ventas: dos tarjetas grandes enfrentadas. El objetivo es que se vea de un
          vistazo cuál de las dos direcciones funciona mejor, sin leer una tabla. */
       .direction-cards {
@@ -8175,6 +8215,16 @@
                         </div>
                       </div>
                       <button type="button" id="backtestingNextMonth" class="calendar-nav-btn" aria-label="Mes siguiente">›</button>
+                    </div>
+                    <!-- Atajos para retomar un backtest a medias sin ir mes a mes con las flechas. -->
+                    <div class="bt-calendar-quick">
+                      <button type="button" id="backtestingGoLastTrade" class="bt-quick-btn" title="Ir al día de la última operación registrada">
+                        <i data-lucide="history"></i><span>Último trade</span>
+                      </button>
+                      <button type="button" id="backtestingGoToday" class="bt-quick-btn" title="Ir al día de hoy">
+                        <i data-lucide="calendar-check"></i><span>Hoy</span>
+                      </button>
+                      <span id="backtestingLastTradeHint" class="bt-quick-hint"></span>
                     </div>
                     <div class="bt-calendar-scroll">
                       <div id="backtestingCalendarHeader" class="calendar-weekdays calendar-header-row"></div>

@@ -12207,18 +12207,19 @@ function computeSessionProgress(session, tradesForSession) {
  * como después de guardar cada trade, para que la sesión activa se mantenga entre operaciones
  * y no haya que volver a pulsar "Trabajar" para cada trade nuevo. */
 function applyActiveBacktestingSessionToTradeForm(opts = {}) {
-  const { jumpToStartDate = false } = opts;
+  const { jumpToWorkDate = false } = opts;
   const id = Number(activeBacktestingSessionId);
   if (!Number.isFinite(id) || id <= 0) return;
 
   const session = cachedBacktestingSessions.find((s) => Number(s.id) === id);
   if (!session) return;
 
-  if (jumpToStartDate) {
+  if (jumpToWorkDate) {
+    // Retomar donde se dejó: si la sesión ya tiene operaciones se abre por el día de la última,
+    // y solo si está vacía se va a la fecha de inicio. Así un backtest a medias continúa solo.
+    const lastKey = getLastBacktestingTradeDate(id);
     const startKey = (session.start_date || '').slice(0, 10);
-    selectedBacktestingDate = startKey;
-    const dateInput = document.getElementById('btDate');
-    if (dateInput && startKey) dateInput.value = startKey;
+    setBacktestingWorkDate(lastKey || startKey, { navigateMonth: true });
   }
 
   const assetInput = document.getElementById('btAsset');
@@ -12281,13 +12282,8 @@ function applyActiveBacktestingSessionToTradeForm(opts = {}) {
 
   refreshBacktestingFormUiWidgets();
 
-  if (jumpToStartDate && session.start_date) {
-    const d = new Date(`${String(session.start_date).slice(0, 10)}T12:00:00`);
-    if (!Number.isNaN(+d)) {
-      backtestingCurrentMonth = d.getMonth();
-      backtestingCurrentYear = d.getFullYear();
-    }
-  }
+  // El mes del calendario ya lo ha movido setBacktestingWorkDate() más arriba (al día del
+  // último trade de la sesión, o a su fecha de inicio si aún no tiene ninguno).
 
   // El Resultado ya viene en 'TP' por defecto sin pasar por su listener de 'change' (que es el
   // que dispara el auto-cálculo del PnL a partir del riesgo%/RR), así que hay que forzarlo aquí
@@ -12401,7 +12397,7 @@ function renderBacktestingSessionCards() {
       selectedBacktestingSessionIds = [String(id)];
       initBacktestingSessionFilter();
 
-      applyActiveBacktestingSessionToTradeForm({ jumpToStartDate: true });
+      applyActiveBacktestingSessionToTradeForm({ jumpToWorkDate: true });
 
       rerenderBacktestingLocal();
       highlightActiveBacktestingSessionCard();
@@ -12722,9 +12718,9 @@ function renderBacktestingWeek(daysArray, year, month, tradePool) {
     cell.dataset.date = dateStr;
 
     cell.addEventListener('click', () => {
-      selectedBacktestingDate = dateStr;
-      const dInput = document.getElementById('btDate');
-      if (dInput) dInput.value = dateStr;
+      // Pulsar un día ya deja «Nueva operación» apuntando a esa fecha: es el flujo normal de
+      // backtesting (voy día a día) y evita tener que abrir el datepicker en cada trade.
+      setBacktestingWorkDate(dateStr);
       renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
       renderBacktestingDayTrades();
     });
@@ -12812,6 +12808,79 @@ function renderBacktestingCalendar(year, month) {
     while (chunk.length < 5) chunk.push(null);
     renderBacktestingWeek(chunk.slice(0, 5), year, month, tradePool);
   });
+
+  updateBacktestingLastTradeHint();
+  void refreshLucideIcons();
+}
+
+/**
+ * Fija la fecha de trabajo del backtesting: marca el día en el calendario y lo escribe en
+ * «Nueva operación». El datepicker propio solo refresca su etiqueta visible al recibir el
+ * evento 'change' del input nativo, por eso no basta con asignar .value.
+ */
+function setBacktestingWorkDate(dateKey, { navigateMonth = false } = {}) {
+  const key = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+  selectedBacktestingDate = key;
+  const input = document.getElementById('btDate');
+  if (input) {
+    input.value = key;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (navigateMonth) {
+    const d = new Date(`${key}T12:00:00`);
+    if (!Number.isNaN(+d)) {
+      backtestingCurrentYear = d.getFullYear();
+      backtestingCurrentMonth = d.getMonth();
+    }
+  }
+  return true;
+}
+
+/**
+ * Fecha (YYYY-MM-DD) de la operación de backtesting más reciente. Con sessionId se limita a esa
+ * sesión; sin él usa el mismo pool que pinta el calendario (respeta el filtro de sesiones).
+ * Las fechas son ISO, así que comparar strings ya es comparar cronológicamente.
+ */
+function getLastBacktestingTradeDate(sessionId = null) {
+  const sid = Number(sessionId);
+  const pool =
+    Number.isFinite(sid) && sid > 0
+      ? (cachedBacktestingTrades || []).filter((t) => Number(t?.session_id) === sid)
+      : getFilteredBacktestingTrades();
+  let last = '';
+  (pool || []).forEach((trade) => {
+    const key = String(trade?.date || '').slice(0, 10);
+    if (key && key > last) last = key;
+  });
+  return last || null;
+}
+
+/** Botón «Último trade»: retomar un backtest a medias sin ir mes a mes con las flechas. */
+function goToLastBacktestingTrade() {
+  const key = getLastBacktestingTradeDate();
+  if (!key) {
+    showToast('Todavía no hay ninguna operación registrada', 'info');
+    return;
+  }
+  setBacktestingWorkDate(key, { navigateMonth: true });
+  renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
+  renderBacktestingDayTrades();
+}
+
+function goToBacktestingToday() {
+  setBacktestingWorkDate(getTodayDateString(), { navigateMonth: true });
+  renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
+  renderBacktestingDayTrades();
+}
+
+/** Pista bajo el calendario: en qué día quedó el último trade (y deshabilita el botón si no hay). */
+function updateBacktestingLastTradeHint() {
+  const key = getLastBacktestingTradeDate();
+  const btn = document.getElementById('backtestingGoLastTrade');
+  const hint = document.getElementById('backtestingLastTradeHint');
+  if (btn) btn.disabled = !key;
+  if (hint) hint.textContent = key ? `Último trade: ${formatDateEs(key)}` : '';
 }
 
 function prevBacktestingMonth() {
@@ -14540,6 +14609,69 @@ function initBacktestingFormCalculationListeners() {
   document.getElementById('btRisk')?.addEventListener('change', onRiskChange);
 }
 
+/**
+ * Campos que NO cambian entre operaciones de una misma tanda de backtesting: día que se está
+ * testeando, par, estrategia, cuenta, sesión y los parámetros de riesgo/RR del plan. Tras
+ * guardar un trade se conservan y se reinicia todo lo demás (horas, precios, resultado, PnL,
+ * notas, imágenes, métricas), que es lo único que cambia de una operación a la siguiente.
+ */
+const BT_STICKY_FIELD_IDS = [
+  'btDate',
+  'btAsset',
+  'btStrategy',
+  'btAccount',
+  'btSession',
+  'btRisk',
+  'btRrPlanned',
+  'btSlMode',
+  'btTpMode',
+  'btPnlMode',
+];
+
+/** Reinicio «rápido» tras guardar: limpia el formulario pero devuelve el contexto de trabajo. */
+function resetBacktestFormForNextTrade() {
+  const snapshot = {};
+  BT_STICKY_FIELD_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) snapshot[id] = el.value;
+  });
+
+  clearBacktestForm();
+
+  BT_STICKY_FIELD_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const val = snapshot[id];
+    if (val == null || val === '') return;
+    // Los <select> solo aceptan valores que sigan existiendo entre sus opciones (por ejemplo
+    // si la sesión limita los pares permitidos): si ya no está, se deja el valor por defecto.
+    if (el.tagName === 'SELECT' && ![...el.options].some((o) => o.value === val)) return;
+    el.value = val;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  // El par usa un combobox propio: hay que sincronizar además su estado y su etiqueta visible,
+  // porque no se entera de que el <select> oculto ha cambiado de valor.
+  const assetVal = snapshot.btAsset;
+  if (assetVal) {
+    const assetLabel = document.getElementById('btAssetComboLabel');
+    if (assetLabel) assetLabel.textContent = assetVal;
+    if (backtestingAssetComboboxState) {
+      backtestingAssetComboboxState.selectedValue = assetVal;
+      backtestingAssetComboboxState.value = assetVal;
+      backtestingAssetComboboxState.setValue?.(assetVal);
+    }
+  }
+  refreshBacktestingCustomSelect(document.getElementById('btStrategy'));
+  refreshBacktestingCustomSelect(document.getElementById('btSession'));
+
+  refreshBacktestingFormUiWidgets();
+  // El PnL automático depende de riesgo/RR, que acabamos de restaurar.
+  applyBacktestingAutoPnlIfUnset();
+  syncBacktestingPnlFromResult();
+  updateBacktestingDerivedRFields();
+}
+
 function clearBacktestForm() {
   editingBacktestingTradeId = null;
   btManagementCollapsed = true;
@@ -16000,6 +16132,8 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('backtestingPrevMonth')?.addEventListener('click', prevBacktestingMonth);
   document.getElementById('backtestingNextMonth')?.addEventListener('click', nextBacktestingMonth);
+  document.getElementById('backtestingGoLastTrade')?.addEventListener('click', goToLastBacktestingTrade);
+  document.getElementById('backtestingGoToday')?.addEventListener('click', goToBacktestingToday);
 
   const btKpiToggle = document.getElementById('btKpiToggle');
   const btKpiSection = document.getElementById('btKpiSection');
@@ -16221,7 +16355,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       renderBacktestingSessionCards();
 
       await refreshBacktestingView({ skipTradeFetch: true });
-      clearBacktestForm();
+      // Reinicio parcial: mantiene día, par, estrategia, cuenta, sesión y riesgo/RR para poder
+      // encadenar operaciones sin volver a rellenar lo mismo en cada una.
+      resetBacktestFormForNextTrade();
     } catch (e) {
       console.error(e);
       setMsg(String(e?.message || e), false);
