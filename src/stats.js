@@ -1336,12 +1336,35 @@ function appendOptions(select, values) {
   refreshCustomSelectForNative(select);
 }
 
+// Nombres de cuenta que cumplen el filtro de tipo. null = sin filtro (todas).
+// Se cachea al cargar filtros porque getFilteredTrades() es síncrona y se llama muy a menudo.
+let accountNamesByTypeFilter = null;
+
+async function refreshAccountTypeScope() {
+  const selected = document.getElementById('filterAccountType')?.value || '';
+  if (!selected) {
+    accountNamesByTypeFilter = null;
+    return;
+  }
+  const objects = await getUserScopedRealAccountObjects();
+  accountNamesByTypeFilter = new Set(
+    objects.filter((a) => String(a.account_type || '') === selected).map((a) => a.name)
+  );
+}
+
 async function loadFilters() {
   // Solo cuentas/estrategias creadas por el usuario actual (alineado con Dashboard).
   const { accounts: scopedAccounts, strategies: scopedStrategies } =
     await getUserScopedRealAccountsAndStrategies();
 
-  const accounts = [...new Set(scopedAccounts)].sort((a, b) => a.localeCompare(b));
+  await refreshAccountTypeScope();
+
+  // El desplegable de Cuenta se acota al tipo elegido, para no ofrecer combinaciones vacías.
+  const visibleAccounts = accountNamesByTypeFilter
+    ? scopedAccounts.filter((name) => accountNamesByTypeFilter.has(name))
+    : scopedAccounts;
+
+  const accounts = [...new Set(visibleAccounts)].sort((a, b) => a.localeCompare(b));
   const strategies = [...new Set(scopedStrategies)].sort((a, b) => a.localeCompare(b));
 
   const accountPlaceholder = t('all_accounts', 'Todas las cuentas');
@@ -1374,7 +1397,9 @@ function getFilteredTrades() {
       selectedStrategy === 'Todas las estrategias' ||
       selectedStrategy === allStrategiesLabel ||
       strategy === selectedStrategy;
-    return accountMatch && strategyMatch;
+    // Filtro por tipo de cuenta (challenge / fondeada / capital propio).
+    const typeMatch = !accountNamesByTypeFilter || accountNamesByTypeFilter.has(account);
+    return accountMatch && strategyMatch && typeMatch;
   });
 
   let nextTrades = filterTradesByDate(filtered);
@@ -1655,6 +1680,9 @@ async function getUserScopedRealAccountObjects() {
       return (Array.isArray(rows) ? rows : []).map((r) => ({
         name: String(r?.name || '').trim(),
         capital: Number(r?.balance ?? 0) || 0,
+        // Necesario para poder filtrar las estadísticas por tipo (challenge/fondeada/propio).
+        account_type: String(r?.account_type || '').trim(),
+        prop_name: String(r?.prop_name || '').trim(),
       }));
     } catch (err) {
       console.warn('Stats account objects SQLite failed:', err);
@@ -1663,8 +1691,13 @@ async function getUserScopedRealAccountObjects() {
   const raw = readScopedList('real_accounts', userId);
   return raw.map((a) =>
     typeof a === 'string'
-      ? { name: a, capital: 0 }
-      : { name: String(a?.name || '').trim(), capital: Number(a?.capital ?? 0) || 0 }
+      ? { name: a, capital: 0, account_type: '', prop_name: '' }
+      : {
+          name: String(a?.name || '').trim(),
+          capital: Number(a?.capital ?? 0) || 0,
+          account_type: String(a?.account_type || '').trim(),
+          prop_name: String(a?.prop_name || '').trim(),
+        }
   );
 }
 
@@ -2334,6 +2367,13 @@ async function bindStatsEventsOnce() {
   } = getDatePickerElements();
   accountSelect?.addEventListener('change', applyFilters);
   strategySelect?.addEventListener('change', applyFilters);
+  // Al cambiar el tipo hay que recargar los filtros: el desplegable de Cuenta se acota al tipo.
+  document.getElementById('filterAccountType')?.addEventListener('change', () => {
+    void (async () => {
+      await loadFilters();
+      await applyFilters();
+    })();
+  });
   accountSelectLegacy?.addEventListener('change', applyFilters);
   strategySelectLegacy?.addEventListener('change', applyFilters);
   datePickerBtn?.addEventListener('click', (event) => {

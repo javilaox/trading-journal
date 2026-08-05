@@ -7455,6 +7455,12 @@
       <h1 class="page-title title-with-icon"><i data-lucide="bar-chart-3"></i><span data-i18n="stats_title">Estadísticas</span></h1>
 
       <div class="filters filters-row">
+        <select id="filterAccountType" class="input-base">
+          <option value="" data-i18n="filter_all_account_types">Todos los tipos</option>
+          <option value="challenge" data-i18n="account_type_challenge">Challenge</option>
+          <option value="funded" data-i18n="account_type_funded">Fondeada</option>
+          <option value="own_capital" data-i18n="account_type_own_capital">Capital propio</option>
+        </select>
         <select id="filterAccount" class="input-base">
           <option value="" data-i18n="all_accounts">Todas las cuentas</option>
         </select>
