@@ -514,5 +514,10 @@
   "stats_metrics_col_yes": "Cumpliéndola",
   "stats_metrics_col_no": "Sin cumplirla",
   "stats_metrics_col_verdict": "Conclusión",
-  "image_drop_hint": "o arrastra la imagen aquí"
+  "image_drop_hint": "o arrastra la imagen aquí",
+  "export_label": "Exportar",
+  "export_done": "Informe guardado",
+  "export_error": "No se pudo generar el informe",
+  "export_empty": "No hay datos que exportar con los filtros actuales",
+  "export_unavailable": "La exportación no está disponible"
 }

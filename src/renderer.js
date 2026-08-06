@@ -16,6 +16,11 @@ import { validateTrade } from './services/validators.js';
 /** Fechas visibles DD-MM-YYYY — implementación en `./dateDisplay.js`. */
 import { formatDateEs, formatDateRangeEs } from './dateDisplay.js';
 import { navigateTo } from './navigation.js';
+import {
+  buildManagementReport,
+  buildTradesReport,
+  buildBacktestingReport,
+} from './services/exportReports.js';
 import './sidebar.css';
 import './stats-page.css';
 import {
@@ -3872,6 +3877,123 @@ function updateThemeIcon() {
   if (window.lucide && typeof window.lucide.createIcons === 'function') {
     window.lucide.createIcons();
   }
+}
+
+/* ============================ Exportar a Excel / PDF ============================ */
+
+/**
+ * Monta el par de botones «Excel» / «PDF» dentro de un contenedor.
+ *
+ * `buildReport` se llama en el momento de exportar (no al montar) para que el informe salga
+ * siempre con los filtros que hay puestos en ese instante.
+ */
+function mountExportButtons(container, id, buildReport) {
+  if (!container || document.getElementById(id)) return;
+
+  const group = document.createElement('div');
+  group.className = 'export-group';
+  group.id = id;
+  group.innerHTML = `
+    <span class="export-group-label">${t('export_label', 'Exportar')}</span>
+    <button type="button" class="button button-cancel export-btn" data-format="xlsx">
+      <i data-lucide="sheet"></i><span>Excel</span>
+    </button>
+    <button type="button" class="button button-cancel export-btn" data-format="pdf">
+      <i data-lucide="file-text"></i><span>PDF</span>
+    </button>`;
+
+  group.querySelectorAll('.export-btn').forEach((btn) => {
+    btn.addEventListener('click', () => runExport(buildReport, btn.dataset.format, group));
+  });
+
+  container.appendChild(group);
+  void refreshLucideIcons();
+}
+
+async function runExport(buildReport, format, group) {
+  const backend = getBackendApi();
+  if (!backend?.exportReport) {
+    showToast(t('export_unavailable', 'La exportación no está disponible'), 'error');
+    return;
+  }
+
+  let report;
+  try {
+    report = await buildReport();
+  } catch (err) {
+    console.error('❌ Error construyendo el informe:', err);
+    showToast(t('export_error', 'No se pudo generar el informe'), 'error');
+    return;
+  }
+
+  const totalRows = (report?.sheets || []).reduce((n, s) => n + (s.rows?.length || 0), 0);
+  if (!totalRows) {
+    showToast(t('export_empty', 'No hay datos que exportar con los filtros actuales'), 'warning');
+    return;
+  }
+
+  group?.classList.add('is-busy');
+  try {
+    const result = await backend.exportReport(report, format);
+    if (result?.cancelled) return;
+    if (!result?.success) {
+      console.error('❌ Error exportando:', result?.error);
+      showToast(t('export_error', 'No se pudo generar el informe'), 'error');
+      return;
+    }
+    showToast(t('export_done', 'Informe guardado'), 'success');
+    // Abrirlo directamente ahorra ir a buscarlo a la carpeta.
+    await backend.openExportedFile?.(result.path);
+  } finally {
+    group?.classList.remove('is-busy');
+  }
+}
+
+/** Etiqueta legible de un multiselect del dashboard (Sets con 'ALL' = sin filtrar). */
+function describeSelection(set, allLabel) {
+  if (!set || set.has('ALL') || set.size === 0) return allLabel;
+  return [...set].join(', ');
+}
+
+function buildManagementExportReport() {
+  return buildManagementReport({
+    withdrawals: getFilteredWithdrawalsList(),
+    expenses: getFilteredExpensesList(),
+    filters: {
+      'Prop (retiros)': document.getElementById('withdrawalFilterAccount')?.value || 'Todas',
+      'Prop (gastos)': document.getElementById('expenseFilterAccount')?.value || 'Todas',
+      Desde: formatDateEs(document.getElementById('withdrawalFilterFrom')?.value || ''),
+      Hasta: formatDateEs(document.getElementById('withdrawalFilterTo')?.value || ''),
+    },
+  });
+}
+
+function buildTradesExportReport() {
+  return buildTradesReport({
+    trades: getDashboardFilteredTrades(),
+    filters: {
+      'Tipo de cuenta': describeSelection(selectedDashboardAccountTypes, 'Todos'),
+      Cuenta: describeSelection(selectedDashboardAccounts, 'Todas'),
+      Estrategia: describeSelection(selectedDashboardStrategies, 'Todas'),
+    },
+  });
+}
+
+function buildBacktestingExportReport() {
+  const trades = getFilteredBacktestingTrades();
+  const visibleSessionIds = new Set(trades.map((t) => String(t.session_id)));
+  const sessions = (cachedBacktestingSessions || []).filter(
+    (s) => selectedBacktestingSessionIds.includes('all') || visibleSessionIds.has(String(s.id))
+  );
+  const sessionLabel = selectedBacktestingSessionIds.includes('all')
+    ? 'Todas'
+    : sessions.map((s) => s.name).join(', ') || 'Ninguna';
+
+  return buildBacktestingReport({
+    trades,
+    sessions,
+    filters: { Sesión: sessionLabel },
+  });
 }
 
 /**
@@ -16706,6 +16828,30 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (!event.target?.closest?.('.field[data-drop-bound="true"]')) event.preventDefault();
     });
   });
+
+  // Botones de exportar. Se montan desde JS para no repetir el mismo bloque de HTML en cada
+  // apartado; el informe se construye en el momento de pulsar, con los filtros que haya puestos.
+  const withdrawalFilterBar = document
+    .getElementById('withdrawalFilterAccount')
+    ?.closest('.wd-filter-bar');
+  mountExportButtons(withdrawalFilterBar, 'exportWithdrawals', buildManagementExportReport);
+
+  const expenseFilterBar = document
+    .getElementById('expenseFilterAccount')
+    ?.closest('.wd-filter-bar');
+  mountExportButtons(expenseFilterBar, 'exportExpenses', buildManagementExportReport);
+
+  mountExportButtons(
+    document.querySelector('#dashboardView .dashboard-filter-row'),
+    'exportTrades',
+    buildTradesExportReport
+  );
+
+  mountExportButtons(
+    document.querySelector('#backtestingView .backtesting-filter-bar'),
+    'exportBacktesting',
+    buildBacktestingExportReport
+  );
 
   initTradeImageDropZone('beforeImage', async (ref) => {
     createBeforeImagePath = ref;

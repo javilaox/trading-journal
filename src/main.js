@@ -2,7 +2,7 @@
  * Squirrel.Windows: --squirrel-install | --squirrel-updated | --squirrel-uninstall | --squirrel-obsolete
  * Debe ejecutarse antes que el resto de la app (accesos directos, desinstalación, salida rápida).
  */
-const { app, BrowserWindow, ipcMain, session, dialog, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog, Menu, screen, shell } = require('electron');
 
 const isDev = !app.isPackaged;
 const started = require('electron-squirrel-startup');
@@ -20,6 +20,7 @@ const backtestingService = require('./services/backtestingService');
 const backtestingSettingsService = require('./services/backtestingSettingsService');
 const backtestingSessionsService = require('./services/backtestingSessionsService');
 const backtestingMetricsService = require('./services/backtestingMetricsService');
+const exportWriters = require('./services/exportWriters');
 const { mapTrade } = require('./services/tradeMapper');
 const {
   parsePositionLegs,
@@ -315,6 +316,58 @@ ipcMain.handle('save-trade-image-data', async (_event, base64, ext) => {
     return { success: true, path: destination };
   } catch (error) {
     console.error('❌ Error guardando imagen arrastrada:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
+/**
+ * Exporta un informe (estructura de services/exportReports.js) a Excel o PDF.
+ * El diálogo de guardado se abre aquí porque solo el proceso principal puede mostrarlo.
+ */
+ipcMain.handle('export-report', async (_event, report, format) => {
+  try {
+    if (!report || !Array.isArray(report.sheets)) {
+      return { success: false, error: 'INVALID_REPORT' };
+    }
+
+    const isPdf = format === 'pdf';
+    const extension = isPdf ? '.pdf' : '.xlsx';
+    const suggested = exportWriters.suggestedFileName(report, extension);
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: isPdf ? 'Guardar informe PDF' : 'Guardar informe Excel',
+      defaultPath: path.join(app.getPath('documents'), suggested),
+      filters: [
+        isPdf
+          ? { name: 'PDF', extensions: ['pdf'] }
+          : { name: 'Excel', extensions: ['xlsx'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, cancelled: true };
+    }
+
+    if (isPdf) {
+      await exportWriters.writeReportPdf(report, result.filePath, { BrowserWindow });
+    } else {
+      await exportWriters.writeReportXlsx(report, result.filePath);
+    }
+
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    console.error('❌ Error exportando informe:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
+/** Abre el archivo recién exportado con la aplicación por defecto del sistema. */
+ipcMain.handle('open-exported-file', async (_event, filePath) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'FILE_NOT_FOUND' };
+    const error = await shell.openPath(filePath);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
     return { success: false, error: String(error?.message || error) };
   }
 });

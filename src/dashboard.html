@@ -4965,6 +4965,36 @@
         background: transparent;
       }
 
+      /* Botones de exportar a Excel / PDF. Se montan desde JS en la barra de filtros de cada
+         apartado, por eso el grupo se separa del resto con margen automático a la izquierda. */
+      .export-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        flex-wrap: wrap;
+      }
+      .export-group-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
+      .export-group .export-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+      }
+      .export-group .export-btn i,
+      .export-group .export-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .export-group.is-busy {
+        opacity: 0.55;
+        pointer-events: none;
+      }
+
       /* Campos de imagen: además del botón, aceptan que se suelte el archivo encima. */
       .field[data-drop-bound="true"] {
         border-radius: 10px;

@@ -34,6 +34,7 @@ const {
   buildDirectionStats,
   buildStrategyMetricStats,
 } = require('./services/tradeBreakdownStats');
+const { buildStatsReport } = require('./services/exportReports');
 
 const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
 let statsEventsBound = false;
@@ -1226,6 +1227,7 @@ function initStatsTabs() {
     btn.addEventListener('click', () => switchStatsTab(btn.getAttribute('data-stats-tab')));
   });
   switchStatsTab('summary');
+  mountStatsExportButtons();
 }
 
 function refreshLucideIcons() {
@@ -2053,6 +2055,105 @@ async function renderStrategyMetricStats(trades) {
         </div>`;
     })
     .join('');
+}
+
+/* ------------------------------- Exportar Estadísticas ------------------------------- */
+
+/** Agrupa por cuenta o estrategia con el mismo criterio de winrate que el resto de la página. */
+function groupTradesFor(trades, keyName) {
+  const map = new Map();
+  (trades || []).forEach((trade) => {
+    const key = String(trade?.[keyName] || '').trim() || '—';
+    if (!map.has(key)) map.set(key, { name: key, trades: 0, wins: 0, pnl: 0 });
+    const entry = map.get(key);
+    entry.trades += 1;
+    entry.pnl += Number(trade?.pnl || 0);
+    if (trade?.result === 'TP') entry.wins += 1;
+  });
+  return [...map.values()]
+    .map((e) => ({
+      name: e.name,
+      trades: e.trades,
+      pnl: e.pnl,
+      winrate: e.trades ? (e.wins / e.trades) * 100 : null,
+    }))
+    .sort((a, b) => b.pnl - a.pnl);
+}
+
+/** Los KPIs se leen del DOM a propósito: así el informe dice exactamente lo que ve el usuario. */
+function readStatsKpisFromDom() {
+  const read = (id) => document.getElementById(id)?.textContent?.trim() || '—';
+  return [
+    { label: t('stat_win_rate', 'Ratio de aciertos'), value: read('statWinrate') },
+    { label: t('stat_total_pnl', 'PnL total'), value: read('statPnL') },
+    { label: t('stat_returns', 'Rentabilidad'), value: read('statReturns') },
+    { label: t('stat_profit_factor', 'Factor de beneficio'), value: read('statPF') },
+    { label: t('stat_commissions_paid', 'Comisiones pagadas'), value: read('statCommissions') },
+    { label: t('advanced_avg_win', 'Avg win'), value: read('statAvgWin') },
+    { label: t('advanced_avg_loss', 'Avg loss'), value: read('statAvgLoss') },
+    { label: t('advanced_consistency', 'Consistencia'), value: read('statConsistency') },
+    { label: t('insight_max_dd', 'Max drawdown'), value: read('statMaxDrawdown') },
+    { label: t('insight_expectancy', 'Expectancy'), value: read('statExpectancy') },
+  ];
+}
+
+async function buildStatsExportReport() {
+  const trades = getFilteredTrades();
+  const strategyByName = await getStrategyMetaByName();
+  const selectText = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    return el.options?.[el.selectedIndex]?.textContent?.trim() || el.value || '';
+  };
+
+  return buildStatsReport({
+    kpis: readStatsKpisFromDom(),
+    byAccount: groupTradesFor(trades, 'account'),
+    byStrategy: groupTradesFor(trades, 'strategy'),
+    direction: buildDirectionStats(trades),
+    metricGroups: buildStrategyMetricStats(trades, strategyByName),
+    filters: {
+      'Tipo de cuenta': selectText('filterAccountType'),
+      Cuenta: selectText('filterAccount'),
+      Estrategia: selectText('filterStrategy'),
+      Fechas: document.getElementById('datePickerLabel')?.textContent?.trim() || '',
+    },
+  });
+}
+
+function mountStatsExportButtons() {
+  const bar = document.querySelector('#statsView .filters-row') || document.querySelector('.filters-row');
+  if (!bar || document.getElementById('exportStats')) return;
+
+  const group = document.createElement('div');
+  group.className = 'export-group';
+  group.id = 'exportStats';
+  group.innerHTML = `
+    <span class="export-group-label">${t('export_label', 'Exportar')}</span>
+    <button type="button" class="button button-cancel export-btn" data-format="xlsx">Excel</button>
+    <button type="button" class="button button-cancel export-btn" data-format="pdf">PDF</button>`;
+
+  group.querySelectorAll('.export-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const backend = getBackendApi();
+      if (!backend?.exportReport) return;
+      group.classList.add('is-busy');
+      try {
+        const report = await buildStatsExportReport();
+        const result = await backend.exportReport(report, btn.dataset.format);
+        if (result?.cancelled) return;
+        if (!result?.success) {
+          console.error('❌ Error exportando estadísticas:', result?.error);
+          return;
+        }
+        await backend.openExportedFile?.(result.path);
+      } finally {
+        group.classList.remove('is-busy');
+      }
+    });
+  });
+
+  bar.appendChild(group);
 }
 
 function renderAllCharts(trades, compareEnabled = compareMode) {

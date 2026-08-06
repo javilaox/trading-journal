@@ -31,6 +31,8 @@ const api = {
   updateTradesAccount: (oldName, newName) =>
     ipcRenderer.invoke('update-trades-account', oldName, newName),
   setTitleBarTheme: (theme) => ipcRenderer.invoke('set-title-bar-theme', theme),
+  exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
+  openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
   addBacktestTrade: (trade) => ipcRenderer.invoke('add-backtest-trade', trade),
   getBacktestTrades: () => ipcRenderer.invoke('get-backtest-trades'),
   updateBacktestTrade: (trade) => ipcRenderer.invoke('update-backtest-trade', trade),

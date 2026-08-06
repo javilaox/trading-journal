@@ -1,7 +1,7 @@
 {
   "name": "trading-journal",
   "productName": "Trading Journal",
-  "version": "1.0.19",
+  "version": "1.1.0",
   "description": "Diario de trading personal con sincronización Supabase y modo offline-first.",
   "main": ".webpack/main",
   "private": true,
@@ -47,6 +47,7 @@
     "better-sqlite3": "^12.9.0",
     "chart.js": "^4.5.1",
     "electron-squirrel-startup": "^1.0.1",
+    "exceljs": "^4.4.0",
     "sqlite3": "^6.0.1"
   }
 }

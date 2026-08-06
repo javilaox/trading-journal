@@ -514,5 +514,10 @@
   "stats_metrics_col_yes": "Followed",
   "stats_metrics_col_no": "Not followed",
   "stats_metrics_col_verdict": "Conclusion",
-  "image_drop_hint": "or drop the image here"
+  "image_drop_hint": "or drop the image here",
+  "export_label": "Export",
+  "export_done": "Report saved",
+  "export_error": "Could not generate the report",
+  "export_empty": "No data to export with the current filters",
+  "export_unavailable": "Export is not available"
 }
