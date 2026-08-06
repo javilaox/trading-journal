@@ -513,5 +513,6 @@
   "stats_metrics_col_metric": "Metric",
   "stats_metrics_col_yes": "Followed",
   "stats_metrics_col_no": "Not followed",
-  "stats_metrics_col_verdict": "Conclusion"
+  "stats_metrics_col_verdict": "Conclusion",
+  "image_drop_hint": "or drop the image here"
 }

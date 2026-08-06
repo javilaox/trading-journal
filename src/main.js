@@ -286,6 +286,39 @@ ipcMain.handle('copy-trade-image', async (event, filePath) => {
   }
 });
 
+/**
+ * Guarda una imagen a partir de sus bytes (base64) en userData/trade-images.
+ * Se usa cuando se arrastra una imagen que no es un archivo del disco (por ejemplo desde el
+ * navegador): en ese caso no hay ruta que copiar, solo contenido.
+ */
+ipcMain.handle('save-trade-image-data', async (_event, base64, ext) => {
+  try {
+    if (!base64 || typeof base64 !== 'string') {
+      return { success: false, error: 'INVALID_IMAGE_DATA' };
+    }
+
+    const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+    const rawExt = String(ext || '').toLowerCase();
+    const safeExt = allowed.includes(rawExt) ? rawExt : '.png';
+
+    const imagesDir = path.join(app.getPath('userData'), 'trade-images');
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+    }
+
+    const destination = path.join(
+      imagesDir,
+      `trade_${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`
+    );
+    fs.writeFileSync(destination, Buffer.from(base64, 'base64'));
+
+    return { success: true, path: destination };
+  } catch (error) {
+    console.error('❌ Error guardando imagen arrastrada:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
 ipcMain.handle('select-and-copy-trade-image', async () => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {

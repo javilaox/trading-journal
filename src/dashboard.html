@@ -4965,6 +4965,31 @@
         background: transparent;
       }
 
+      /* Campos de imagen: además del botón, aceptan que se suelte el archivo encima. */
+      .field[data-drop-bound="true"] {
+        border-radius: 10px;
+        transition: outline-color 0.15s ease, background 0.15s ease;
+        outline: 2px dashed transparent;
+        outline-offset: 4px;
+      }
+      .field.image-drop-active {
+        outline-color: var(--green, #22c55e);
+        background: rgba(34, 197, 94, 0.06);
+      }
+      .field.image-drop-busy {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .image-drop-hint {
+        display: block;
+        margin-top: 4px;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
+      .field.image-drop-active .image-drop-hint {
+        color: var(--green, #22c55e);
+      }
+
       .edit-trade-modal,
       .edit-modal,
       .modal-content,

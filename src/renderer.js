@@ -5942,21 +5942,155 @@ async function selectTradeImagePersistently() {
     return '';
   }
 
-  // Se sube a Supabase Storage para poder verla desde cualquier ordenador. La copia local se
-  // conserva como caché. Si la subida falla (sin conexión, sesión caducada...), no se pierde
-  // nada: se guarda la ruta local como antes y seguirá viéndose en este equipo.
-  if (backend.uploadTradeImage) {
-    try {
-      const uploaded = await backend.uploadTradeImage(result.path);
-      if (uploaded?.success && uploaded?.ref) return uploaded.ref;
-      console.warn('⚠️ Imagen guardada solo en local (no se pudo subir):', uploaded?.error);
-      showToast('Imagen guardada en este equipo; no se pudo subir a la nube', 'warning');
-    } catch (err) {
-      console.warn('⚠️ Error subiendo imagen a Storage:', err);
-    }
+  return uploadTradeImageOrKeepLocal(result.path);
+}
+
+/**
+ * Sube a Supabase Storage una imagen ya copiada a userData/trade-images y devuelve la
+ * referencia remota. La copia local se conserva como caché. Si la subida falla (sin conexión,
+ * sesión caducada...), no se pierde nada: se devuelve la ruta local y seguirá viéndose aquí.
+ */
+async function uploadTradeImageOrKeepLocal(localPath) {
+  if (!localPath) return '';
+  const backend = getBackendApi();
+  if (!backend?.uploadTradeImage) return localPath;
+
+  try {
+    const uploaded = await backend.uploadTradeImage(localPath);
+    if (uploaded?.success && uploaded?.ref) return uploaded.ref;
+    console.warn('⚠️ Imagen guardada solo en local (no se pudo subir):', uploaded?.error);
+    showToast('Imagen guardada en este equipo; no se pudo subir a la nube', 'warning');
+  } catch (err) {
+    console.warn('⚠️ Error subiendo imagen a Storage:', err);
+  }
+  return localPath;
+}
+
+/** Extensión a partir del nombre o del MIME del archivo soltado. */
+function guessImageExtension(file) {
+  const name = String(file?.name || '');
+  const dot = name.lastIndexOf('.');
+  if (dot > -1 && dot < name.length - 1) return name.slice(dot).toLowerCase();
+  const type = String(file?.type || '');
+  if (type === 'image/jpeg') return '.jpg';
+  if (type === 'image/webp') return '.webp';
+  if (type === 'image/gif') return '.gif';
+  return '.png';
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('READ_FAILED'));
+    reader.onload = () => {
+      // dataURL -> solo la parte base64
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma > -1 ? result.slice(comma + 1) : '');
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Persiste una imagen soltada sobre el formulario y devuelve la referencia a guardar en el
+ * trade (igual que si se hubiera elegido con el botón).
+ *
+ * Hay dos caminos porque no todo lo que se arrastra es un archivo del disco: desde el
+ * Explorador llega una ruta real y basta con copiarla; desde el navegador solo llegan los
+ * bytes, y entonces hay que escribir el archivo a partir de su contenido.
+ */
+async function persistDroppedImageFile(file) {
+  const backend = getBackendApi();
+  if (!file) return '';
+
+  if (!String(file.type || '').startsWith('image/')) {
+    showToast('El archivo no es una imagen', 'error');
+    return '';
   }
 
-  return result.path;
+  const filePath = backend?.getPathForFile ? backend.getPathForFile(file) : '';
+
+  if (filePath && backend?.copyTradeImage) {
+    const copied = await backend.copyTradeImage(filePath);
+    if (copied?.success && copied?.path) return uploadTradeImageOrKeepLocal(copied.path);
+    console.warn('⚠️ No se pudo copiar la imagen arrastrada:', copied?.error);
+  }
+
+  if (!backend?.saveTradeImageData) {
+    showToast('No se pudo guardar la imagen', 'error');
+    return '';
+  }
+
+  try {
+    const base64 = await readFileAsBase64(file);
+    if (!base64) {
+      showToast('No se pudo leer la imagen', 'error');
+      return '';
+    }
+    const saved = await backend.saveTradeImageData(base64, guessImageExtension(file));
+    if (saved?.success && saved?.path) return uploadTradeImageOrKeepLocal(saved.path);
+    console.error('❌ No se pudo guardar la imagen arrastrada:', saved?.error);
+  } catch (err) {
+    console.error('❌ Error leyendo la imagen arrastrada:', err);
+  }
+
+  showToast('No se pudo guardar la imagen', 'error');
+  return '';
+}
+
+/**
+ * Convierte el campo de una imagen en zona de arrastre. El área activa es todo el `.field`
+ * (etiqueta + botón + vista previa) para que sea fácil acertar sin apuntar a un recuadro fino.
+ */
+function initTradeImageDropZone(inputId, onImageReady) {
+  const input = document.getElementById(inputId);
+  const zone = input?.closest('.field');
+  if (!zone || zone.dataset.dropBound === 'true') return;
+  zone.dataset.dropBound = 'true';
+
+  // Sin una pista visible nadie descubre que el campo acepta arrastrar y soltar.
+  if (!zone.querySelector('.image-drop-hint')) {
+    const hint = document.createElement('span');
+    hint.className = 'image-drop-hint';
+    hint.textContent = t('image_drop_hint', 'o arrastra la imagen aquí');
+    input.insertAdjacentElement('afterend', hint);
+  }
+
+  const hasFiles = (event) =>
+    Array.from(event.dataTransfer?.types || []).includes('Files');
+
+  const setActive = (active) => zone.classList.toggle('image-drop-active', active);
+
+  zone.addEventListener('dragover', (event) => {
+    if (!hasFiles(event)) return;
+    // Sin preventDefault el navegador rechaza el drop y Electron abriría el archivo.
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setActive(true);
+  });
+
+  // dragleave salta también al pasar por encima de los hijos: solo se apaga si el puntero
+  // ha salido de verdad del recuadro.
+  zone.addEventListener('dragleave', (event) => {
+    if (!zone.contains(event.relatedTarget)) setActive(false);
+  });
+
+  zone.addEventListener('drop', async (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    setActive(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    zone.classList.add('image-drop-busy');
+    try {
+      const ref = await persistDroppedImageFile(file);
+      if (ref) await onImageReady(ref);
+    } finally {
+      zone.classList.remove('image-drop-busy');
+    }
+  });
 }
 
 function normalizeImageSrc(imagePath) {
@@ -16562,6 +16696,40 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     editAfterImagePath = savedPath;
     await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
+  });
+
+  // Arrastrar y soltar en los seis campos de imagen (trade nuevo, edición y backtesting).
+  // Fuera de esas zonas, soltar un archivo no debe hacer nada: por defecto Electron lo abriría
+  // en la ventana y se perdería la aplicación.
+  ['dragover', 'drop'].forEach((evt) => {
+    document.addEventListener(evt, (event) => {
+      if (!event.target?.closest?.('.field[data-drop-bound="true"]')) event.preventDefault();
+    });
+  });
+
+  initTradeImageDropZone('beforeImage', async (ref) => {
+    createBeforeImagePath = ref;
+    await updateImagePreview('beforeImagePreview', 'openBeforeImageBtnCreate', createBeforeImagePath);
+  });
+  initTradeImageDropZone('afterImage', async (ref) => {
+    createAfterImagePath = ref;
+    await updateImagePreview('afterImagePreview', 'openAfterImageBtnCreate', createAfterImagePath);
+  });
+  initTradeImageDropZone('editBeforeImage', async (ref) => {
+    editBeforeImagePath = ref;
+    await updateImagePreview('editBeforeImagePreview', 'openBeforeImageBtn', editBeforeImagePath);
+  });
+  initTradeImageDropZone('editAfterImage', async (ref) => {
+    editAfterImagePath = ref;
+    await updateImagePreview('editAfterImagePreview', 'openAfterImageBtn', editAfterImagePath);
+  });
+  initTradeImageDropZone('btBeforeImage', async (ref) => {
+    btBeforeImagePath = ref;
+    await updateImagePreview('btBeforeImagePreview', 'openBtBeforeImageBtn', btBeforeImagePath);
+  });
+  initTradeImageDropZone('btAfterImage', async (ref) => {
+    btAfterImagePath = ref;
+    await updateImagePreview('btAfterImagePreview', 'openBtAfterImageBtn', btAfterImagePath);
   });
 
   if (prevMonthBtn) prevMonthBtn.onclick = () => prevMonth();

@@ -513,5 +513,6 @@
   "stats_metrics_col_metric": "Métrica",
   "stats_metrics_col_yes": "Cumpliéndola",
   "stats_metrics_col_no": "Sin cumplirla",
-  "stats_metrics_col_verdict": "Conclusión"
+  "stats_metrics_col_verdict": "Conclusión",
+  "image_drop_hint": "o arrastra la imagen aquí"
 }

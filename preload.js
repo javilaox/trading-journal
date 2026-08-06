@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const api = {
   // Necesario para saber si la barra de título nativa está integrada (solo se hace en Windows)
@@ -12,6 +12,18 @@ const api = {
   getTrade: (id) => ipcRenderer.invoke('get-trade', id),
   updateTrade: (trade) => ipcRenderer.invoke('update-trade', trade),
   copyTradeImage: (filePath) => ipcRenderer.invoke('copy-trade-image', filePath),
+  // Ruta real de un File soltado en la ventana. Desde Electron 32 `File.path` ya no existe y
+  // hay que pedirla aquí, en el preload, con webUtils.
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch (_err) {
+      return '';
+    }
+  },
+  // Para imágenes arrastradas que no son un archivo del disco (p. ej. desde el navegador):
+  // llegan solo como bytes, así que se guardan a partir de su contenido.
+  saveTradeImageData: (base64, ext) => ipcRenderer.invoke('save-trade-image-data', base64, ext),
   selectAndCopyTradeImage: () => ipcRenderer.invoke('select-and-copy-trade-image'),
   readTradeImage: (filePath) => ipcRenderer.invoke('read-trade-image', filePath),
   updateTradesStrategy: (oldName, newName) =>
