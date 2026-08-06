@@ -784,7 +784,34 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-session-option-content strong{color:var(--text);font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #backtestingView .bt-session-option-content small{color:var(--text-muted);font-size:12px;line-height:1.3}
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
-#backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px}
+#backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+#backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+/* Ficha de solo lectura de una operacion de backtesting (se abre pulsando la tarjeta). */
+#btTradeDetailOverlay .bt-detail-modal{max-width:min(720px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
+#btTradeDetailOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 16px;flex-shrink:0}
+#btTradeDetailOverlay .modal-header h2{margin:0;font-size:1.05rem}
+#btTradeDetailOverlay .modal-close{background:transparent;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;border-radius:8px}
+#btTradeDetailOverlay .modal-close:hover{color:var(--text);background:var(--hover-soft,rgba(148,163,184,.14))}
+#btTradeDetailOverlay .pro-modal-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 20px;scrollbar-color:rgba(148,163,184,.35) transparent}
+#btTradeDetailOverlay .pro-modal-footer{flex-shrink:0;padding:16px 24px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.bt-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.bt-detail-asset{font-size:1.15rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.bt-detail-sub{color:var(--text-muted);font-size:.8rem;margin-top:2px}
+.bt-detail-pnl{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bt-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0}
+.bt-detail-grid dt{color:var(--text-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
+.bt-detail-grid dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+.bt-detail-block{margin-top:20px}
+.bt-detail-block h4{margin:0 0 8px;font-size:.85rem}
+.bt-detail-metrics{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.bt-detail-metrics li{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:.78rem}
+.bt-detail-metrics li.ok{color:var(--green,#22c55e);border-color:rgba(34,197,94,.4)}
+.bt-detail-metrics li.no{color:var(--text-muted)}
+.bt-detail-notes{margin:0;color:var(--text-muted);font-size:.85rem;white-space:pre-wrap}
+.bt-detail-images-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.bt-detail-images-grid figure{margin:0}
+.bt-detail-images-grid figcaption{color:var(--text-muted);font-size:.72rem;margin-bottom:4px}
+.bt-detail-images-grid img{width:100%;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;display:block}
 #backtestingView .bt-day-trade-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 #backtestingView .bt-day-trade-title{display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;font-weight:900}
 #backtestingView .bt-day-trade-meta{margin-top:4px;color:var(--text-muted);font-size:12px}
@@ -13580,7 +13607,170 @@ function renderBacktestingDayTrades() {
   });
   bindBacktestingDayTradeEditHandlers();
   bindBacktestingDayTradeDeleteHandlers();
+  bindBacktestingDayTradeDetailHandlers();
   void refreshLucideIcons();
+}
+
+/**
+ * Ficha de solo lectura de una operación de backtesting, con sus capturas.
+ *
+ * Se abre pulsando la tarjeta del día: consultar un trade es lo que más se hace mientras se
+ * testea, y hasta ahora obligaba a entrar en el formulario de edición (con el riesgo de tocar
+ * algo sin querer) y ni siquiera enseñaba las imágenes.
+ */
+function openBacktestingTradeDetail(trade) {
+  if (!trade) return;
+
+  let overlay = document.getElementById('btTradeDetailOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'btTradeDetailOverlay';
+    overlay.className = 'modal-overlay app-modal-overlay bt-detail-overlay';
+    overlay.innerHTML = `
+      <div class="modal app-modal bt-detail-modal">
+        <div class="modal-header">
+          <h2 id="btDetailTitle">Detalle de la operación</h2>
+          <button type="button" class="modal-close" id="btDetailClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="pro-modal-scroll" id="btDetailBody"></div>
+        <div class="pro-modal-footer">
+          <button type="button" class="button button-cancel" id="btDetailEdit">Editar</button>
+          <button type="button" class="button button-save" id="btDetailCloseFooter">Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.classList.remove('active');
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.getElementById('btDetailClose')?.addEventListener('click', close);
+    document.getElementById('btDetailCloseFooter')?.addEventListener('click', close);
+  }
+
+  const pnl = getBacktestingTradePnlEuros(trade);
+  const resUp = String(trade.result || '').toUpperCase();
+  const badgeTone = resUp === 'TP' || resUp === 'SL' ? resUp.toLowerCase() : 'be';
+  const dirLabel = { LONG: 'Compra (Long)', SHORT: 'Venta (Short)' }[String(trade.direction || '').toUpperCase()] || '—';
+  const sessionName =
+    (cachedBacktestingSessions || []).find((s) => String(s.id) === String(trade.session_id))?.name || '—';
+
+  const val = (v) => (v === 0 || v ? escapeHtmlAssetLabel(String(v)) : '—');
+  const money = (v) => `${Number(v) >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+  const priceOrDash = (v) => (Number(v) ? String(v) : '—');
+
+  const rows = [
+    ['Fecha', formatDateEs(trade.date)],
+    ['Sesión', val(sessionName)],
+    ['Activo', val(trade.asset)],
+    ['Estrategia', val(trade.strategy)],
+    ['Dirección', dirLabel],
+    ['Hora entrada', val(trade.entry_time)],
+    ['Hora salida', val(trade.exit_time)],
+    ['Precio entrada', priceOrDash(trade.entry_price)],
+    ['Stop loss', priceOrDash(trade.stop_loss)],
+    ['Take profit', priceOrDash(trade.take_profit)],
+    ['RR previsto', Number(trade.rr_planned) ? Number(trade.rr_planned).toFixed(2) : '—'],
+    ['R obtenida', Number(trade.rr_result) ? Number(trade.rr_result).toFixed(2) : '—'],
+    ['Riesgo', Number(trade.risk_eur) ? `${Number(trade.risk_eur).toFixed(2)}€` : '—'],
+  ];
+
+  // Las métricas guardan todas las claves (true/false), menos las internas como risk_eur.
+  const metrics = Object.entries(trade.custom_metrics || {}).filter(([k]) => k !== 'risk_eur');
+  const metricsHtml = metrics.length
+    ? `<div class="bt-detail-block">
+         <h4>Métricas</h4>
+         <ul class="bt-detail-metrics">
+           ${metrics
+             .map(
+               ([name, value]) =>
+                 `<li class="${value ? 'ok' : 'no'}"><span>${value ? '✓' : '✕'}</span>${escapeHtmlAssetLabel(name)}</li>`
+             )
+             .join('')}
+         </ul>
+       </div>`
+    : '';
+
+  const notesHtml = trade.notes
+    ? `<div class="bt-detail-block"><h4>Notas</h4><p class="bt-detail-notes">${escapeHtmlAssetLabel(trade.notes)}</p></div>`
+    : '';
+
+  const body = document.getElementById('btDetailBody');
+  if (body) {
+    body.innerHTML = `
+      <div class="bt-detail-head">
+        <div>
+          <div class="bt-detail-asset">
+            ${escapeHtmlAssetLabel(trade.asset || '—')}
+            <span class="bt-result-badge ${badgeTone}">${escapeHtmlAssetLabel(trade.result || '—')}</span>
+          </div>
+          <div class="bt-detail-sub">${escapeHtmlAssetLabel(trade.strategy || 'Sin estrategia')} · ${dirLabel}</div>
+        </div>
+        <div class="bt-detail-pnl ${pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : ''}">${money(pnl)}</div>
+      </div>
+      <dl class="bt-detail-grid">
+        ${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}
+      </dl>
+      ${metricsHtml}
+      ${notesHtml}
+      <div class="bt-detail-block bt-detail-images" id="btDetailImages" hidden>
+        <h4>Capturas</h4>
+        <div class="bt-detail-images-grid">
+          <figure hidden id="btDetailBeforeFig"><figcaption>Antes</figcaption><img id="btDetailBefore" alt="Imagen antes" /></figure>
+          <figure hidden id="btDetailAfterFig"><figcaption>Después</figcaption><img id="btDetailAfter" alt="Imagen después" /></figure>
+        </div>
+      </div>`;
+  }
+
+  // Las imágenes pueden estar en Supabase Storage: resolver la URL es asíncrono, así que la
+  // ficha se muestra ya y las capturas aparecen en cuanto están listas.
+  void (async () => {
+    const box = document.getElementById('btDetailImages');
+    let any = false;
+    for (const [path, figId, imgId] of [
+      [trade.image_before, 'btDetailBeforeFig', 'btDetailBefore'],
+      [trade.image_after, 'btDetailAfterFig', 'btDetailAfter'],
+    ]) {
+      if (!path) continue;
+      const src = await getDisplayImageSrc(path);
+      if (!src) continue;
+      const fig = document.getElementById(figId);
+      const img = document.getElementById(imgId);
+      if (!fig || !img) continue;
+      img.src = src;
+      img.onclick = () => openImageViewer(src);
+      fig.hidden = false;
+      any = true;
+    }
+    if (box) box.hidden = !any;
+  })();
+
+  const editBtn = document.getElementById('btDetailEdit');
+  if (editBtn) {
+    editBtn.onclick = () => {
+      overlay.classList.remove('active');
+      openBacktestingTradeEditor(trade);
+    };
+  }
+
+  overlay.classList.add('active');
+}
+
+function bindBacktestingDayTradeDetailHandlers() {
+  document.querySelectorAll('#backtestingView .bt-day-trade-card').forEach((card) => {
+    if (card.dataset.detailBound === 'true') return;
+    card.dataset.detailBound = 'true';
+    card.addEventListener('click', (event) => {
+      // Editar y Eliminar tienen su propia acción: pulsar la tarjeta solo abre la ficha.
+      if (event.target.closest('.bt-day-trade-actions')) return;
+      const raw = card.dataset.id;
+      const idNum = Number(raw);
+      const trade =
+        cachedBacktestingTrades.find((t) => Number(t.id) === idNum) ||
+        cachedBacktestingTrades.find((t) => String(t.id) === String(raw));
+      if (trade) openBacktestingTradeDetail(trade);
+    });
+  });
 }
 
 function bindBacktestingDayTradeDeleteHandlers() {
