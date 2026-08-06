@@ -4165,6 +4165,15 @@
       .custom-datepicker.open .datepicker-popup {
         display: block;
       }
+      /* Mientras está abierto, el popup se cuelga del <body> (ver openPopup en renderer.js):
+         así ningún ancestro con overflow o backdrop-filter puede recortarlo ni cambiarle el
+         bloque contenedor. Al salir del .custom-datepicker deja de aplicarle la regla de
+         arriba, por eso aquí se repite el display. */
+      .datepicker-popup.is-portaled {
+        display: block;
+        position: fixed;
+        z-index: 10050;
+      }
       /* Dentro de los modales de Retiro/Gasto el formulario tiene overflow-y:auto, así que un
          popup absolute quedaría recortado (mismo caso que .suggest-panel). Se pasa a fixed y las
          coordenadas se calculan en JS a partir del getBoundingClientRect() del trigger. */

@@ -1619,3 +1619,24 @@ body.light .settings-card.is-editing {
 .switch:hover .slider {
   filter: brightness(1.2);
 }
+
+/* Versión instalada: dato de referencia, no un elemento de la interfaz. Se deja al pie del
+   bloque de usuario, en pequeño y muy apagado, para poder consultarla de un vistazo sin que
+   compita con nada. Se oculta con la barra lateral plegada, como el resto de textos. */
+.app-version {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-align: center;
+  color: var(--text-muted);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+
+.sidebar.collapsed .app-version,
+.sidebar.closed .app-version {
+  display: none;
+}

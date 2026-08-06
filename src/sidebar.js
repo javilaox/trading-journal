@@ -82,12 +82,38 @@ function buildSidebarInnerHtml(activeView) {
           <span>Cerrar sesión</span>
         </button>
       </div>
+      <div id="app-version" class="app-version" title="Versión instalada"></div>
     </div>
   `;
 }
 
 function getSidebarRoot() {
   return document.getElementById('sidebar');
+}
+
+/**
+ * Versión instalada, al pie de la barra lateral. Se pide al proceso principal (app.getVersion())
+ * en vez de leer el package.json desde el renderer: en la app empaquetada ese archivo está
+ * dentro del asar y la versión que cuenta es la del ejecutable.
+ * Se cachea porque no cambia durante la ejecución y renderSidebar() se llama en cada navegación.
+ */
+let cachedAppVersion = null;
+
+async function updateSidebarAppVersion() {
+  const el = document.getElementById('app-version');
+  if (!el) return;
+
+  if (cachedAppVersion == null) {
+    const api = window.api || window.electronAPI;
+    try {
+      cachedAppVersion = (await api?.getAppVersion?.()) || '';
+    } catch (_err) {
+      cachedAppVersion = '';
+    }
+  }
+
+  el.textContent = cachedAppVersion ? `v${cachedAppVersion}` : '';
+  el.hidden = !cachedAppVersion;
 }
 
 function getSidebarActionButton(target) {
@@ -238,6 +264,8 @@ function initSidebar({
   onLogout
 } = {}) {
   renderSidebar(activeView);
+  // Se pinta en cada render porque renderSidebar() reescribe el HTML de la barra lateral.
+  void updateSidebarAppVersion();
 
   const sidebar = getSidebarRoot();
   if (!sidebar) return;

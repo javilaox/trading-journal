@@ -362,6 +362,9 @@ ipcMain.handle('export-report', async (_event, report, format) => {
 });
 
 /** Abre el archivo recién exportado con la aplicación por defecto del sistema. */
+/** Versión instalada (la del ejecutable, no la del package.json en disco). */
+ipcMain.handle('get-app-version', async () => app.getVersion());
+
 ipcMain.handle('open-exported-file', async (_event, filePath) => {
   try {
     if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'FILE_NOT_FOUND' };
@@ -4072,7 +4075,22 @@ ipcMain.handle('set-title-bar-theme', async (_event, theme) => {
   if (process.platform !== 'win32') return { success: false, skipped: true };
   const win = mainWindow;
   if (!win || win.isDestroyed()) return { success: false };
-  const overlay = TITLE_BAR_OVERLAY_THEMES[theme === 'light' ? 'light' : 'dark'];
+
+  // Acepta un nombre de tema ('dark'/'light') o colores exactos calculados por el renderer.
+  // Lo segundo es lo que se usa normalmente: el color de debajo de los botones cambia también
+  // cuando hay un modal abierto (el fondo se oscurece), y solo el renderer sabe ese estado.
+  const isHex = (v) => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+  let overlay;
+  if (theme && typeof theme === 'object' && isHex(theme.color)) {
+    overlay = {
+      color: theme.color,
+      symbolColor: isHex(theme.symbolColor) ? theme.symbolColor : '#e2e8f0',
+      height: 32,
+    };
+  } else {
+    overlay = TITLE_BAR_OVERLAY_THEMES[theme === 'light' ? 'light' : 'dark'];
+  }
+
   try {
     win.setTitleBarOverlay(overlay);
     return { success: true };

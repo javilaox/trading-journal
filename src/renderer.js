@@ -4023,6 +4023,110 @@ function buildBacktestingExportReport() {
  */
 const APP_TITLEBAR_HEIGHT = 32;
 
+/* --- Color de los botones de la ventana ---------------------------------------------------
+ * Windows pinta minimizar/maximizar/cerrar sobre un rectángulo del color que le indiquemos.
+ * Si ese color no coincide con lo que hay debajo, se ve un recuadro. Y no basta con fijarlo
+ * una vez: al abrir un modal, el fondo se oscurece con una capa translúcida y el rectángulo
+ * pasa a cantar. Por eso se recalcula el color real cada vez que cambia el estado de la
+ * interfaz, mezclando el fondo de la app con la capa del modal si la hay.
+ */
+
+const OVERLAY_SELECTORS = '.modal-overlay, .app-modal-overlay, .image-viewer-overlay';
+
+function parseCssColor(value) {
+  const raw = String(value || '').trim();
+  const hex = /^#([0-9a-f]{6})$/i.exec(raw);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+  }
+  const rgb = /^rgba?\(([^)]+)\)$/i.exec(raw);
+  if (rgb) {
+    const parts = rgb[1].split(',').map((p) => Number(p.trim()));
+    if (parts.length >= 3 && parts.every((p) => Number.isFinite(p))) {
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] == null ? 1 : parts[3] };
+    }
+  }
+  return null;
+}
+
+const toHexColor = ({ r, g, b }) =>
+  `#${[r, g, b].map((c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, '0')).join('')}`;
+
+/** Mezcla `top` (con alfa) sobre `base`. */
+const blendColors = (top, base) => ({
+  r: top.r * top.a + base.r * (1 - top.a),
+  g: top.g * top.a + base.g * (1 - top.a),
+  b: top.b * top.a + base.b * (1 - top.a),
+  a: 1,
+});
+
+/** Luminancia relativa aproximada, para decidir si los iconos van claros u oscuros. */
+const isLightColor = ({ r, g, b }) => (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
+
+function findVisibleOverlay() {
+  return (
+    [...document.querySelectorAll(OVERLAY_SELECTORS)].find((el) => {
+      if (el.hidden || el.classList.contains('hidden')) return false;
+      const cs = getComputedStyle(el);
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.05;
+    }) || null
+  );
+}
+
+function syncTitleBarOverlayColor() {
+  if (!document.body.classList.contains('overlay-titlebar')) return;
+
+  const styles = getComputedStyle(document.body);
+  const base =
+    parseCssColor(styles.getPropertyValue('--bg')) ||
+    (document.body.classList.contains('light')
+      ? { r: 246, g: 248, b: 251, a: 1 }
+      : { r: 15, g: 23, b: 42, a: 1 });
+
+  let color = base;
+  const overlay = findVisibleOverlay();
+  if (overlay) {
+    const layer = parseCssColor(getComputedStyle(overlay).backgroundColor);
+    if (layer && layer.a > 0) color = blendColors(layer, base);
+  }
+
+  try {
+    getBackendApi()?.setTitleBarTheme?.({
+      color: toHexColor(color),
+      symbolColor: isLightColor(color) ? '#0f172a' : '#e2e8f0',
+    });
+  } catch (_err) {
+    /* Fuera de Windows no existe: no es crítico. */
+  }
+}
+
+/**
+ * Vigila los cambios de la interfaz para recolorear la barra. Se agrupan con requestAnimationFrame
+ * porque abrir un modal dispara muchas mutaciones seguidas y no hace falta llamar al proceso
+ * principal en cada una.
+ */
+function watchTitleBarOverlayColor() {
+  let pending = false;
+  const schedule = () => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      syncTitleBarOverlayColor();
+    });
+  };
+
+  new MutationObserver(schedule).observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden'],
+  });
+
+  schedule();
+}
+
 function setupIntegratedTitleBar() {
   // Se detecta por user agent y no por el preload: el preload va empaquetado por webpack y
   // `process.platform` puede no llegar al renderer, con lo que esto no se activaría nunca.
@@ -4076,6 +4180,8 @@ function setupIntegratedTitleBar() {
     strip.setAttribute('aria-hidden', 'true');
     document.body.prepend(strip);
   }
+
+  watchTitleBarOverlayColor();
 }
 
 function applyTheme(theme) {
@@ -4086,11 +4192,7 @@ function applyTheme(theme) {
   updateThemeIcon();
   // La barra de título de Windows está integrada en el tema: hay que recolorearla también,
   // porque el proceso principal la pinta y no ve las clases CSS del renderer.
-  try {
-    getBackendApi()?.setTitleBarTheme?.(isLight ? 'light' : 'dark');
-  } catch (_err) {
-    /* En web/otras plataformas no existe: no es crítico. */
-  }
+  syncTitleBarOverlayColor();
 }
 
 function toggleTheme() {
@@ -4433,7 +4535,12 @@ function closeTradeDatepicker() {
   if (tradeDatepickerRoot) {
     tradeDatepickerRoot.classList.remove('open');
   }
-  customDatepickerRoots.forEach((root) => root.classList.remove('open'));
+  customDatepickerRoots.forEach((root) => {
+    root.classList.remove('open');
+    // Mientras está abierto, el popup vive colgado del <body> (ver openPopup): al cerrar hay
+    // que devolverlo a su contenedor.
+    root.restoreDatepickerPopup?.();
+  });
 }
 
 /** Refresca la etiqueta del datepicker asociado a un input tras asignarle .value por JS. */
@@ -4613,22 +4720,20 @@ function initTradeDatepicker(inputIdOrEl = 'date') {
   // Dentro de los modales de Retiro/Gasto el popup es position:fixed (ver CSS), así que hay que
   // colocarlo a mano con las coordenadas reales del trigger en pantalla, volteándolo hacia arriba
   // si no cabe por debajo.
-  const isFixedPopup = () => Boolean(custom.closest('#withdrawalModalOverlay, #expenseModalOverlay'));
-
+  // Mientras está abierto el popup vive en el <body> con position:fixed, así que sus
+  // coordenadas se calculan siempre a partir del getBoundingClientRect() del trigger.
   const repositionPopup = () => {
-    if (!popup || !isFixedPopup()) return;
+    if (!popup || !popup.classList.contains('is-portaled')) return;
     const rect = trigger.getBoundingClientRect();
+    const width = Math.max(260, Math.round(rect.width));
+    popup.style.width = `${width}px`;
     const popupHeight = popup.offsetHeight || 320;
     const fitsBelow = rect.bottom + 8 + popupHeight <= window.innerHeight;
-    const width = popup.offsetWidth || 280;
-    popup.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - width - 12))}px`;
-    if (fitsBelow) {
-      popup.style.top = `${Math.round(rect.bottom + 8)}px`;
-      popup.style.bottom = '';
-    } else {
-      popup.style.top = `${Math.round(Math.max(12, rect.top - popupHeight - 8))}px`;
-      popup.style.bottom = '';
-    }
+    popup.style.left = `${Math.round(Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)))}px`;
+    popup.style.top = fitsBelow
+      ? `${Math.round(rect.bottom + 8)}px`
+      : `${Math.round(Math.max(12, rect.top - popupHeight - 8))}px`;
+    popup.style.bottom = '';
   };
 
   const openPopup = () => {
@@ -4636,22 +4741,52 @@ function initTradeDatepicker(inputIdOrEl = 'date') {
     closeTradeDatepicker();
     syncViewWithValue();
     renderDays();
+    // El popup se mueve al <body> mientras está abierto. Motivo: dentro de un modal, el
+    // `backdrop-filter` del overlay convierte a ese overlay en bloque contenedor de los
+    // elementos position:fixed, así que el popup dejaba de escapar del contenedor con scroll
+    // (.pro-modal-scroll) y quedaba recortado o invisible. Colgándolo del body no hay ningún
+    // ancestro que lo recorte, en ningún formulario de la app.
+    if (popup.parentElement !== document.body) document.body.appendChild(popup);
     custom.classList.add('open');
+    popup.classList.add('is-portaled');
     repositionPopup();
     popup?.scrollTo?.(0, 0);
   };
 
-  // Solo la flecha abre/cierra el calendario; el resto del recuadro es el campo de texto para
-  // poder escribir la fecha a mano.
+  // Devuelve el popup a su sitio en el DOM al cerrarse, para que el marcado quede como estaba.
+  custom.restoreDatepickerPopup = () => {
+    if (popup.parentElement === document.body) {
+      custom.appendChild(popup);
+      popup.classList.remove('is-portaled');
+      popup.style.top = '';
+      popup.style.left = '';
+      popup.style.width = '';
+    }
+  };
+
+  // Todo el recuadro abre el calendario, no solo la flecha: acertar en una flecha de 10 px es
+  // incómodo y daba sensación de que "no se abre". Se sigue pudiendo escribir la fecha a mano
+  // porque el input mantiene el foco (el calendario no lo roba).
   const arrow = custom.querySelector('.datepicker-trigger-arrow');
-  arrow?.addEventListener('mousedown', (event) => {
-    // mousedown (no click) para adelantarse al blur del input y no reabrirlo justo tras cerrarlo.
-    event.preventDefault();
+  const toggleFromPointer = (event) => {
     event.stopPropagation();
     if (custom.classList.contains('open')) {
       closeTradeDatepicker();
       return;
     }
+    openPopup();
+  };
+
+  arrow?.addEventListener('mousedown', (event) => {
+    // mousedown (no click) para adelantarse al blur del input y no reabrirlo justo tras cerrarlo.
+    event.preventDefault();
+    toggleFromPointer(event);
+  });
+
+  // En el input no se hace preventDefault: hay que dejar que reciba el foco para poder teclear.
+  triggerInput?.addEventListener('mousedown', (event) => {
+    if (custom.classList.contains('open')) return;
+    event.stopPropagation();
     openPopup();
   });
 
@@ -17071,7 +17206,10 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.custom-select')) {
     closeAllCustomSelects();
   }
-  if (!event.target.closest('.custom-datepicker')) {
+  // El popup abierto cuelga del <body>, así que ya no está dentro de .custom-datepicker:
+  // hay que contemplarlo aparte o pulsar en el calendario (cambiar de mes, por ejemplo) lo
+  // cerraría.
+  if (!event.target.closest('.custom-datepicker') && !event.target.closest('.datepicker-popup')) {
     closeTradeDatepicker();
   }
   if (!event.target.closest('.custom-timepicker')) {

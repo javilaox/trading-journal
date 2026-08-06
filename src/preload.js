@@ -4,6 +4,7 @@ console.log('PRELOAD OK');
 
 const api = {
   // Exportación de informes a Excel / PDF.
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
   openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
   // Barra de título integrada: hay que recolorearla al cambiar de tema.
@@ -152,6 +153,7 @@ contextBridge.exposeInMainWorld('api', {
   recalculateTradesCommissionForAccount: api.recalculateTradesCommissionForAccount,
   // OJO: esta lista es explícita, no un spread de `api`. Todo lo que se añada arriba hay que
   // exponerlo también aquí o el renderer no lo verá (window.api tiene prioridad sobre electronAPI).
+  getAppVersion: api.getAppVersion,
   exportReport: api.exportReport,
   openExportedFile: api.openExportedFile,
   setTitleBarTheme: api.setTitleBarTheme,
