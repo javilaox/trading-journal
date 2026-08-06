@@ -2898,6 +2898,16 @@ function renderTradePositionLegsList(form = 'create', legs = []) {
     input.addEventListener('input', () => recalculateTradeCompositeTotals(form));
     input.addEventListener('change', () => recalculateTradeCompositeTotals(form));
   });
+  // El signo se ajusta al salir del campo, no mientras se escribe: si no, teclear "5" en un SL
+  // lo convertiría en "-5" y el siguiente dígito daría "-52" en vez de "-5.2". Antes el signo
+  // solo se aplicaba al cambiar el Resultado, así que editar el PnL después lo dejaba positivo
+  // aunque el trade fuera SL, y había que volver a marcar SL para corregirlo.
+  list.querySelectorAll('.trade-leg-pnl').forEach((input) => {
+    input.addEventListener('blur', () => {
+      applyCompositeLegPnlSign(form);
+      recalculateTradeCompositeTotals(form);
+    });
+  });
   updateTradeCompositeEmptyHint(form);
 }
 
@@ -3090,8 +3100,11 @@ function ensureTradeCompositeFormListeners() {
     if (resultEl && resultEl.dataset.compositeBound !== 'true') {
       resultEl.dataset.compositeBound = 'true';
       resultEl.addEventListener('change', () => {
-        if (isTradeCompositeEnabled(form)) applyCompositeLegPnlSign(form);
-        else if (form === 'create') normalizePnlByResult();
+        if (isTradeCompositeEnabled(form)) {
+          applyCompositeLegPnlSign(form);
+          recalculateTradeCompositeTotals(form);
+        } else if (form === 'create') normalizePnlByResult();
+        else normalizeEditPnlByResult();
       });
     }
     const accountSelectId = form === 'edit' ? 'editAccount' : 'account';
@@ -9782,6 +9795,34 @@ function normalizePnlByResult() {
   recalculateCreateNetPnl();
 }
 
+/**
+ * Mismo ajuste de signo para el formulario de edición (campo único, sin entradas parciales):
+ * un SL guarda el PnL en negativo y un TP en positivo, sin obligar a volver a marcar el
+ * resultado después de escribir la cifra.
+ */
+function normalizeEditPnlByResult() {
+  if (isTradeCompositeEnabled('edit')) {
+    applyCompositeLegPnlSign('edit');
+    recalculateTradeCompositeTotals('edit');
+    return;
+  }
+  const pnlEl = document.getElementById('editPnl');
+  const resultEl = document.getElementById('editResult');
+  if (!pnlEl || !resultEl) return;
+
+  const raw = pnlEl.value;
+  if (raw === '' || raw === '-' || raw === '+' || raw.endsWith(',') || raw.endsWith('.')) {
+    recalculateEditNetPnl();
+    return;
+  }
+
+  const value = Math.abs(parseMoneyInput(raw));
+  if (resultEl.value === 'SL') pnlEl.value = String(-value);
+  else if (resultEl.value === 'TP') pnlEl.value = String(value);
+
+  recalculateEditNetPnl();
+}
+
 function sanitizeBeAfterResult(value) {
   const up = String(value || '').trim().toUpperCase();
   if (up === 'TP' || up === 'SL') return up;
@@ -15801,7 +15842,10 @@ async function openTradeForEdit(tradeId) {
     dateId: 'editDate',
   });
 
-  ['editAsset', 'editStrategy', 'editResult', 'editAccount'].forEach((selectId) => {
+  // Estos <select> están envueltos por un "custom-select": asignar .value actualiza el select
+  // nativo pero no la etiqueta visible, así que hay que refrescarlos uno a uno. Si se olvida
+  // alguno (editDirection lo estuvo), el modal muestra un valor y guarda otro.
+  ['editAsset', 'editStrategy', 'editResult', 'editAccount', 'editDirection', 'editBeAfterResult'].forEach((selectId) => {
     const select = document.getElementById(selectId);
     if (select && typeof refreshCustomSelectForNative === 'function') {
       refreshCustomSelectForNative(select);
@@ -16758,6 +16802,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
   lotSizeInput?.addEventListener('input', recalculateCreateNetPnl);
   editPnlInput?.addEventListener('input', recalculateEditNetPnl);
+  // Al salir del campo se ajusta el signo al resultado, igual que en el formulario de creación.
+  editPnlInput?.addEventListener('blur', normalizeEditPnlByResult);
   editLotSizeInput?.addEventListener('input', recalculateEditNetPnl);
 
   const beforeInput = document.getElementById('beforeImage');
