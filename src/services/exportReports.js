@@ -35,8 +35,13 @@ function num(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Suma redondeada a dos decimales. El redondeo evita que los totales salgan con ruido de coma
+ * flotante (-173.95999999999998 en vez de -173.96) al guardarlos en la celda.
+ */
 function sumBy(rows, key) {
-  return (rows || []).reduce((acc, row) => acc + num(row?.[key]), 0);
+  const total = (rows || []).reduce((acc, row) => acc + num(row?.[key]), 0);
+  return Math.round(total * 100) / 100;
 }
 
 /** Descripción legible de los filtros aplicados, para que el informe no sea ambiguo. */
@@ -65,23 +70,25 @@ function buildManagementReport({ withdrawals = [], expenses = [], filters = {} }
     note: w.note || '',
   }));
 
+  // Los gastos se guardan como importe positivo, pero en un informe restan: se exportan con
+  // signo negativo para que se lean de un vistazo (y en rojo, tanto en Excel como en PDF).
   const expenseRows = expenses.map((e) => ({
     date: toEsDate(e.date),
     account: e.account_name || e.accountName || '',
     size: e.account_size || '',
     category: e.category || '',
-    amount: num(e.amount),
+    amount: -Math.abs(num(e.amount)),
     note: e.note || '',
   }));
 
   const totalWithdrawn = sumBy(withdrawalRows, 'amount');
-  const totalSpent = sumBy(expenseRows, 'amount');
+  const totalSpent = sumBy(expenseRows, 'amount'); // ya viene en negativo
 
   return {
     title: 'Gestión · Retiros y gastos',
     subtitle: 'Trading Journal',
     meta: baseMeta(filters, [
-      { label: 'Balance (retirado - gastado)', value: `${(totalWithdrawn - totalSpent).toFixed(2)} €` },
+      { label: 'Balance (retirado - gastado)', value: `${(totalWithdrawn + totalSpent).toFixed(2)} €` },
     ]),
     sheets: [
       {

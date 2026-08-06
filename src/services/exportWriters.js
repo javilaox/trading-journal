@@ -8,9 +8,11 @@
 
 const fs = require('fs');
 
-const MONEY_FORMAT = '#,##0.00 "€"';
-const NUMBER_FORMAT = '#,##0.00';
-const PERCENT_FORMAT = '0.0"%"';
+// La segunda sección del formato (tras el ';') es la de los números negativos: se pintan en
+// rojo y con su signo, para que un gasto o una pérdida se distingan de un ingreso sin leer.
+const MONEY_FORMAT = '#,##0.00 "€";[Red]-#,##0.00 "€"';
+const NUMBER_FORMAT = '#,##0.00;[Red]-#,##0.00';
+const PERCENT_FORMAT = '0.0"%";[Red]-0.0"%"';
 
 /** Nombre de hoja válido para Excel: máx. 31 caracteres y sin : \ / ? * [ ] */
 function safeSheetName(name, index) {
@@ -159,10 +161,13 @@ function buildReportHtml(report) {
 
       const summary = (sheet.summary || []).length
         ? `<div class="cards">${sheet.summary
-            .map(
-              (s) =>
-                `<div class="card"><span>${escapeHtml(s.label)}</span><strong>${escapeHtml(s.value)}</strong></div>`
-            )
+            .map((s) => {
+              // Los importes del resumen ya vienen formateados: basta con mirar el signo para
+              // colorearlos igual que las celdas de la tabla.
+              const text = String(s.value ?? '');
+              const tone = text.startsWith('-') ? 'neg' : /^\+?[\d.,]/.test(text) && /€/.test(text) ? 'pos' : '';
+              return `<div class="card"><span>${escapeHtml(s.label)}</span><strong class="${tone}">${escapeHtml(text)}</strong></div>`;
+            })
             .join('')}</div>`
         : '';
 
