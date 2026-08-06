@@ -1,8 +1,25 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 console.log('PRELOAD OK');
 
 const api = {
+  // Exportación de informes a Excel / PDF.
+  exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
+  openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
+  // Barra de título integrada: hay que recolorearla al cambiar de tema.
+  setTitleBarTheme: (theme) => ipcRenderer.invoke('set-title-bar-theme', theme),
+  // Ruta real de un File soltado en la ventana. Desde Electron 32 `File.path` ya no existe y
+  // hay que pedirla aquí, en el preload, con webUtils.
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch (_err) {
+      return '';
+    }
+  },
+  // Para imágenes arrastradas que no son un archivo del disco (p. ej. desde el navegador):
+  // llegan solo como bytes, así que se guardan a partir de su contenido.
+  saveTradeImageData: (base64, ext) => ipcRenderer.invoke('save-trade-image-data', base64, ext),
   addTrade: (trade) => ipcRenderer.invoke('add-trade', trade),
   addTradeOffline: (trade) => ipcRenderer.invoke('add-trade-offline', trade),
   getTrades: () => ipcRenderer.invoke('get-trades'),
@@ -133,6 +150,13 @@ contextBridge.exposeInMainWorld('api', {
   getSyncPendingCount: api.getSyncPendingCount,
   getSyncFailedDetails: api.getSyncFailedDetails,
   recalculateTradesCommissionForAccount: api.recalculateTradesCommissionForAccount,
+  // OJO: esta lista es explícita, no un spread de `api`. Todo lo que se añada arriba hay que
+  // exponerlo también aquí o el renderer no lo verá (window.api tiene prioridad sobre electronAPI).
+  exportReport: api.exportReport,
+  openExportedFile: api.openExportedFile,
+  setTitleBarTheme: api.setTitleBarTheme,
+  getPathForFile: api.getPathForFile,
+  saveTradeImageData: api.saveTradeImageData,
 });
 
 // Compatibilidad: mantener API existente para no romper funcionalidades actuales.
