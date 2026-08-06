@@ -3919,6 +3919,14 @@ function setupIntegratedTitleBar() {
       body.overlay-titlebar .sidebar.closed,
       body.overlay-titlebar .sidebar.collapsed { padding-top: calc(14px + var(--titlebar-h)); }
       body.overlay-titlebar .main-content { padding-top: calc(var(--page-padding-y, 24px) + var(--titlebar-h)); }
+      /* Paneles laterales anclados arriba a la derecha (p. ej. «Trades del día»): arrancan por
+         debajo de la franja en vez de meterse bajo los botones de la ventana. Así detrás de los
+         botones queda siempre el fondo de la app, que es justo el color del overlay, y no el
+         panel, que tiene otro color y hacía que los botones se vieran recortados encima. */
+      body.overlay-titlebar .trade-panel {
+        top: var(--titlebar-h);
+        height: calc(100% - var(--titlebar-h));
+      }
       /* Páginas sin .main-content (p. ej. el login): basta con separar el contenido de la franja. */
       body.overlay-titlebar > *:not(.app-titlebar-drag):not(.sidebar):not(.main-content):first-of-type {
         margin-top: var(--titlebar-h);
