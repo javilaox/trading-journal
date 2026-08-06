@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const api = {
+  // Necesario para saber si la barra de título nativa está integrada (solo se hace en Windows)
+  // y compensar su altura en el layout.
+  platform: process.platform,
   addTrade: (trade) => ipcRenderer.invoke('add-trade', trade),
   addTradeOffline: (trade) => ipcRenderer.invoke('add-trade-offline', trade),
   getTrades: () => ipcRenderer.invoke('get-trades'),
@@ -15,6 +18,7 @@ const api = {
     ipcRenderer.invoke('update-trades-strategy', oldName, newName),
   updateTradesAccount: (oldName, newName) =>
     ipcRenderer.invoke('update-trades-account', oldName, newName),
+  setTitleBarTheme: (theme) => ipcRenderer.invoke('set-title-bar-theme', theme),
   addBacktestTrade: (trade) => ipcRenderer.invoke('add-backtest-trade', trade),
   getBacktestTrades: () => ipcRenderer.invoke('get-backtest-trades'),
   updateBacktestTrade: (trade) => ipcRenderer.invoke('update-backtest-trade', trade),

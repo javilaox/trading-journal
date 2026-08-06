@@ -506,6 +506,12 @@ function applyTheme(theme) {
   const themeToggle = document.getElementById('themeToggle');
   if (themeToggle) themeToggle.checked = isLight;
   updateThemeIcon();
+  // La barra de título integrada la pinta el proceso principal, que no ve las clases CSS.
+  try {
+    getBackendApi()?.setTitleBarTheme?.(isLight ? 'light' : 'dark');
+  } catch (_err) {
+    /* No disponible fuera de Electron/Windows: no es crítico. */
+  }
 }
 
 function showStatsBootError(message, err) {

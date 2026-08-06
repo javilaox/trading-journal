@@ -528,6 +528,16 @@ function resolveInitialWindowBounds() {
   return { width: work.width, height: work.height, x: work.x, y: work.y, isMaximized: false };
 }
 
+/**
+ * Colores de la barra de título integrada (solo Windows). Deben coincidir con --sidebar-bg y
+ * --text de dashboard.html en cada tema; si allí se cambian, hay que cambiarlos aquí también.
+ * `height` reserva el alto de la franja que la app deja libre arriba para poder arrastrar.
+ */
+const TITLE_BAR_OVERLAY_THEMES = {
+  dark: { color: '#0b1220', symbolColor: '#e2e8f0', height: 32 },
+  light: { color: '#ffffff', symbolColor: '#0f172a', height: 32 },
+};
+
 // 🖥️ Ventana
 function createWindow() {
   const hasWebpackEntries = typeof MAIN_WINDOW_WEBPACK_ENTRY !== 'undefined' && typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined';
@@ -548,6 +558,12 @@ function createWindow() {
     if (fs.existsSync(iconPath)) {
       windowOptions.icon = iconPath;
     }
+    // Barra de título integrada en el tema de la app: se oculta la barra nativa blanca pero se
+    // conservan los botones minimizar/maximizar/cerrar de Windows (dibujados sobre el overlay),
+    // así no hay que reimplementarlos ni se pierde el comportamiento estándar de la ventana.
+    windowOptions.titleBarStyle = 'hidden';
+    windowOptions.titleBarOverlay = { ...TITLE_BAR_OVERLAY_THEMES.dark };
+    windowOptions.backgroundColor = TITLE_BAR_OVERLAY_THEMES.dark.color;
   }
   mainWindow = new BrowserWindow(windowOptions);
 
@@ -3957,6 +3973,24 @@ ipcMain.handle('recalculate-trades-commission-for-account', async (event, payloa
   }
 
   return { success: true, updatedCount };
+});
+
+/**
+ * Recolorea la barra de título al cambiar de tema. Solo Windows: en el resto de plataformas la
+ * ventana no usa titleBarOverlay y la llamada lanzaría, así que se ignora sin más.
+ */
+ipcMain.handle('set-title-bar-theme', async (_event, theme) => {
+  if (process.platform !== 'win32') return { success: false, skipped: true };
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return { success: false };
+  const overlay = TITLE_BAR_OVERLAY_THEMES[theme === 'light' ? 'light' : 'dark'];
+  try {
+    win.setTitleBarOverlay(overlay);
+    return { success: true };
+  } catch (err) {
+    console.warn('[titleBarOverlay] no se pudo aplicar el tema:', err?.message || err);
+    return { success: false };
+  }
 });
 
 ipcMain.handle('add-backtest-trade', async (event, trade) => {

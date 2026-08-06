@@ -3874,12 +3874,77 @@ function updateThemeIcon() {
   }
 }
 
+/**
+ * Barra de título integrada en el tema (solo Windows).
+ *
+ * El proceso principal oculta la barra nativa blanca (`titleBarStyle: 'hidden'`) pero mantiene
+ * los botones minimizar/maximizar/cerrar, que Windows dibuja encima del contenido en la esquina
+ * superior derecha. A cambio, la web ocupa también esos primeros píxeles, así que aquí hay que:
+ *   1) crear una franja superior que sea la zona de arrastre de la ventana, y
+ *   2) bajar el contenido esa misma altura para que nada quede debajo.
+ *
+ * Se hace por JS y no en cada HTML porque la app tiene varias páginas (login, dashboard,
+ * estadísticas...) y así hay una sola implementación en vez de copiar el CSS en cada una.
+ */
+const APP_TITLEBAR_HEIGHT = 32;
+
+function setupIntegratedTitleBar() {
+  if (getBackendApi()?.platform !== 'win32') return;
+  if (document.body.classList.contains('overlay-titlebar')) return;
+  document.body.classList.add('overlay-titlebar');
+
+  if (!document.getElementById('appTitlebarStyles')) {
+    const style = document.createElement('style');
+    style.id = 'appTitlebarStyles';
+    style.textContent = `
+      body.overlay-titlebar { --titlebar-h: ${APP_TITLEBAR_HEIGHT}px; }
+      body.overlay-titlebar .app-titlebar-drag {
+        position: fixed; top: 0; left: 0; right: 0;
+        height: var(--titlebar-h);
+        z-index: 40;
+        background: var(--sidebar-bg);
+        border-bottom: 1px solid var(--border);
+        -webkit-app-region: drag;
+      }
+      /* Hueco sin arrastre donde Windows pinta los botones de la ventana, para no comerse sus clics. */
+      body.overlay-titlebar .app-titlebar-drag::after {
+        content: ''; position: absolute; top: 0; right: 0;
+        width: 150px; height: 100%;
+        -webkit-app-region: no-drag;
+      }
+      body.overlay-titlebar .sidebar { padding-top: calc(12px + var(--titlebar-h)); }
+      body.overlay-titlebar .sidebar.closed,
+      body.overlay-titlebar .sidebar.collapsed { padding-top: calc(14px + var(--titlebar-h)); }
+      body.overlay-titlebar .main-content { padding-top: calc(var(--page-padding-y, 24px) + var(--titlebar-h)); }
+      /* Páginas sin .main-content (p. ej. el login): basta con separar el contenido de la franja. */
+      body.overlay-titlebar > *:not(.app-titlebar-drag):not(.sidebar):not(.main-content):first-of-type {
+        margin-top: var(--titlebar-h);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  if (!document.querySelector('.app-titlebar-drag')) {
+    const strip = document.createElement('div');
+    strip.className = 'app-titlebar-drag';
+    strip.setAttribute('aria-hidden', 'true');
+    document.body.prepend(strip);
+  }
+}
+
 function applyTheme(theme) {
   const isLight = theme === 'light';
   document.body.classList.toggle('light', isLight);
   const themeToggle = document.getElementById('themeToggle');
   if (themeToggle) themeToggle.checked = isLight;
   updateThemeIcon();
+  // La barra de título de Windows está integrada en el tema: hay que recolorearla también,
+  // porque el proceso principal la pinta y no ve las clases CSS del renderer.
+  try {
+    getBackendApi()?.setTitleBarTheme?.(isLight ? 'light' : 'dark');
+  } catch (_err) {
+    /* En web/otras plataformas no existe: no es crítico. */
+  }
 }
 
 function toggleTheme() {
@@ -15884,6 +15949,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.__tradingJournalInitialized) return;
   window.__tradingJournalInitialized = true;
 
+  // Antes de checkAuth (que puede redirigir o tardar): así la franja de arrastre existe desde
+  // el primer pintado y la ventana nunca queda sin forma de moverse.
+  setupIntegratedTitleBar();
   injectBacktestingProStyles();
   const isAuth = await checkAuth();
   if (isAuth && window.electronAPI?.setUserId) {
