@@ -534,8 +534,11 @@ function resolveInitialWindowBounds() {
  * `height` reserva el alto de la franja que la app deja libre arriba para poder arrastrar.
  */
 const TITLE_BAR_OVERLAY_THEMES = {
-  dark: { color: '#0b1220', symbolColor: '#e2e8f0', height: 32 },
-  light: { color: '#ffffff', symbolColor: '#0f172a', height: 32 },
+  // Los botones caen siempre sobre la zona de contenido (arriba a la derecha), no sobre la
+  // barra lateral, así que el color debe ser --bg y no --sidebar-bg: si no, se ve un recuadro
+  // más oscuro alrededor de minimizar/maximizar/cerrar.
+  dark: { color: '#0f172a', symbolColor: '#e2e8f0', height: 32 },
+  light: { color: '#f6f8fb', symbolColor: '#0f172a', height: 32 },
 };
 
 // 🖥️ Ventana

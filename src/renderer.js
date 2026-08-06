@@ -3889,7 +3889,9 @@ function updateThemeIcon() {
 const APP_TITLEBAR_HEIGHT = 32;
 
 function setupIntegratedTitleBar() {
-  if (getBackendApi()?.platform !== 'win32') return;
+  // Se detecta por user agent y no por el preload: el preload va empaquetado por webpack y
+  // `process.platform` puede no llegar al renderer, con lo que esto no se activaría nunca.
+  if (!/Windows/i.test(navigator.userAgent)) return;
   if (document.body.classList.contains('overlay-titlebar')) return;
   document.body.classList.add('overlay-titlebar');
 
@@ -3898,12 +3900,13 @@ function setupIntegratedTitleBar() {
     style.id = 'appTitlebarStyles';
     style.textContent = `
       body.overlay-titlebar { --titlebar-h: ${APP_TITLEBAR_HEIGHT}px; }
+      /* Transparente a propósito: así la barra lateral conserva su color a la izquierda y el
+         contenido el suyo a la derecha, sin una banda de un tercer color cruzando la ventana. */
       body.overlay-titlebar .app-titlebar-drag {
         position: fixed; top: 0; left: 0; right: 0;
         height: var(--titlebar-h);
         z-index: 40;
-        background: var(--sidebar-bg);
-        border-bottom: 1px solid var(--border);
+        background: transparent;
         -webkit-app-region: drag;
       }
       /* Hueco sin arrastre donde Windows pinta los botones de la ventana, para no comerse sus clics. */
