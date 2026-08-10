@@ -96,10 +96,16 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
   const objectPath = `${userId}/${token}.html`;
   const html = buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title });
 
+  // Se sube como Buffer y no como Blob a propósito. Con un Blob, storage-js envía la petición
+  // como multipart y el tipo que acaba guardándose depende del propio Blob, no de la opción
+  // `contentType`: el archivo se guardaba como texto plano y el navegador mostraba el código
+  // fuente en vez de la página. Con un Buffer, el cuerpo se manda tal cual y la cabecera
+  // Content-Type es exactamente la que indicamos aquí.
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(objectPath, new Blob([html], { type: 'text/html; charset=utf-8' }), {
+    .upload(objectPath, Buffer.from(html, 'utf8'), {
       contentType: 'text/html; charset=utf-8',
+      cacheControl: '60',
       upsert: true,
     });
 
