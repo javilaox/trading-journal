@@ -13882,6 +13882,11 @@ async function openBacktestShareModal() {
     document.getElementById('btShareCloseFooter')?.addEventListener('click', close);
     document.getElementById('btShareGenerate')?.addEventListener('click', generateBacktestShareLink);
 
+    // El modal se crea después de que initCustomSelects() haya recorrido la página, así que su
+    // <select> se quedaba con el desplegable nativo de Windows, sin tematizar. Hay que envolverlo
+    // a mano al construirlo.
+    initCustomSelects(overlay);
+
     overlay.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-copy]');
       if (!btn) return;
@@ -13894,9 +13899,11 @@ async function openBacktestShareModal() {
   const payload = buildBacktestSharePayload();
   const summary = document.getElementById('btShareSummary');
   if (summary) {
+    // El backtesting no tiene filtro de fechas: siempre se comparte el rango completo testeado.
+    // Se muestra ese rango solo como información, no como un filtro aplicado.
     summary.textContent = payload.trades.length
-      ? `Se compartirán ${payload.trades.length} operaciones${payload.range ? ` (${payload.range})` : ''}. La página es de solo lectura: nadie podrá modificar nada.`
-      : 'No hay operaciones con los filtros actuales.';
+      ? `Se compartirán las ${payload.trades.length} operaciones del rango completo${payload.range ? `, del ${payload.range}` : ''}. La página es de solo lectura: nadie podrá modificar nada.`
+      : 'No hay operaciones que compartir.';
   }
   document.getElementById('btShareResult').hidden = true;
   document.getElementById('btShareMsg').textContent = '';

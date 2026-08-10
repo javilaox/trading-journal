@@ -48,6 +48,11 @@ function friendlyServiceError(error, fallback = 'Ha ocurrido un error inesperado
   if (code === '23505' || message.includes('duplicate key') || message.includes('unique constraint')) {
     return 'Ya existe un registro con esos datos.';
   }
+  // PGRST202: la función existe en el código pero no en la base. Casi siempre significa que
+  // falta aplicar una migración; el mensaje crudo de PostgREST no ayuda nada al usuario.
+  if (code === 'pgrst202' || message.includes('in the schema cache')) {
+    return 'Falta aplicar una actualización de la base de datos. Ejecuta la migración pendiente en Supabase e inténtalo de nuevo.';
+  }
   if (error.message) return String(error.message);
   return fallback;
 }
