@@ -3462,6 +3462,14 @@ let btResultCollapsed = false;
 let btStrategyRiskUnit = 'eur';
 const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
 
+/**
+ * Ajustes de backtesting (estrategias, cuentas, pares y sesiones).
+ *
+ * OJO: arranca con las listas vacías, así que guardar ANTES de haberlos cargado escribiría
+ * listas vacías en Supabase y borraría las estrategias del usuario. Por eso existe la bandera
+ * de abajo: mientras no se hayan cargado con éxito, no se permite guardar.
+ */
+let backtestingSettingsLoaded = false;
 let backtestingSettings = {
   accounts: [],
   strategies: [],
@@ -14816,7 +14824,7 @@ async function saveBacktestingStrategyFromModal() {
   const api = getBackendApi();
 
   if (api?.saveBacktestingSettings) {
-    const result = await api.saveBacktestingSettings(backtestingSettings);
+    const result = await persistBacktestingSettings(api);
 
     if (!result?.success) {
       showToast(
@@ -14857,7 +14865,7 @@ async function deleteBacktestingStrategy(strategyId) {
   const api = getBackendApi();
 
   if (api?.saveBacktestingSettings) {
-    const result = await api.saveBacktestingSettings(backtestingSettings);
+    const result = await persistBacktestingSettings(api);
 
     if (!result?.success) {
       showToast(
@@ -14877,11 +14885,33 @@ async function deleteBacktestingStrategy(strategyId) {
   showToast('Estrategia eliminada', 'success');
 }
 
+/**
+ * Único punto de guardado de los ajustes de backtesting.
+ *
+ * Se niega a escribir si los ajustes no se han cargado antes: en ese momento las listas están
+ * vacías por defecto y el guardado dejaría al usuario sin estrategias. Es justo la ventana que
+ * se abre al arrancar la app o al perder la sesión.
+ */
+async function persistBacktestingSettings(api, { allowEmptyLists = false } = {}) {
+  const backend = api || getBackendApi();
+  if (!backend?.saveBacktestingSettings) return { success: false, error: 'NO_API' };
+  if (!backtestingSettingsLoaded) {
+    console.warn('[backtesting] guardado bloqueado: los ajustes aún no se han cargado');
+    return { success: false, error: 'SETTINGS_NOT_LOADED' };
+  }
+  // allowEmptyLists solo se pasa cuando el usuario ha borrado algo a propósito: es lo que
+  // autoriza al servidor a dejar una lista vacía (ver upsertBacktestingSettings).
+  return backend.saveBacktestingSettings({ ...backtestingSettings, allowEmptyLists });
+}
+
 async function loadBacktestingSettings() {
   const api = getBackendApi();
   if (!api?.getBacktestingSettings) return;
   try {
     const result = await api.getBacktestingSettings();
+    // Sin fila todavía (primer uso) también cuenta como carga correcta: las listas vacías son
+    // el estado real, no un fallo.
+    if (result?.success) backtestingSettingsLoaded = true;
     if (result?.success && result.data) {
       const d = result.data;
       const dr = d.default_risk != null ? Number(d.default_risk) : 100;
@@ -14914,7 +14944,7 @@ async function saveBacktestingSettings() {
   backtestingSettings.default_strategy = '';
   backtestingSettings.default_asset = '';
 
-  const result = await api.saveBacktestingSettings(backtestingSettings);
+  const result = await persistBacktestingSettings(api);
 
   if (!result?.success) {
     showToast(
@@ -14955,7 +14985,7 @@ async function addBacktestingItem(key, inputId) {
   const api = getBackendApi();
 
   if (api?.saveBacktestingSettings) {
-    const result = await api.saveBacktestingSettings(backtestingSettings);
+    const result = await persistBacktestingSettings(api);
 
     if (!result?.success) {
       showToast('No se pudo guardar configuración backtesting', 'error');
@@ -14978,7 +15008,8 @@ async function removeBacktestingItem(key, value) {
   renderBacktestingSettings();
   const api = getBackendApi();
   if (api?.saveBacktestingSettings) {
-    const result = await api.saveBacktestingSettings(backtestingSettings);
+    // Borrado explícito del usuario: aquí sí es legítimo quedarse sin ningún elemento.
+    const result = await persistBacktestingSettings(api, { allowEmptyLists: true });
     if (!result?.success) {
       showToast('No se pudo guardar configuración backtesting', 'error');
       return;
@@ -15902,6 +15933,14 @@ function applyBacktestingSessionQuickRange(range) {
 
   startInput.value = formatDateInputValue(start);
   endInput.value = formatDateInputValue(end);
+
+  // Los campos de fecha están envueltos por el datepicker propio, que solo refresca su etiqueta
+  // visible al recibir el evento 'change' del input nativo. Sin esto la fecha sí se asignaba,
+  // pero los recuadros seguían mostrando "DD-MM-AAAA" y parecía que los botones no hacían nada.
+  startInput.dispatchEvent(new Event('change', { bubbles: true }));
+  endInput.dispatchEvent(new Event('change', { bubbles: true }));
+  syncCustomDatepicker('btSessionStartDate');
+  syncCustomDatepicker('btSessionEndDate');
 }
 
 function populateBacktestingSessionModalForm() {
@@ -16201,7 +16240,7 @@ async function saveBtSessionTagFromModal() {
 
   const api = getBackendApi();
   if (api?.saveBacktestingSettings) {
-    const result = await api.saveBacktestingSettings(backtestingSettings);
+    const result = await persistBacktestingSettings(api);
     if (!result?.success) {
       showToast('No se pudo guardar la etiqueta', 'error');
       return;

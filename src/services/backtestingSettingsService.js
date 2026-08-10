@@ -31,6 +31,11 @@ function parseStrategiesFromDb(val) {
   return [];
 }
 
+/** Las estrategias pueden ser objetos; el resto de listas son cadenas. */
+function parseJsonArrayLike(key, value) {
+  return key === 'strategies' ? parseStrategiesFromDb(value) : parseJsonArray(value);
+}
+
 function normalizeRow(row) {
   if (!row) return row;
   return {
@@ -68,12 +73,39 @@ async function upsertBacktestingSettings(settings) {
     return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
   }
 
+  // Red de seguridad contra el borrado accidental de las listas del usuario.
+  //
+  // Estas cuatro listas son datos que cuesta reconstruir (estrategias sobre todo), y el upsert
+  // reemplaza la fila entera. Si llega una lista vacía pero en la base hay contenido, casi
+  // siempre significa que la app guardó antes de terminar de cargar, no que el usuario haya
+  // borrado sus estrategias una a una. En ese caso se conserva lo que ya había.
+  //
+  // Vaciar de verdad sigue siendo posible: quien lo haga a propósito envía allowEmptyLists.
+  const { data: existing } = await supabase
+    .from('backtesting_settings')
+    .select('accounts, strategies, assets, sessions')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const keepIfWouldWipe = (key) => {
+    const incoming = Array.isArray(settings[key]) ? settings[key] : [];
+    if (incoming.length || settings.allowEmptyLists === true) return incoming;
+    const stored = existing ? parseJsonArrayLike(key, existing[key]) : [];
+    if (stored.length) {
+      console.warn(
+        `[backtesting_settings] se ignora el vaciado de "${key}": llegaba vacío y hay ${stored.length} elementos guardados`
+      );
+      return stored;
+    }
+    return incoming;
+  };
+
   const payload = {
     user_id: userId,
-    accounts: settings.accounts || [],
-    strategies: settings.strategies || [],
-    assets: settings.assets || [],
-    sessions: settings.sessions || [],
+    accounts: keepIfWouldWipe('accounts'),
+    strategies: keepIfWouldWipe('strategies'),
+    assets: keepIfWouldWipe('assets'),
+    sessions: keepIfWouldWipe('sessions'),
     default_account: settings.default_account || null,
     default_strategy: settings.default_strategy || null,
     default_asset: settings.default_asset || null,
