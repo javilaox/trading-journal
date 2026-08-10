@@ -5,6 +5,9 @@ console.log('PRELOAD OK');
 const api = {
   // Exportación de informes a Excel / PDF.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  createBacktestShareLink: (options) => ipcRenderer.invoke('create-backtest-share-link', options),
+  listBacktestShareLinks: () => ipcRenderer.invoke('list-backtest-share-links'),
+  revokeBacktestShareLink: (token) => ipcRenderer.invoke('revoke-backtest-share-link', token),
   exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
   openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
   // Barra de título integrada: hay que recolorearla al cambiar de tema.
@@ -154,6 +157,9 @@ contextBridge.exposeInMainWorld('api', {
   // OJO: esta lista es explícita, no un spread de `api`. Todo lo que se añada arriba hay que
   // exponerlo también aquí o el renderer no lo verá (window.api tiene prioridad sobre electronAPI).
   getAppVersion: api.getAppVersion,
+  createBacktestShareLink: api.createBacktestShareLink,
+  listBacktestShareLinks: api.listBacktestShareLinks,
+  revokeBacktestShareLink: api.revokeBacktestShareLink,
   exportReport: api.exportReport,
   openExportedFile: api.openExportedFile,
   setTitleBarTheme: api.setTitleBarTheme,

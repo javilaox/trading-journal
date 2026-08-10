@@ -1,0 +1,558 @@
+/**
+ * Genera la página que se comparte por enlace.
+ *
+ * Punto clave: el HTML NO lleva ningún dato del backtest. Solo el token del informe y la clave
+ * anónima de Supabase (que es pública por diseño). Los datos se piden al RPC
+ * `open_backtest_report`, que es quien valida la contraseña y el cupo de dispositivos en el
+ * servidor. Si los datos viajaran dentro del archivo, ambas protecciones serían decorativas:
+ * bastaría con abrir el código fuente de la página.
+ *
+ * La página es de solo lectura pero interactiva: filtros, orden, desplegables y gráficas se
+ * calculan en el navegador de quien la abre a partir del JSON recibido.
+ */
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title }) {
+  const safeTitle = escapeHtml(title || 'Resultados de backtesting');
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>${safeTitle}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --card:#131f37; --border:rgba(148,163,184,.18);
+    --text:#e2e8f0; --muted:#94a3b8; --green:#22c55e; --red:#ef4444; --accent:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  h2{font-size:1.05rem;margin:0 0 12px}
+  .muted{color:var(--muted)}
+  .small{font-size:.8rem}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+  .kpi span{display:block;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+  .kpi strong{display:block;font-size:1.35rem;margin-top:4px;font-variant-numeric:tabular-nums}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;
+     cursor:pointer;user-select:none;position:sticky;top:0;background:var(--card)}
+  th.no-sort{cursor:default}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tbody tr.row-main{cursor:pointer}
+  tbody tr.row-main:hover{background:rgba(255,255,255,.03)}
+  tr.row-detail td{background:rgba(255,255,255,.02);white-space:normal}
+  .badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
+  .badge.tp{background:rgba(34,197,94,.15);color:var(--green)}
+  .badge.sl{background:rgba(239,68,68,.15);color:var(--red)}
+  .badge.be{background:rgba(148,163,184,.15);color:var(--muted)}
+  .filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  select,input[type=search]{background:rgba(255,255,255,.04);color:var(--text);
+       border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:.85rem;font-family:inherit}
+  .table-scroll{max-height:520px;overflow:auto}
+  .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:.78rem}
+  .chip.ok{color:var(--green);border-color:rgba(34,197,94,.4)}
+  .hours{display:flex;align-items:flex-end;gap:3px;height:130px;margin-top:10px}
+  .hour{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+  .hour-stack{width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+  .hour-tp{background:var(--green)} .hour-sl{background:var(--red)}
+  .hour-label{font-size:.62rem;color:var(--muted)}
+  /* Puerta de contraseña: ocupa la pantalla hasta que el servidor valida el acceso. */
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg);z-index:10}
+  #gate .box{width:min(400px,100%);text-align:center}
+  #gate input{width:100%;text-align:center;letter-spacing:.12em;font-size:1rem;padding:12px}
+  #gate button{width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;
+       background:var(--green);color:#04210f;font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit}
+  #gate button:disabled{opacity:.6;cursor:default}
+  #gateError{margin-top:12px;color:var(--red);font-size:.85rem;min-height:20px}
+  #app{display:none}
+  footer{color:var(--muted);font-size:.75rem;text-align:center;margin-top:28px}
+  @media(max-width:640px){ th,td{padding:7px 8px} .wrap{padding:16px 12px 48px} }
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <h1>${safeTitle}</h1>
+    <p class="muted small">Introduce la contraseña que te han facilitado para ver los resultados.</p>
+    <input id="pwd" type="password" autocomplete="off" placeholder="Contraseña" />
+    <button id="enter" type="button">Ver resultados</button>
+    <div id="gateError" role="alert"></div>
+  </div>
+</div>
+
+<div id="app" class="wrap">
+  <header style="margin-bottom:18px">
+    <h1 id="title">${safeTitle}</h1>
+    <p class="muted small" id="subtitle"></p>
+  </header>
+
+  <section class="card">
+    <h2>Resumen</h2>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="card">
+    <h2>Curva de rentabilidad</h2>
+    <canvas id="equityChart" height="110"></canvas>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <h2>Distribución de resultados</h2>
+      <canvas id="resultChart" height="180"></canvas>
+    </section>
+    <section class="card">
+      <h2>Rendimiento por par</h2>
+      <div class="table-scroll"><table id="pairTable">
+        <thead><tr><th class="no-sort">Par</th><th class="num no-sort">Ops</th><th class="num no-sort">Acierto</th><th class="num no-sort">PnL</th></tr></thead>
+        <tbody></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="card" id="hoursCard">
+    <h2>¿A qué horas gana y a qué horas pierde?</h2>
+    <p class="muted small">Por hora de entrada. Verde = TP, rojo = SL (los BE no cuentan).</p>
+    <div class="hours" id="hours"></div>
+  </section>
+
+  <section class="card" id="metricsCard">
+    <h2>Análisis por métricas</h2>
+    <p class="muted small">Resultados cumpliendo cada métrica frente a no cumplirla.</p>
+    <div class="table-scroll"><table id="metricsTable">
+      <thead><tr><th class="no-sort">Métrica</th><th class="num no-sort">Cumpliéndola</th><th class="num no-sort">Sin cumplirla</th><th class="no-sort">Conclusión</th></tr></thead>
+      <tbody></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Operaciones</h2>
+    <div class="filters">
+      <select id="fSession"><option value="">Todas las sesiones</option></select>
+      <select id="fAsset"><option value="">Todos los pares</option></select>
+      <select id="fResult">
+        <option value="">Todos los resultados</option>
+        <option value="TP">Solo TP</option>
+        <option value="SL">Solo SL</option>
+        <option value="BE">Solo BE</option>
+      </select>
+      <select id="fDirection">
+        <option value="">Compras y ventas</option>
+        <option value="LONG">Solo compras</option>
+        <option value="SHORT">Solo ventas</option>
+      </select>
+      <input id="fSearch" type="search" placeholder="Buscar en notas..." />
+    </div>
+    <p class="muted small" id="tradesCount"></p>
+    <div class="table-scroll"><table id="tradesTable">
+      <thead><tr>
+        <th data-sort="date">Fecha</th>
+        <th data-sort="asset">Par</th>
+        <th data-sort="direction">Dir.</th>
+        <th data-sort="result">Res.</th>
+        <th class="num" data-sort="pnl">PnL</th>
+        <th class="num" data-sort="rr_result">R</th>
+        <th data-sort="entry_time">Entrada</th>
+        <th data-sort="session">Sesión</th>
+      </tr></thead>
+      <tbody></tbody></table></div>
+    <p class="muted small" style="margin-top:10px">Pulsa una fila para ver sus métricas y notas.</p>
+  </section>
+
+  <footer>
+    Generado con Trading Journal · Vista de solo lectura
+  </footer>
+</div>
+
+<script>
+(function () {
+  var SUPABASE_URL = ${JSON.stringify(supabaseUrl)};
+  var ANON_KEY = ${JSON.stringify(supabaseAnonKey)};
+  var TOKEN = ${JSON.stringify(token)};
+
+  // Identificador de dispositivo: aleatorio y guardado en el navegador. Es lo que permite
+  // limitar cuántos dispositivos distintos abren el enlace.
+  function deviceId() {
+    var k = 'tj_device_id';
+    var v = null;
+    try { v = localStorage.getItem(k); } catch (e) {}
+    if (!v) {
+      v = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+      try { localStorage.setItem(k, v); } catch (e) {}
+    }
+    return v;
+  }
+
+  var ERRORS = {
+    NOT_FOUND: 'Este enlace no existe o ha sido revocado.',
+    BAD_PASSWORD: 'Contraseña incorrecta.',
+    DEVICE_LIMIT: 'Se ha alcanzado el número máximo de dispositivos que pueden abrir este enlace.',
+    NO_DEVICE: 'No se ha podido identificar el dispositivo.'
+  };
+
+  var gate = document.getElementById('gate');
+  var pwd = document.getElementById('pwd');
+  var btn = document.getElementById('enter');
+  var err = document.getElementById('gateError');
+
+  function open() {
+    var value = pwd.value.trim();
+    if (!value) { err.textContent = 'Escribe la contraseña.'; return; }
+    btn.disabled = true;
+    err.textContent = 'Comprobando...';
+
+    fetch(SUPABASE_URL + '/rest/v1/rpc/open_backtest_report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: 'Bearer ' + ANON_KEY },
+      body: JSON.stringify({ p_token: TOKEN, p_password: value, p_device: deviceId() })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.disabled = false;
+        if (!data || data.ok !== true) {
+          err.textContent = (data && ERRORS[data.error]) || 'No se ha podido abrir el informe.';
+          return;
+        }
+        err.textContent = '';
+        gate.style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        render(data);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        err.textContent = 'No hay conexión con el servidor. Inténtalo de nuevo.';
+      });
+  }
+
+  btn.addEventListener('click', open);
+  pwd.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
+  pwd.focus();
+
+  /* ------------------------------ Render ------------------------------ */
+
+  var TRADES = [], SESSIONS = {}, sortKey = 'date', sortDir = 1;
+
+  var money = function (v) { return (v >= 0 ? '+' : '') + Number(v || 0).toFixed(2) + '\\u20AC'; };
+  var esDate = function (v) {
+    var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(v || ''));
+    return m ? m[3] + '-' + m[2] + '-' + m[1] : (v || '');
+  };
+  var tone = function (v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; };
+  var esc = function (s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  };
+
+  function render(data) {
+    var p = data.payload || {};
+    TRADES = (p.trades || []).slice();
+    (p.sessions || []).forEach(function (s) { SESSIONS[String(s.id)] = s.name; });
+
+    document.getElementById('title').textContent = data.title || 'Resultados de backtesting';
+    var sub = [];
+    if (p.range) sub.push(p.range);
+    sub.push(TRADES.length + (TRADES.length === 1 ? ' operación' : ' operaciones'));
+    if (data.created_at) sub.push('Generado el ' + esDate(data.created_at));
+    document.getElementById('subtitle').textContent = sub.join('  ·  ');
+
+    fillSelect('fSession', (p.sessions || []).map(function (s) { return { v: String(s.id), t: s.name }; }));
+    fillSelect('fAsset', uniq(TRADES.map(function (t) { return t.asset; })).map(function (a) { return { v: a, t: a }; }));
+
+    renderKpis(TRADES, p);
+    renderEquity(TRADES);
+    renderResultChart(TRADES);
+    renderPairs(TRADES);
+    renderHours(TRADES);
+    renderMetrics(TRADES, p.metrics || []);
+    renderTrades();
+
+    ['fSession', 'fAsset', 'fResult', 'fDirection'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', renderTrades);
+    });
+    document.getElementById('fSearch').addEventListener('input', renderTrades);
+
+    document.querySelectorAll('#tradesTable th[data-sort]').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        sortDir = sortKey === k ? -sortDir : 1;
+        sortKey = k;
+        renderTrades();
+      });
+    });
+  }
+
+  function uniq(list) {
+    var out = [], seen = {};
+    list.forEach(function (v) { if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+  }
+
+  function fillSelect(id, items) {
+    var sel = document.getElementById(id);
+    items.forEach(function (it) {
+      var o = document.createElement('option');
+      o.value = it.v; o.textContent = it.t;
+      sel.appendChild(o);
+    });
+  }
+
+  function summarize(list) {
+    var wins = 0, losses = 0, be = 0, profit = 0, loss = 0, rSum = 0;
+    list.forEach(function (t) {
+      var pnl = Number(t.pnl || 0);
+      rSum += Number(t.rr_result || 0);
+      if (t.result === 'TP') { wins++; profit += pnl; }
+      else if (t.result === 'SL') { losses++; loss += Math.abs(pnl); }
+      else { be++; if (pnl > 0) profit += pnl; if (pnl < 0) loss += Math.abs(pnl); }
+    });
+    var n = list.length;
+    return {
+      n: n, wins: wins, losses: losses, be: be, rSum: rSum,
+      pnl: profit - loss,
+      winrate: n ? (wins / n) * 100 : 0,
+      pf: loss > 0 ? profit / loss : null
+    };
+  }
+
+  function maxDrawdown(list) {
+    var peak = 0, equity = 0, dd = 0;
+    ordered(list).forEach(function (t) {
+      equity += Number(t.pnl || 0);
+      if (equity > peak) peak = equity;
+      dd = Math.min(dd, equity - peak);
+    });
+    return dd;
+  }
+
+  function ordered(list) {
+    return list.slice().sort(function (a, b) {
+      return String(a.date).localeCompare(String(b.date)) || Number(a.id || 0) - Number(b.id || 0);
+    });
+  }
+
+  function renderKpis(list, p) {
+    var s = summarize(list);
+    var items = [
+      ['Operaciones', String(s.n), ''],
+      ['Ratio de aciertos', s.n ? s.winrate.toFixed(1) + '%' : '—', ''],
+      ['PnL total', money(s.pnl), tone(s.pnl)],
+      ['R acumulada', (s.rSum >= 0 ? '+' : '') + s.rSum.toFixed(2), tone(s.rSum)],
+      ['Factor de beneficio', s.pf == null ? '—' : s.pf.toFixed(2), ''],
+      ['TP / SL / BE', s.wins + ' / ' + s.losses + ' / ' + s.be, ''],
+      ['Max drawdown', money(maxDrawdown(list)), 'neg']
+    ];
+    if (p.capital) {
+      items.push(['Rentabilidad', ((s.pnl / p.capital) * 100).toFixed(2) + '%', tone(s.pnl)]);
+    }
+    document.getElementById('kpis').innerHTML = items.map(function (i) {
+      return '<div class="kpi"><span>' + esc(i[0]) + '</span><strong class="' + i[2] + '">' + esc(i[1]) + '</strong></div>';
+    }).join('');
+  }
+
+  function renderEquity(list) {
+    var rows = ordered(list), equity = 0;
+    var labels = [], values = [];
+    rows.forEach(function (t) {
+      equity += Number(t.pnl || 0);
+      labels.push(esDate(t.date));
+      values.push(Number(equity.toFixed(2)));
+    });
+    new Chart(document.getElementById('equityChart'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values, borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0,
+          fill: true, backgroundColor: 'rgba(56,189,248,.12)', tension: .25
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: 'rgba(148,163,184,.08)' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.08)' } }
+        }
+      }
+    });
+  }
+
+  function renderResultChart(list) {
+    var s = summarize(list);
+    new Chart(document.getElementById('resultChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['TP', 'SL', 'BE'],
+        datasets: [{ data: [s.wins, s.losses, s.be], backgroundColor: ['#22c55e', '#ef4444', '#94a3b8'], borderWidth: 0 }]
+      },
+      options: { responsive: true, plugins: { legend: { labels: { color: '#e2e8f0' } } } }
+    });
+  }
+
+  function renderPairs(list) {
+    var map = {};
+    list.forEach(function (t) {
+      var k = t.asset || '—';
+      if (!map[k]) map[k] = { n: 0, wins: 0, pnl: 0 };
+      map[k].n++; map[k].pnl += Number(t.pnl || 0);
+      if (t.result === 'TP') map[k].wins++;
+    });
+    var rows = Object.keys(map).map(function (k) {
+      var v = map[k];
+      return '<tr><td>' + esc(k) + '</td><td class="num">' + v.n + '</td><td class="num">' +
+        (v.n ? ((v.wins / v.n) * 100).toFixed(1) + '%' : '—') + '</td><td class="num ' + tone(v.pnl) + '">' +
+        money(v.pnl) + '</td></tr>';
+    });
+    document.querySelector('#pairTable tbody').innerHTML = rows.join('') ||
+      '<tr><td colspan="4" class="muted">Sin datos</td></tr>';
+  }
+
+  function renderHours(list) {
+    var hours = {};
+    list.forEach(function (t) {
+      var m = /^(\\d{1,2}):/.exec(String(t.entry_time || ''));
+      if (!m) return;
+      var h = Number(m[1]);
+      if (!hours[h]) hours[h] = { tp: 0, sl: 0 };
+      if (t.result === 'TP') hours[h].tp++;
+      else if (t.result === 'SL') hours[h].sl++;
+    });
+    var keys = Object.keys(hours).map(Number).sort(function (a, b) { return a - b; })
+      .filter(function (h) { return hours[h].tp + hours[h].sl > 0; });
+    if (!keys.length) { document.getElementById('hoursCard').style.display = 'none'; return; }
+    var max = Math.max.apply(null, keys.map(function (h) { return hours[h].tp + hours[h].sl; }));
+    document.getElementById('hours').innerHTML = keys.map(function (h) {
+      var v = hours[h], total = v.tp + v.sl;
+      var height = Math.max(10, (total / max) * 100);
+      return '<div class="hour" title="' + h + ':00 · ' + v.tp + ' TP · ' + v.sl + ' SL">' +
+        '<div class="hour-stack" style="height:' + height + '%">' +
+        '<div class="hour-tp" style="height:' + ((v.tp / total) * 100) + '%"></div>' +
+        '<div class="hour-sl" style="height:' + ((v.sl / total) * 100) + '%"></div></div>' +
+        '<span class="hour-label">' + (h < 10 ? '0' + h : h) + '</span></div>';
+    }).join('');
+  }
+
+  function renderMetrics(list, names) {
+    if (!names.length) { document.getElementById('metricsCard').style.display = 'none'; return; }
+    var rows = names.map(function (name) {
+      var yes = [], no = [];
+      list.forEach(function (t) {
+        var v = (t.custom_metrics || {})[name];
+        if (v === true) yes.push(t); else if (v === false) no.push(t);
+      });
+      var a = summarize(yes), b = summarize(no);
+      var cell = function (s) {
+        return s.n
+          ? '<strong class="' + tone(s.pnl) + '">' + money(s.pnl) + '</strong><br><span class="muted small">' +
+            s.n + ' ops · ' + s.winrate.toFixed(1) + '%</span>'
+          : '<span class="muted">—</span>';
+      };
+      var verdict = '<span class="muted">Sin datos todavía</span>';
+      if (a.n && b.n) {
+        var diff = a.pnl - b.pnl;
+        verdict = diff > 0
+          ? '<span class="pos">Mejor cumpliéndola (' + money(diff) + ')</span>'
+          : diff < 0 ? '<span class="neg">Peor cumpliéndola (' + money(diff) + ')</span>'
+          : '<span class="muted">Sin diferencia</span>';
+      } else if (a.n) verdict = '<span class="muted">Siempre se cumple</span>';
+      else if (b.n) verdict = '<span class="muted">Nunca se cumple</span>';
+      return '<tr><td>' + esc(name) + '</td><td class="num">' + cell(a) + '</td><td class="num">' +
+        cell(b) + '</td><td>' + verdict + '</td></tr>';
+    });
+    document.querySelector('#metricsTable tbody').innerHTML = rows.join('');
+  }
+
+  function filtered() {
+    var se = document.getElementById('fSession').value;
+    var as = document.getElementById('fAsset').value;
+    var re = document.getElementById('fResult').value;
+    var di = document.getElementById('fDirection').value;
+    var q = document.getElementById('fSearch').value.trim().toLowerCase();
+    return TRADES.filter(function (t) {
+      if (se && String(t.session_id) !== se) return false;
+      if (as && t.asset !== as) return false;
+      if (re && t.result !== re) return false;
+      if (di && String(t.direction || '').toUpperCase() !== di) return false;
+      if (q && String(t.notes || '').toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function renderTrades() {
+    var list = filtered().slice().sort(function (a, b) {
+      var x = a[sortKey], y = b[sortKey];
+      if (typeof x === 'number' || typeof y === 'number') return (Number(x || 0) - Number(y || 0)) * sortDir;
+      return String(x || '').localeCompare(String(y || '')) * sortDir;
+    });
+
+    var s = summarize(list);
+    document.getElementById('tradesCount').innerHTML =
+      list.length + ' operaciones · PnL <span class="' + tone(s.pnl) + '">' + money(s.pnl) + '</span> · ' +
+      s.winrate.toFixed(1) + '% de acierto';
+
+    var body = document.querySelector('#tradesTable tbody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="8" class="muted">No hay operaciones con estos filtros.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = list.map(function (t, i) {
+      var res = String(t.result || 'BE').toUpperCase();
+      var cls = res === 'TP' ? 'tp' : res === 'SL' ? 'sl' : 'be';
+      var dir = String(t.direction || '').toUpperCase() === 'SHORT' ? 'Venta' : 'Compra';
+      var metrics = Object.keys(t.custom_metrics || {}).filter(function (k) { return k !== 'risk_eur'; });
+      var detail = '';
+      if (metrics.length || t.notes) {
+        detail = '<tr class="row-detail" id="d' + i + '" style="display:none"><td colspan="8">' +
+          (metrics.length
+            ? '<div class="chips" style="margin-bottom:8px">' + metrics.map(function (m) {
+                var on = t.custom_metrics[m] === true;
+                return '<span class="chip ' + (on ? 'ok' : '') + '">' + (on ? '\\u2713 ' : '\\u2715 ') + esc(m) + '</span>';
+              }).join('') + '</div>'
+            : '') +
+          (t.notes ? '<div class="muted small">' + esc(t.notes) + '</div>' : '') +
+          '</td></tr>';
+      }
+      return '<tr class="row-main" data-detail="d' + i + '">' +
+        '<td>' + esDate(t.date) + '</td>' +
+        '<td>' + esc(t.asset || '—') + '</td>' +
+        '<td>' + dir + '</td>' +
+        '<td><span class="badge ' + cls + '">' + res + '</span></td>' +
+        '<td class="num ' + tone(Number(t.pnl)) + '">' + money(t.pnl) + '</td>' +
+        '<td class="num ' + tone(Number(t.rr_result)) + '">' + Number(t.rr_result || 0).toFixed(2) + '</td>' +
+        '<td>' + esc(t.entry_time || '—') + '</td>' +
+        '<td>' + esc(SESSIONS[String(t.session_id)] || '—') + '</td>' +
+        '</tr>' + detail;
+    }).join('');
+
+    body.querySelectorAll('tr.row-main').forEach(function (tr) {
+      tr.addEventListener('click', function () {
+        var d = document.getElementById(tr.getAttribute('data-detail'));
+        if (d) d.style.display = d.style.display === 'none' ? 'table-row' : 'none';
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+module.exports = { buildViewerHtml };

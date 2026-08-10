@@ -786,6 +786,24 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
 #backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 #backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+/* Modal de compartir resultados por enlace. */
+#btShareOverlay .bt-share-modal{max-width:min(620px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
+#btShareOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
+#btShareOverlay .modal-header h2{margin:0;font-size:1.05rem}
+#btShareOverlay .modal-close{background:transparent;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;border-radius:8px}
+#btShareOverlay .modal-close:hover{color:var(--text);background:var(--hover-soft,rgba(148,163,184,.14))}
+#btShareOverlay .pro-modal-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 20px;scrollbar-color:rgba(148,163,184,.35) transparent}
+#btShareOverlay .pro-modal-footer{flex-shrink:0;padding:14px 24px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end}
+.bt-share-field{margin-top:16px}
+.bt-share-field label{display:block;color:var(--text-muted);font-size:.75rem;margin-bottom:4px}
+.bt-share-copy{display:flex;gap:8px}
+.bt-share-copy input{flex:1;min-width:0;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:.85rem;font-family:inherit}
+.bt-share-password{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;font-size:1rem!important;text-align:center}
+.bt-share-links{margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
+.bt-share-links h4{margin:0 0 10px;font-size:.85rem}
+.bt-share-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.bt-share-item-actions{display:flex;gap:8px}
+.bt-share-item-actions .button{padding:5px 10px;font-size:.78rem}
 /* Ficha de solo lectura de una operacion de backtesting (se abre pulsando la tarjeta). */
 #btTradeDetailOverlay .bt-detail-modal{max-width:min(720px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
 #btTradeDetailOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 16px;flex-shrink:0}
@@ -13756,6 +13774,239 @@ function openBacktestingTradeDetail(trade) {
   overlay.classList.add('active');
 }
 
+/* ==================== Compartir resultados de backtesting por enlace ==================== */
+
+/** Nombres de las métricas checkbox activas, que son las que el visor puede analizar. */
+function getShareableBacktestingMetricNames() {
+  return (cachedBacktestingMetrics || [])
+    .filter((m) => m.is_active && m.metric_type === 'checkbox')
+    .map((m) => m.name)
+    .filter(Boolean);
+}
+
+function buildBacktestSharePayload() {
+  const trades = getFilteredBacktestingTrades();
+  const visibleSessionIds = new Set(trades.map((t) => String(t.session_id)));
+  const sessions = (cachedBacktestingSessions || []).filter(
+    (s) => selectedBacktestingSessionIds.includes('all') || visibleSessionIds.has(String(s.id))
+  );
+
+  const dates = trades.map((t) => String(t.date || '').slice(0, 10)).filter(Boolean).sort();
+  const range = dates.length ? `${formatDateEs(dates[0])} – ${formatDateEs(dates[dates.length - 1])}` : '';
+
+  const title = sessions.length === 1 ? sessions[0].name : 'Resultados de backtesting';
+  // El capital solo tiene sentido para calcular rentabilidad si hay una única sesión.
+  const capital = sessions.length === 1 ? Number(sessions[0].account_capital || 0) : 0;
+
+  return { title, trades, sessions, metrics: getShareableBacktestingMetricNames(), capital, range };
+}
+
+async function openBacktestShareModal() {
+  let overlay = document.getElementById('btShareOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'btShareOverlay';
+    overlay.className = 'modal-overlay app-modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal app-modal bt-share-modal">
+        <div class="modal-header">
+          <h2>Compartir resultados</h2>
+          <button type="button" class="modal-close" id="btShareClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="pro-modal-scroll">
+          <p class="muted small" id="btShareSummary"></p>
+
+          <div class="field" style="margin-top:14px">
+            <label for="btShareMaxDevices">Dispositivos que podrán abrirlo</label>
+            <select id="btShareMaxDevices" class="input">
+              <option value="1">1 dispositivo</option>
+              <option value="3" selected>3 dispositivos</option>
+              <option value="5">5 dispositivos</option>
+              <option value="10">10 dispositivos</option>
+              <option value="25">25 dispositivos</option>
+            </select>
+            <p class="muted small" style="margin-top:6px">
+              Se cuenta cada navegador distinto que abra el enlace. Al alcanzar el límite, los
+              nuevos dispositivos ya no podrán entrar. Borrar los datos del navegador cuenta
+              como un dispositivo nuevo.
+            </p>
+          </div>
+
+          <button type="button" class="button button-save" id="btShareGenerate" style="width:100%;margin-top:6px">
+            Generar enlace y contraseña
+          </button>
+          <p class="form-hint" id="btShareMsg"></p>
+
+          <div id="btShareResult" hidden>
+            <div class="bt-share-field">
+              <label>Enlace</label>
+              <div class="bt-share-copy">
+                <input type="text" id="btShareUrl" readonly />
+                <button type="button" class="button button-cancel" data-copy="btShareUrl">Copiar</button>
+              </div>
+            </div>
+            <div class="bt-share-field">
+              <label>Contraseña</label>
+              <div class="bt-share-copy">
+                <input type="text" id="btSharePassword" readonly class="bt-share-password" />
+                <button type="button" class="button button-cancel" data-copy="btSharePassword">Copiar</button>
+              </div>
+              <p class="muted small">Guárdala ahora: no se almacena en claro y no se puede volver a consultar.</p>
+            </div>
+          </div>
+
+          <div class="bt-share-links">
+            <h4>Enlaces generados</h4>
+            <div id="btShareList"></div>
+          </div>
+        </div>
+        <div class="pro-modal-footer">
+          <button type="button" class="button button-cancel" id="btShareCloseFooter">Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.classList.remove('active');
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.getElementById('btShareClose')?.addEventListener('click', close);
+    document.getElementById('btShareCloseFooter')?.addEventListener('click', close);
+    document.getElementById('btShareGenerate')?.addEventListener('click', generateBacktestShareLink);
+
+    overlay.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-copy]');
+      if (!btn) return;
+      const input = document.getElementById(btn.dataset.copy);
+      if (!input?.value) return;
+      void navigator.clipboard.writeText(input.value).then(() => showToast('Copiado', 'success'));
+    });
+  }
+
+  const payload = buildBacktestSharePayload();
+  const summary = document.getElementById('btShareSummary');
+  if (summary) {
+    summary.textContent = payload.trades.length
+      ? `Se compartirán ${payload.trades.length} operaciones${payload.range ? ` (${payload.range})` : ''}. La página es de solo lectura: nadie podrá modificar nada.`
+      : 'No hay operaciones con los filtros actuales.';
+  }
+  document.getElementById('btShareResult').hidden = true;
+  document.getElementById('btShareMsg').textContent = '';
+
+  overlay.classList.add('active');
+  void refreshBacktestShareList();
+}
+
+async function generateBacktestShareLink() {
+  const backend = getBackendApi();
+  const msg = document.getElementById('btShareMsg');
+  const btn = document.getElementById('btShareGenerate');
+  if (!backend?.createBacktestShareLink) return;
+
+  const payload = buildBacktestSharePayload();
+  if (!payload.trades.length) {
+    if (msg) {
+      msg.textContent = 'No hay operaciones que compartir con los filtros actuales.';
+      msg.className = 'form-hint error';
+    }
+    return;
+  }
+
+  btn.disabled = true;
+  if (msg) {
+    msg.textContent = 'Generando enlace...';
+    msg.className = 'form-hint';
+  }
+
+  try {
+    const result = await backend.createBacktestShareLink({
+      ...payload,
+      maxDevices: Number(document.getElementById('btShareMaxDevices')?.value) || 3,
+    });
+
+    if (!result?.success) {
+      if (msg) {
+        msg.textContent =
+          typeof result?.error === 'string' ? result.error : 'No se pudo generar el enlace.';
+        msg.className = 'form-hint error';
+      }
+      return;
+    }
+
+    document.getElementById('btShareUrl').value = result.data.url;
+    document.getElementById('btSharePassword').value = result.data.password;
+    document.getElementById('btShareResult').hidden = false;
+    if (msg) {
+      msg.textContent = 'Enlace listo. Envía el enlace y la contraseña por separado.';
+      msg.className = 'form-hint success';
+    }
+    void refreshBacktestShareList();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function refreshBacktestShareList() {
+  const host = document.getElementById('btShareList');
+  const backend = getBackendApi();
+  if (!host || !backend?.listBacktestShareLinks) return;
+
+  const result = await backend.listBacktestShareLinks();
+  const rows = (result?.data || []).filter((r) => !r.revoked);
+
+  if (!rows.length) {
+    host.innerHTML = '<p class="muted small">Todavía no has generado ningún enlace.</p>';
+    return;
+  }
+
+  host.innerHTML = rows
+    .map(
+      (r) => `
+      <div class="bt-share-item">
+        <div>
+          <strong>${escapeHtmlAssetLabel(r.title || 'Backtesting')}</strong>
+          <div class="muted small">
+            ${formatDateEs(String(r.created_at).slice(0, 10))} ·
+            ${r.opened_count} aperturas · máx. ${r.max_devices} dispositivos
+          </div>
+        </div>
+        <div class="bt-share-item-actions">
+          <button type="button" class="button button-cancel" data-share-copy="${escapeAttrChip(r.url)}">Copiar</button>
+          <button type="button" class="button button-danger" data-share-revoke="${escapeAttrChip(r.id)}">Revocar</button>
+        </div>
+      </div>`
+    )
+    .join('');
+
+  host.querySelectorAll('[data-share-copy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void navigator.clipboard
+        .writeText(btn.getAttribute('data-share-copy'))
+        .then(() => showToast('Enlace copiado', 'success'));
+    });
+  });
+
+  host.querySelectorAll('[data-share-revoke]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ok = await showConfirmModal({
+        title: 'Revocar enlace',
+        message: 'Quien tenga el enlace dejará de poder ver los resultados. No se puede deshacer.',
+        confirmText: 'Revocar',
+        cancelText: 'Cancelar',
+        danger: true,
+      });
+      if (!ok) return;
+      const res = await getBackendApi()?.revokeBacktestShareLink?.(btn.getAttribute('data-share-revoke'));
+      if (res?.success) {
+        showToast('Enlace revocado', 'success');
+        void refreshBacktestShareList();
+      } else {
+        showToast(typeof res?.error === 'string' ? res.error : 'No se pudo revocar', 'error');
+      }
+    });
+  });
+}
+
 function bindBacktestingDayTradeDetailHandlers() {
   document.querySelectorAll('#backtestingView .bt-day-trade-card').forEach((card) => {
     if (card.dataset.detailBound === 'true') return;
@@ -17223,6 +17474,20 @@ window.addEventListener('DOMContentLoaded', async () => {
     'exportBacktesting',
     buildBacktestingExportReport
   );
+
+  // Compartir resultados por enlace: junto a los botones de exportar, que es donde el usuario
+  // ya busca "sacar esto de la app".
+  const btExportGroup = document.getElementById('exportBacktesting');
+  if (btExportGroup && !document.getElementById('btShareBtn')) {
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.id = 'btShareBtn';
+    shareBtn.className = 'button button-cancel export-btn';
+    shareBtn.innerHTML = '<i data-lucide="share-2"></i><span>Compartir</span>';
+    shareBtn.addEventListener('click', () => void openBacktestShareModal());
+    btExportGroup.appendChild(shareBtn);
+    void refreshLucideIcons();
+  }
 
   initTradeImageDropZone('beforeImage', async (ref) => {
     createBeforeImagePath = ref;

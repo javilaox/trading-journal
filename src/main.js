@@ -21,6 +21,7 @@ const backtestingSettingsService = require('./services/backtestingSettingsServic
 const backtestingSessionsService = require('./services/backtestingSessionsService');
 const backtestingMetricsService = require('./services/backtestingMetricsService');
 const exportWriters = require('./services/exportWriters');
+const backtestShareService = require('./services/backtestShareService');
 const { mapTrade } = require('./services/tradeMapper');
 const {
   parsePositionLegs,
@@ -363,6 +364,18 @@ ipcMain.handle('export-report', async (_event, report, format) => {
 
 /** Abre el archivo recién exportado con la aplicación por defecto del sistema. */
 /** Versión instalada (la del ejecutable, no la del package.json en disco). */
+ipcMain.handle('create-backtest-share-link', async (_event, options) => {
+  return backtestShareService.createBacktestShareLink(options || {});
+});
+
+ipcMain.handle('list-backtest-share-links', async () => {
+  return backtestShareService.listBacktestShareLinks();
+});
+
+ipcMain.handle('revoke-backtest-share-link', async (_event, token) => {
+  return backtestShareService.revokeBacktestShareLink(token);
+});
+
 ipcMain.handle('get-app-version', async () => app.getVersion());
 
 ipcMain.handle('open-exported-file', async (_event, filePath) => {
