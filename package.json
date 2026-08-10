@@ -1,7 +1,7 @@
 {
   "name": "trading-journal",
   "productName": "Trading Journal",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "Diario de trading personal con sincronización Supabase y modo offline-first.",
   "main": ".webpack/main",
   "private": true,

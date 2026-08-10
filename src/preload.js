@@ -6,7 +6,8 @@ const api = {
   // Exportación de informes a Excel / PDF.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   createBacktestShareLink: (options) => ipcRenderer.invoke('create-backtest-share-link', options),
-  listBacktestShareLinks: () => ipcRenderer.invoke('list-backtest-share-links'),
+  listBacktestShareLinks: (viewerBaseUrl) => ipcRenderer.invoke('list-backtest-share-links', viewerBaseUrl),
+  saveShareViewer: () => ipcRenderer.invoke('save-share-viewer'),
   revokeBacktestShareLink: (token) => ipcRenderer.invoke('revoke-backtest-share-link', token),
   exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
   openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
@@ -159,6 +160,7 @@ contextBridge.exposeInMainWorld('api', {
   getAppVersion: api.getAppVersion,
   createBacktestShareLink: api.createBacktestShareLink,
   listBacktestShareLinks: api.listBacktestShareLinks,
+  saveShareViewer: api.saveShareViewer,
   revokeBacktestShareLink: api.revokeBacktestShareLink,
   exportReport: api.exportReport,
   openExportedFile: api.openExportedFile,

@@ -13,7 +13,9 @@ const { supabaseUrl, supabaseAnonKey } = require('./supabaseConfig');
 const { ensureFreshSupabaseSession, friendlyServiceError } = require('./supabaseWriteHelpers');
 const { buildViewerHtml } = require('./backtestShareViewer');
 
-const BUCKET = 'backtest-reports';
+// Ya no se sube nada a Supabase Storage: sirve los HTML como text/plain a propósito y el
+// navegador mostraba el código fuente. El visor se publica una sola vez en un alojamiento
+// estático normal y aquí solo se compone el enlace con el token en el fragmento.
 
 /**
  * Contraseña legible y fácil de dictar por teléfono o WhatsApp. Se evitan los caracteres que
@@ -57,7 +59,7 @@ function sanitizeTradeForShare(trade = {}) {
   };
 }
 
-async function createBacktestShareLink({ title, trades, sessions, metrics, capital, range, maxDevices }) {
+async function createBacktestShareLink({ title, trades, sessions, metrics, capital, range, maxDevices, viewerBaseUrl }) {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false, error: 'No se pudo verificar tu sesión. Cierra sesión y vuelve a entrar.' };
 
@@ -91,38 +93,14 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
     return { success: false, error: friendlyServiceError(error) };
   }
 
-  // El visor se sube como archivo independiente por informe: así es inmutable y un informe
-  // antiguo nunca se rompe si más adelante cambia el visor.
-  const objectPath = `${userId}/${token}.html`;
-  const html = buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title });
-
-  // Se sube como Buffer y no como Blob a propósito. Con un Blob, storage-js envía la petición
-  // como multipart y el tipo que acaba guardándose depende del propio Blob, no de la opción
-  // `contentType`: el archivo se guardaba como texto plano y el navegador mostraba el código
-  // fuente en vez de la página. Con un Buffer, el cuerpo se manda tal cual y la cabecera
-  // Content-Type es exactamente la que indicamos aquí.
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(objectPath, Buffer.from(html, 'utf8'), {
-      contentType: 'text/html; charset=utf-8',
-      cacheControl: '60',
-      upsert: true,
-    });
-
-  if (uploadError) {
-    console.error('❌ subiendo visor:', uploadError);
-    // El informe ya existe pero sin página: se borra para no dejar basura.
-    await supabase.from('backtest_reports').delete().eq('id', token);
-    return { success: false, error: friendlyServiceError(uploadError) };
-  }
-
-  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
+  const base = String(viewerBaseUrl || '').trim();
+  const url = base ? `${base}${base.includes('#') ? '' : '#'}${token}` : '';
 
   return {
     success: true,
     data: {
       token,
-      url: pub?.publicUrl || '',
+      url,
       password,
       maxDevices: Number(maxDevices) || 3,
       trades: list.length,
@@ -130,7 +108,7 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
   };
 }
 
-async function listBacktestShareLinks() {
+async function listBacktestShareLinks(viewerBaseUrl) {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false, error: 'NO_AUTH', data: [] };
 
@@ -146,18 +124,16 @@ async function listBacktestShareLinks() {
     return { success: false, error: friendlyServiceError(error), data: [] };
   }
 
-  const rows = (data || []).map((row) => {
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(`${userId}/${row.id}.html`);
-    return { ...row, url: pub?.publicUrl || '' };
-  });
+  const base = String(viewerBaseUrl || '').trim();
+  const rows = (data || []).map((row) => ({
+    ...row,
+    url: base ? `${base}${base.includes('#') ? '' : '#'}${row.id}` : '',
+  }));
 
   return { success: true, data: rows };
 }
 
-/**
- * Revocar: se marca el informe y se borra el archivo del visor. Marcar la fila es lo que corta
- * el acceso de verdad (el RPC deja de servir los datos); borrar el HTML es solo limpieza.
- */
+/** Revocar: marcar la fila es lo que corta el acceso; el RPC deja de servir los datos. */
 async function revokeBacktestShareLink(token) {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false, error: 'NO_AUTH' };
@@ -176,11 +152,16 @@ async function revokeBacktestShareLink(token) {
     return { success: false, error: friendlyServiceError(error) };
   }
 
-  await supabase.storage.from(BUCKET).remove([`${userId}/${token}.html`]);
   return { success: true };
 }
 
+/** HTML del visor, para que el usuario lo publique una vez en su alojamiento estático. */
+function buildShareViewerFile() {
+  return buildViewerHtml({ supabaseUrl, supabaseAnonKey });
+}
+
 module.exports = {
+  buildShareViewerFile,
   createBacktestShareLink,
   listBacktestShareLinks,
   revokeBacktestShareLink,

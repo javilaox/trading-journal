@@ -1,14 +1,19 @@
 /**
- * Genera la página que se comparte por enlace.
+ * Visor de informes compartidos: una única página que se publica UNA vez y sirve para todos los
+ * informes. El informe concreto se indica en el fragmento de la URL (…/visor.html#TOKEN).
  *
- * Punto clave: el HTML NO lleva ningún dato del backtest. Solo el token del informe y la clave
- * anónima de Supabase (que es pública por diseño). Los datos se piden al RPC
- * `open_backtest_report`, que es quien valida la contraseña y el cupo de dispositivos en el
- * servidor. Si los datos viajaran dentro del archivo, ambas protecciones serían decorativas:
- * bastaría con abrir el código fuente de la página.
+ * Por qué no se aloja en Supabase: Supabase Storage (y las Edge Functions fuera del plan Pro con
+ * dominio propio) devuelven los archivos HTML como `text/plain` a propósito, como medida
+ * antiabuso, así que el navegador mostraba el código fuente en lugar de la página. Cualquier
+ * alojamiento estático normal (GitHub Pages, Netlify, Cloudflare Pages…) sirve el HTML bien.
  *
- * La página es de solo lectura pero interactiva: filtros, orden, desplegables y gráficas se
- * calculan en el navegador de quien la abre a partir del JSON recibido.
+ * El archivo NO lleva ningún dato del backtest: solo la URL y la clave anónima de Supabase, que
+ * es pública por diseño. Los datos los sirve el RPC `open_backtest_report`, que valida la
+ * contraseña y el cupo de dispositivos en el servidor. Si los datos viajaran dentro del archivo,
+ * ambas protecciones serían decorativas: bastaría con mirar el código fuente.
+ *
+ * La página es de solo lectura pero interactiva: filtros, orden y gráficas se calculan en el
+ * navegador de quien la abre a partir del JSON recibido.
  */
 
 function escapeHtml(value) {
@@ -19,8 +24,8 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title }) {
-  const safeTitle = escapeHtml(title || 'Resultados de backtesting');
+function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
+  const safeTitle = 'Resultados de backtesting';
 
   return `<!doctype html>
 <html lang="es">
@@ -185,7 +190,9 @@ function buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title }) {
 (function () {
   var SUPABASE_URL = ${JSON.stringify(supabaseUrl)};
   var ANON_KEY = ${JSON.stringify(supabaseAnonKey)};
-  var TOKEN = ${JSON.stringify(token)};
+  // El informe va en el fragmento de la URL. El fragmento no se envía al servidor que aloja la
+  // página, así que el identificador no queda registrado en los logs de ese alojamiento.
+  var TOKEN = (location.hash || '').replace(/^#/, '').trim();
 
   // Identificador de dispositivo: aleatorio y guardado en el navegador. Es lo que permite
   // limitar cuántos dispositivos distintos abren el enlace.
@@ -241,9 +248,15 @@ function buildViewerHtml({ token, supabaseUrl, supabaseAnonKey, title }) {
       });
   }
 
-  btn.addEventListener('click', open);
-  pwd.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
-  pwd.focus();
+  if (!TOKEN) {
+    err.textContent = 'Este enlace está incompleto: falta el identificador del informe.';
+    btn.disabled = true;
+    pwd.disabled = true;
+  } else {
+    btn.addEventListener('click', open);
+    pwd.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
+    pwd.focus();
+  }
 
   /* ------------------------------ Render ------------------------------ */
 

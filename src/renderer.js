@@ -799,6 +799,9 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .bt-share-copy{display:flex;gap:8px}
 .bt-share-copy input{flex:1;min-width:0;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:.85rem;font-family:inherit}
 .bt-share-password{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;font-size:1rem!important;text-align:center}
+.bt-share-setup{margin-top:14px;padding:14px;border:1px dashed var(--border);border-radius:12px;background:rgba(255,255,255,.02)}
+.bt-share-setup h4{margin:0 0 6px;font-size:.85rem}
+.bt-share-setup input{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:.85rem;font-family:inherit}
 .bt-share-links{margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
 .bt-share-links h4{margin:0 0 10px;font-size:.85rem}
 .bt-share-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -13784,6 +13787,11 @@ function openBacktestingTradeDetail(trade) {
 
 /* ==================== Compartir resultados de backtesting por enlace ==================== */
 
+/** Dirección del visor publicado por el usuario. Se configura una vez y se recuerda. */
+const SHARE_VIEWER_URL_KEY = 'backtest_share_viewer_url';
+
+const getShareViewerUrl = () => (localStorage.getItem(SHARE_VIEWER_URL_KEY) || '').trim();
+
 /** Nombres de las métricas checkbox activas, que son las que el visor puede analizar. */
 function getShareableBacktestingMetricNames() {
   return (cachedBacktestingMetrics || [])
@@ -13823,6 +13831,23 @@ async function openBacktestShareModal() {
         </div>
         <div class="pro-modal-scroll">
           <p class="muted small" id="btShareSummary"></p>
+
+          <div class="bt-share-setup" id="btShareSetup">
+            <h4>Configuración (una sola vez)</h4>
+            <p class="muted small">
+              Supabase no puede servir páginas HTML, así que el visor se publica en un alojamiento
+              estático gratuito (GitHub Pages, Netlify, Cloudflare Pages…). Descarga el archivo,
+              súbelo una vez y pega aquí su dirección. A partir de ahí, cada enlace es esa misma
+              página con el informe detrás.
+            </p>
+            <button type="button" class="button button-cancel" id="btShareDownloadViewer" style="margin-bottom:10px">
+              Descargar visor.html
+            </button>
+            <div class="bt-share-field" style="margin-top:0">
+              <label for="btShareViewerUrl">Dirección del visor publicado</label>
+              <input type="text" id="btShareViewerUrl" placeholder="https://usuario.github.io/informes/visor.html" />
+            </div>
+          </div>
 
           <div class="field" style="margin-top:14px">
             <label for="btShareMaxDevices">Dispositivos que podrán abrirlo</label>
@@ -13881,6 +13906,11 @@ async function openBacktestShareModal() {
     document.getElementById('btShareClose')?.addEventListener('click', close);
     document.getElementById('btShareCloseFooter')?.addEventListener('click', close);
     document.getElementById('btShareGenerate')?.addEventListener('click', generateBacktestShareLink);
+    document.getElementById('btShareDownloadViewer')?.addEventListener('click', async () => {
+      const res = await getBackendApi()?.saveShareViewer?.();
+      if (res?.success) showToast('Visor guardado. Súbelo a tu alojamiento y pega aquí su dirección.', 'success');
+      else if (!res?.cancelled) showToast('No se pudo guardar el visor', 'error');
+    });
 
     // El modal se crea después de que initCustomSelects() haya recorrido la página, así que su
     // <select> se quedaba con el desplegable nativo de Windows, sin tematizar. Hay que envolverlo
@@ -13894,6 +13924,19 @@ async function openBacktestShareModal() {
       if (!input?.value) return;
       void navigator.clipboard.writeText(input.value).then(() => showToast('Copiado', 'success'));
     });
+  }
+
+  // La dirección del visor se recuerda entre sesiones: se configura una vez y ya.
+  const urlInput = document.getElementById('btShareViewerUrl');
+  if (urlInput) {
+    urlInput.value = localStorage.getItem(SHARE_VIEWER_URL_KEY) || '';
+    if (!urlInput.dataset.bound) {
+      urlInput.dataset.bound = 'true';
+      urlInput.addEventListener('change', () => {
+        localStorage.setItem(SHARE_VIEWER_URL_KEY, urlInput.value.trim());
+        void refreshBacktestShareList();
+      });
+    }
   }
 
   const payload = buildBacktestSharePayload();
@@ -13937,6 +13980,7 @@ async function generateBacktestShareLink() {
     const result = await backend.createBacktestShareLink({
       ...payload,
       maxDevices: Number(document.getElementById('btShareMaxDevices')?.value) || 3,
+      viewerBaseUrl: getShareViewerUrl(),
     });
 
     if (!result?.success) {
@@ -13952,8 +13996,10 @@ async function generateBacktestShareLink() {
     document.getElementById('btSharePassword').value = result.data.password;
     document.getElementById('btShareResult').hidden = false;
     if (msg) {
-      msg.textContent = 'Enlace listo. Envía el enlace y la contraseña por separado.';
-      msg.className = 'form-hint success';
+      msg.textContent = getShareViewerUrl()
+        ? 'Enlace listo. Envía el enlace y la contraseña por separado.'
+        : 'Informe creado, pero falta configurar la dirección del visor para poder formar el enlace.';
+      msg.className = getShareViewerUrl() ? 'form-hint success' : 'form-hint error';
     }
     void refreshBacktestShareList();
   } finally {
@@ -13966,7 +14012,7 @@ async function refreshBacktestShareList() {
   const backend = getBackendApi();
   if (!host || !backend?.listBacktestShareLinks) return;
 
-  const result = await backend.listBacktestShareLinks();
+  const result = await backend.listBacktestShareLinks(getShareViewerUrl());
   const rows = (result?.data || []).filter((r) => !r.revoked);
 
   if (!rows.length) {

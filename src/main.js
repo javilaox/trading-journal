@@ -368,8 +368,26 @@ ipcMain.handle('create-backtest-share-link', async (_event, options) => {
   return backtestShareService.createBacktestShareLink(options || {});
 });
 
-ipcMain.handle('list-backtest-share-links', async () => {
-  return backtestShareService.listBacktestShareLinks();
+ipcMain.handle('list-backtest-share-links', async (_event, viewerBaseUrl) => {
+  return backtestShareService.listBacktestShareLinks(viewerBaseUrl);
+});
+
+/** Guarda el visor en disco para que el usuario lo publique una vez en su alojamiento. */
+ipcMain.handle('save-share-viewer', async () => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Guardar visor de informes',
+      defaultPath: path.join(app.getPath('documents'), 'visor.html'),
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, cancelled: true };
+    fs.writeFileSync(result.filePath, backtestShareService.buildShareViewerFile(), 'utf8');
+    shell.showItemInFolder(result.filePath);
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    console.error('❌ save-share-viewer:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
 });
 
 ipcMain.handle('revoke-backtest-share-link', async (_event, token) => {
