@@ -787,6 +787,28 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
 #backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 #backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+/* Challenges: configuracion de fases y resultado de la simulacion. */
+.challenge-config{margin:14px 0 18px}
+.challenge-phases-field{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.challenge-phases-field span{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+.challenge-phases-field .input{width:auto;min-width:120px}
+.challenge-table{width:100%;border-collapse:collapse;font-size:var(--font-sm)}
+.challenge-table th,.challenge-table td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+.challenge-table thead th{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600}
+.challenge-table tbody th{font-weight:600;color:var(--text-muted)}
+.challenge-table tbody tr:last-child th,.challenge-table tbody tr:last-child td{border-bottom:none}
+.challenge-input{display:inline-flex;align-items:center;gap:6px}
+.challenge-input .input{width:88px;padding:6px 8px;font-size:.85rem;text-align:right}
+.challenge-input span{color:var(--text-muted);font-size:.8rem}
+.challenge-headline{font-size:1rem;margin:4px 0 14px;padding:12px 14px;border-radius:12px;
+  border:1px solid var(--border);background:rgba(255,255,255,.03)}
+.challenge-headline strong{font-size:1.25rem}
+.challenge-headline.positive{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.08)}
+.challenge-headline.negative{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08)}
+#backtestingView .challenge-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px}
+#backtestingView .challenge-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0}
+#backtestingView .challenge-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+#backtestingView .challenge-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
 /* Explorador de metricas: filtros de tres estados para cruzar metricas con resultados.
    Se prioriza la densidad: filtros en una linea, KPIs en tira horizontal y listado con scroll,
    para que toda la herramienta quepa de un vistazo sin desplazarse. */
@@ -2895,6 +2917,12 @@ const {
 } = require('./services/scheduleUtils');
 const { planBacktestRecalc } = require('./services/backtestRecalc');
 const {
+  simulateChallenge,
+  tradesPerTradingDay,
+  defaultChallengeConfig,
+  normalizeChallengeConfig,
+} = require('./services/challengeSimulator');
+const {
   parsePositionLegs,
   validatePositionLegs,
   sumLegsPnl,
@@ -3559,6 +3587,7 @@ const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
  */
 let backtestingSettingsLoaded = false;
 let backtestingSettings = {
+  challenge_config: null,
   accounts: [],
   strategies: [],
   assets: [],
@@ -13209,6 +13238,172 @@ function analyzeCheckboxMetric(trades, metricName) {
   };
 }
 
+/* ================================ Challenges ================================
+ * Traduce los resultados del backtest a la pregunta que de verdad importa cuando compras un
+ * challenge: cuánto tardaré y qué probabilidad tengo. El cálculo vive en
+ * services/challengeSimulator.js; aquí solo está la configuración y la presentación.
+ */
+
+function getChallengeConfig() {
+  return normalizeChallengeConfig(backtestingSettings.challenge_config || defaultChallengeConfig());
+}
+
+function renderChallengePhaseInputs() {
+  const host = document.getElementById('btChallengePhaseRows');
+  const select = document.getElementById('btChallengePhases');
+  if (!host) return;
+
+  const cfg = getChallengeConfig();
+  if (select) select.value = String(cfg.phases.length);
+
+  host.innerHTML = cfg.phases
+    .map(
+      (phase, i) => `
+      <tr>
+        <th>Fase ${i + 1}</th>
+        <td><div class="challenge-input"><input type="number" class="input" data-challenge="target" data-index="${i}" value="${phase.target}" min="0" step="0.5" /><span>%</span></div></td>
+        <td><div class="challenge-input"><input type="number" class="input" data-challenge="risk" data-index="${i}" value="${phase.risk}" min="0" step="0.1" /><span>%</span></div></td>
+        <td><div class="challenge-input"><input type="number" class="input" data-challenge="maxDrawdown" data-index="${i}" value="${phase.maxDrawdown}" min="0" step="0.5" /><span>%</span></div></td>
+      </tr>`
+    )
+    .join('');
+}
+
+function readChallengeConfigFromDom() {
+  const rows = document.querySelectorAll('#btChallengePhaseRows tr');
+  const phases = [...rows].map((row) => ({
+    target: Number(row.querySelector('[data-challenge="target"]')?.value) || 0,
+    risk: Number(row.querySelector('[data-challenge="risk"]')?.value) || 0,
+    maxDrawdown: Number(row.querySelector('[data-challenge="maxDrawdown"]')?.value) || 0,
+  }));
+  return { phases: phases.length ? phases : defaultChallengeConfig().phases };
+}
+
+function renderBacktestingChallenge(filtered) {
+  const section = document.getElementById('btChallengeSection');
+  if (!section) return;
+
+  if (!document.getElementById('btChallengePhaseRows')?.children.length) {
+    renderChallengePhaseInputs();
+  }
+
+  const trades = filtered || [];
+  const rValues = trades.map((t) => getBacktestingTradeRValue(t)).filter((v) => Number.isFinite(v));
+  const cfg = readChallengeConfigFromDom();
+  const results = document.getElementById('btChallengeResults');
+  const caveat = document.getElementById('btChallengeCaveat');
+
+  if (rValues.length < 5) {
+    if (results) {
+      results.innerHTML =
+        '<p class="muted small">Hacen falta al menos 5 operaciones registradas para simular un challenge con un mínimo de sentido.</p>';
+    }
+    if (caveat) caveat.textContent = '';
+    bindChallengeInputs();
+    return;
+  }
+
+  const sim = simulateChallenge(rValues, cfg.phases, { runs: 3000 });
+  if (!sim) return;
+
+  const perDay = tradesPerTradingDay(trades);
+  const toDays = (n) => (n == null || !perDay ? null : Math.ceil(n / perDay));
+  const pct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  const tone = (v) => (v == null ? '' : v >= 70 ? 'positive' : v >= 40 ? '' : 'negative');
+
+  const days = toDays(sim.medianTradesTotal);
+  const daysP90 = toDays(sim.p90TradesTotal);
+
+  if (results) {
+    results.innerHTML = `
+      <div class="challenge-headline ${tone(sim.overallPassRate)}">
+        Probabilidad de superar el challenge completo: <strong>${pct(sim.overallPassRate)}</strong>
+      </div>
+      <div class="stats-grid challenge-kpis">
+        <div class="advanced-item">
+          <span>Operaciones (mediana)</span>
+          <h2>${sim.medianTradesTotal ?? '—'}</h2>
+        </div>
+        <div class="advanced-item">
+          <span>Días estimados</span>
+          <h2>${days ?? '—'}</h2>
+        </div>
+        <div class="advanced-item">
+          <span>Días en el peor 10%</span>
+          <h2>${daysP90 ?? '—'}</h2>
+        </div>
+        <div class="advanced-item">
+          <span>Ritmo del backtest</span>
+          <h2>${perDay ? `${perDay.toFixed(1)}/día` : '—'}</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="challenge-table">
+          <thead>
+            <tr><th>Fase</th><th>Probabilidad de superarla</th><th>Operaciones (mediana)</th><th>Días</th></tr>
+          </thead>
+          <tbody>
+            ${sim.phases
+              .map(
+                (p) => `<tr>
+                  <th>Fase ${p.index}</th>
+                  <td class="${tone(p.passRate)}">${pct(p.passRate)}</td>
+                  <td>${p.medianTrades ?? '—'}</td>
+                  <td>${toDays(p.medianTrades) ?? '—'}</td>
+                </tr>`
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  if (caveat) {
+    // El usuario tiene que poder juzgar cuánto fiarse: se dice el tamaño de la muestra y los
+    // supuestos, en vez de dar un porcentaje a secas que parezca una certeza.
+    caveat.textContent =
+      `Calculado repartiendo al azar 3.000 veces las ${sim.sampleSize} operaciones de este backtest. ` +
+      'Da por hecho que tus próximas operaciones se parecerán a estas y son independientes entre sí. ' +
+      'No tiene en cuenta el límite de pérdida diaria ni el mínimo de días operados que exija tu prop.';
+  }
+
+  bindChallengeInputs();
+}
+
+function bindChallengeInputs() {
+  const section = document.getElementById('btChallengeSection');
+  if (!section || section.dataset.bound === 'true') return;
+  section.dataset.bound = 'true';
+
+  const persist = () => {
+    backtestingSettings.challenge_config = readChallengeConfigFromDom();
+    void persistBacktestingSettings();
+  };
+
+  section.addEventListener('input', (event) => {
+    if (!event.target.matches('[data-challenge]')) return;
+    renderBacktestingChallenge(getBacktestingTradesForMetrics());
+  });
+
+  // Se guarda al soltar el campo y no en cada tecla, para no escribir en Supabase en cada dígito.
+  section.addEventListener('change', (event) => {
+    if (event.target.matches('[data-challenge]')) persist();
+  });
+
+  document.getElementById('btChallengePhases')?.addEventListener('change', (event) => {
+    const wanted = Math.max(1, Math.min(3, Number(event.target.value) || 1));
+    const current = readChallengeConfigFromDom().phases;
+    const next = [];
+    for (let i = 0; i < wanted; i += 1) {
+      next.push(current[i] || { target: 5, risk: 1, maxDrawdown: 10 });
+    }
+    backtestingSettings.challenge_config = { phases: next };
+    renderChallengePhaseInputs();
+    renderBacktestingChallenge(getBacktestingTradesForMetrics());
+    void persistBacktestingSettings();
+  });
+}
+
 /* ---------------------------- Explorador de métricas ----------------------------
  * La tabla de «Análisis por métricas» compara cada métrica por separado contra su propia
  * negación, y eso se queda corto cuando las métricas describen escenarios relacionados
@@ -15615,7 +15810,8 @@ async function loadBacktestingSettings() {
         default_strategy: d.default_strategy || '',
         default_asset: '',
         default_risk: Number.isFinite(dr) && dr > 0 ? dr : 100,
-        default_rr: Number.isFinite(drr) && drr > 0 ? drr : 2
+        default_rr: Number.isFinite(drr) && drr > 0 ? drr : 2,
+        challenge_config: normalizeChallengeConfig(d.challenge_config)
       };
     }
   } catch (e) {
@@ -16551,6 +16747,7 @@ function rerenderBacktestingLocal() {
   renderBacktestingPairTable(filteredForMetrics);
   renderBacktestingMetricAnalysis(filteredForMetrics);
   renderBacktestingMetricExplorer(filteredForMetrics);
+  renderBacktestingChallenge(filteredForMetrics);
   renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
   renderBacktestingDayTrades();
   initBacktestingIncludeBeSwitch();

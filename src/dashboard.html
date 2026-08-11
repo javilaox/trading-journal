@@ -8744,6 +8744,41 @@
                   </div>
                 </div>
 
+                <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btChallengeSection">
+                  <h3 class="subsection-title">Challenges</h3>
+                  <p class="muted small">
+                    Con los resultados de este backtest, ¿cuánto tardarías en pasar un challenge y
+                    qué probabilidad tienes de conseguirlo? Configura las fases de tu prop.
+                  </p>
+
+                  <div class="challenge-config">
+                    <label class="challenge-phases-field">
+                      <span>Fases</span>
+                      <select id="btChallengePhases" class="input">
+                        <option value="1">1 fase</option>
+                        <option value="2" selected>2 fases</option>
+                        <option value="3">3 fases</option>
+                      </select>
+                    </label>
+                    <div class="table-wrap">
+                      <table class="challenge-table">
+                        <thead>
+                          <tr>
+                            <th>Fase</th>
+                            <th>Objetivo</th>
+                            <th>Riesgo por operación</th>
+                            <th>Pérdida máxima</th>
+                          </tr>
+                        </thead>
+                        <tbody id="btChallengePhaseRows"></tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div id="btChallengeResults"></div>
+                  <p class="muted small" id="btChallengeCaveat"></p>
+                </div>
+
                 <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btMetricExplorerSection">
                   <h3 class="subsection-title">Explorador de métricas</h3>
                   <p class="muted small">

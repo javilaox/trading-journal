@@ -148,6 +148,13 @@
     <div class="hours" id="hours"></div>
   </section>
 
+  <section class="card" id="challengeCard" style="display:none">
+    <h2>Challenges</h2>
+    <p class="muted small" id="challengeIntro"></p>
+    <div id="challengeBody"></div>
+    <p class="muted small" id="challengeCaveat"></p>
+  </section>
+
   <section class="card" id="metricsCard">
     <h2>Análisis por métricas</h2>
     <p class="muted small">Resultados cumpliendo cada métrica frente a no cumplirla.</p>
@@ -268,6 +275,184 @@
     pwd.focus();
   }
 
+  /* --------- Simulador de challenges ---------
+   * Se inserta el codigo fuente de la MISMA funcion que usa la app (toString), para que el
+   * enlace compartido y la aplicacion no puedan dar numeros distintos.
+   */
+  function simulateChallenge(rValues, phases, options) {
+  var opts = options || {};
+  var runs = opts.runs || 2000;
+  var maxTradesPerPhase = opts.maxTradesPerPhase || 1000;
+
+  var rs = (rValues || []).map(Number).filter(function (v) {
+    return isFinite(v);
+  });
+  if (!rs.length || !phases || !phases.length) return null;
+
+  // Generador con semilla: dos ejecuciones seguidas con los mismos datos deben dar el mismo
+  // resultado, si no el usuario ve la probabilidad bailando y deja de fiarse.
+  var seed = 123456789;
+  function rnd() {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  }
+
+  var phaseStats = phases.map(function () {
+    return { passed: 0, failed: 0, unresolved: 0, trades: [] };
+  });
+  var fullPass = 0;
+  var totalTrades = [];
+
+  for (var run = 0; run < runs; run += 1) {
+    var alive = true;
+    var tradesThisRun = 0;
+
+    for (var p = 0; p < phases.length && alive; p += 1) {
+      var target = Number(phases[p].target) || 0;
+      var risk = Number(phases[p].risk) || 0;
+      var maxDd = Math.abs(Number(phases[p].maxDrawdown) || 0);
+
+      if (target <= 0 || risk <= 0) {
+        phaseStats[p].unresolved += 1;
+        alive = false;
+        break;
+      }
+
+      var equity = 0;
+      var peak = 0;
+      var n = 0;
+      var resolved = false;
+
+      while (n < maxTradesPerPhase) {
+        equity += rs[Math.floor(rnd() * rs.length)] * risk;
+        n += 1;
+        if (equity > peak) peak = equity;
+
+        // La pérdida máxima se mide desde el pico, que es como la aplican las props (trailing).
+        if (maxDd > 0 && peak - equity >= maxDd) {
+          phaseStats[p].failed += 1;
+          resolved = true;
+          alive = false;
+          break;
+        }
+        if (equity >= target) {
+          phaseStats[p].passed += 1;
+          phaseStats[p].trades.push(n);
+          resolved = true;
+          break;
+        }
+      }
+
+      tradesThisRun += n;
+      if (!resolved) {
+        phaseStats[p].unresolved += 1;
+        alive = false;
+      }
+    }
+
+    if (alive) {
+      fullPass += 1;
+      totalTrades.push(tradesThisRun);
+    }
+  }
+
+  function median(list) {
+    if (!list.length) return null;
+    var sorted = list.slice().sort(function (a, b) {
+      return a - b;
+    });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function percentile(list, q) {
+    if (!list.length) return null;
+    var sorted = list.slice().sort(function (a, b) {
+      return a - b;
+    });
+    var idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)));
+    return sorted[idx];
+  }
+
+  return {
+    runs: runs,
+    sampleSize: rs.length,
+    // Probabilidad de superar cada fase CONDICIONADA a haber llegado a ella.
+    phases: phaseStats.map(function (st, i) {
+      var reached = st.passed + st.failed + st.unresolved;
+      return {
+        index: i + 1,
+        reached: reached,
+        passRate: reached ? (st.passed / reached) * 100 : null,
+        medianTrades: median(st.trades),
+        p90Trades: percentile(st.trades, 0.9),
+      };
+    }),
+    overallPassRate: (fullPass / runs) * 100,
+    medianTradesTotal: median(totalTrades),
+    p90TradesTotal: percentile(totalTrades, 0.9),
+  };
+}
+  function tradesPerTradingDay(trades) {
+  var list = (trades || []).filter(function (t) {
+    return t && t.date;
+  });
+  if (!list.length) return 0;
+  var days = {};
+  list.forEach(function (t) {
+    days[String(t.date).slice(0, 10)] = true;
+  });
+  var n = Object.keys(days).length;
+  return n ? list.length / n : 0;
+}
+
+  function renderChallenge(payload) {
+    var cfg = payload.challenge && payload.challenge.phases;
+    var card = document.getElementById('challengeCard');
+    if (!card || !cfg || !cfg.length) return;
+
+    var rs = TRADES.map(function (t) { return Number(t.rr_result); }).filter(function (v) { return isFinite(v); });
+    if (rs.length < 5) return;
+
+    var sim = simulateChallenge(rs, cfg, { runs: 3000 });
+    if (!sim) return;
+
+    var perDay = tradesPerTradingDay(TRADES);
+    var toDays = function (n) { return (n == null || !perDay) ? null : Math.ceil(n / perDay); };
+    var pct = function (v) { return v == null ? '—' : v.toFixed(1) + '%'; };
+    var tone = function (v) { return v == null ? '' : v >= 70 ? 'pos' : v >= 40 ? '' : 'neg'; };
+
+    document.getElementById('challengeIntro').textContent =
+      'Con estos resultados, probabilidad de superar un challenge de ' + cfg.length +
+      (cfg.length === 1 ? ' fase' : ' fases') + ' (' +
+      cfg.map(function (p) { return p.target + '%'; }).join(' + ') + ', riesgo ' +
+      cfg.map(function (p) { return p.risk + '%'; }).join('/') + ' por operación).';
+
+    document.getElementById('challengeBody').innerHTML =
+      '<div class="kpis" style="margin-bottom:14px">' +
+        '<div class="kpi"><span>Probabilidad total</span><strong class="' + tone(sim.overallPassRate) + '">' + pct(sim.overallPassRate) + '</strong></div>' +
+        '<div class="kpi"><span>Operaciones (mediana)</span><strong>' + (sim.medianTradesTotal == null ? '—' : sim.medianTradesTotal) + '</strong></div>' +
+        '<div class="kpi"><span>Días estimados</span><strong>' + (toDays(sim.medianTradesTotal) == null ? '—' : toDays(sim.medianTradesTotal)) + '</strong></div>' +
+        '<div class="kpi"><span>Días en el peor 10%</span><strong>' + (toDays(sim.p90TradesTotal) == null ? '—' : toDays(sim.p90TradesTotal)) + '</strong></div>' +
+      '</div>' +
+      '<div class="table-scroll"><table><thead><tr><th class="no-sort">Fase</th><th class="no-sort">Objetivo</th>' +
+      '<th class="num no-sort">Probabilidad</th><th class="num no-sort">Ops</th><th class="num no-sort">Días</th></tr></thead><tbody>' +
+      sim.phases.map(function (p, i) {
+        return '<tr><td>Fase ' + p.index + '</td><td>' + cfg[i].target + '%</td>' +
+          '<td class="num ' + tone(p.passRate) + '">' + pct(p.passRate) + '</td>' +
+          '<td class="num">' + (p.medianTrades == null ? '—' : p.medianTrades) + '</td>' +
+          '<td class="num">' + (toDays(p.medianTrades) == null ? '—' : toDays(p.medianTrades)) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+
+    document.getElementById('challengeCaveat').textContent =
+      'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest. ' +
+      'Da por hecho que las próximas se parecerán a estas. No incluye el límite de pérdida diaria ' +
+      'ni el mínimo de días operados que exija cada prop.';
+
+    card.style.display = 'block';
+  }
+
   /* ------------------------------ Render ------------------------------ */
 
   var TRADES = [], SESSIONS = {}, sortKey = 'date', sortDir = 1;
@@ -319,6 +504,7 @@
     renderPairs(TRADES);
     renderHours(TRADES);
     renderMetrics(TRADES, p.metrics || []);
+    renderChallenge(p);
     renderTrades();
 
     ['fSession', 'fAsset', 'fResult', 'fDirection'].forEach(function (id) {

@@ -44,6 +44,8 @@ function normalizeRow(row) {
     strategies: parseStrategiesFromDb(row.strategies),
     assets: parseJsonArray(row.assets),
     sessions: parseJsonArray(row.sessions),
+    challenge_config:
+      row.challenge_config && typeof row.challenge_config === 'object' ? row.challenge_config : {},
     default_risk: Number(row.default_risk ?? 100) || 100,
     default_rr: Number(row.default_rr ?? 2) || 2
   };
@@ -109,6 +111,12 @@ async function upsertBacktestingSettings(settings) {
     default_account: settings.default_account || null,
     default_strategy: settings.default_strategy || null,
     default_asset: settings.default_asset || null,
+    // Configuración del simulador de challenges. No es una lista, así que no entra en la red de
+    // seguridad de arriba: se guarda tal cual llega.
+    challenge_config:
+      settings.challenge_config && typeof settings.challenge_config === 'object'
+        ? settings.challenge_config
+        : {},
     default_risk: Number(settings.default_risk ?? 0),
     default_rr: Number(settings.default_rr ?? 0),
     updated_at: new Date().toISOString()

@@ -16,6 +16,8 @@
  * navegador de quien la abre a partir del JSON recibido.
  */
 
+const { simulateChallenge, tradesPerTradingDay } = require('./challengeSimulator');
+
 function escapeHtml(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -177,6 +179,13 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     <div class="hours" id="hours"></div>
   </section>
 
+  <section class="card" id="challengeCard" style="display:none">
+    <h2>Challenges</h2>
+    <p class="muted small" id="challengeIntro"></p>
+    <div id="challengeBody"></div>
+    <p class="muted small" id="challengeCaveat"></p>
+  </section>
+
   <section class="card" id="metricsCard">
     <h2>Análisis por métricas</h2>
     <p class="muted small">Resultados cumpliendo cada métrica frente a no cumplirla.</p>
@@ -297,6 +306,60 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     pwd.focus();
   }
 
+  /* --------- Simulador de challenges ---------
+   * Se inserta el codigo fuente de la MISMA funcion que usa la app (toString), para que el
+   * enlace compartido y la aplicacion no puedan dar numeros distintos.
+   */
+  ${simulateChallenge.toString()}
+  ${tradesPerTradingDay.toString()}
+
+  function renderChallenge(payload) {
+    var cfg = payload.challenge && payload.challenge.phases;
+    var card = document.getElementById('challengeCard');
+    if (!card || !cfg || !cfg.length) return;
+
+    var rs = TRADES.map(function (t) { return Number(t.rr_result); }).filter(function (v) { return isFinite(v); });
+    if (rs.length < 5) return;
+
+    var sim = simulateChallenge(rs, cfg, { runs: 3000 });
+    if (!sim) return;
+
+    var perDay = tradesPerTradingDay(TRADES);
+    var toDays = function (n) { return (n == null || !perDay) ? null : Math.ceil(n / perDay); };
+    var pct = function (v) { return v == null ? '—' : v.toFixed(1) + '%'; };
+    var tone = function (v) { return v == null ? '' : v >= 70 ? 'pos' : v >= 40 ? '' : 'neg'; };
+
+    document.getElementById('challengeIntro').textContent =
+      'Con estos resultados, probabilidad de superar un challenge de ' + cfg.length +
+      (cfg.length === 1 ? ' fase' : ' fases') + ' (' +
+      cfg.map(function (p) { return p.target + '%'; }).join(' + ') + ', riesgo ' +
+      cfg.map(function (p) { return p.risk + '%'; }).join('/') + ' por operación).';
+
+    document.getElementById('challengeBody').innerHTML =
+      '<div class="kpis" style="margin-bottom:14px">' +
+        '<div class="kpi"><span>Probabilidad total</span><strong class="' + tone(sim.overallPassRate) + '">' + pct(sim.overallPassRate) + '</strong></div>' +
+        '<div class="kpi"><span>Operaciones (mediana)</span><strong>' + (sim.medianTradesTotal == null ? '—' : sim.medianTradesTotal) + '</strong></div>' +
+        '<div class="kpi"><span>Días estimados</span><strong>' + (toDays(sim.medianTradesTotal) == null ? '—' : toDays(sim.medianTradesTotal)) + '</strong></div>' +
+        '<div class="kpi"><span>Días en el peor 10%</span><strong>' + (toDays(sim.p90TradesTotal) == null ? '—' : toDays(sim.p90TradesTotal)) + '</strong></div>' +
+      '</div>' +
+      '<div class="table-scroll"><table><thead><tr><th class="no-sort">Fase</th><th class="no-sort">Objetivo</th>' +
+      '<th class="num no-sort">Probabilidad</th><th class="num no-sort">Ops</th><th class="num no-sort">Días</th></tr></thead><tbody>' +
+      sim.phases.map(function (p, i) {
+        return '<tr><td>Fase ' + p.index + '</td><td>' + cfg[i].target + '%</td>' +
+          '<td class="num ' + tone(p.passRate) + '">' + pct(p.passRate) + '</td>' +
+          '<td class="num">' + (p.medianTrades == null ? '—' : p.medianTrades) + '</td>' +
+          '<td class="num">' + (toDays(p.medianTrades) == null ? '—' : toDays(p.medianTrades)) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+
+    document.getElementById('challengeCaveat').textContent =
+      'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest. ' +
+      'Da por hecho que las próximas se parecerán a estas. No incluye el límite de pérdida diaria ' +
+      'ni el mínimo de días operados que exija cada prop.';
+
+    card.style.display = 'block';
+  }
+
   /* ------------------------------ Render ------------------------------ */
 
   var TRADES = [], SESSIONS = {}, sortKey = 'date', sortDir = 1;
@@ -348,6 +411,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     renderPairs(TRADES);
     renderHours(TRADES);
     renderMetrics(TRADES, p.metrics || []);
+    renderChallenge(p);
     renderTrades();
 
     ['fSession', 'fAsset', 'fResult', 'fDirection'].forEach(function (id) {
