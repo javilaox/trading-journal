@@ -41,16 +41,17 @@
   .filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
   select,input[type=search]{background:rgba(255,255,255,.04);color:var(--text);
        border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:.85rem;font-family:inherit}
-  .table-scroll{max-height:520px;overflow:auto}
+  .table-scroll{max-height:520px;overflow:auto;max-width:100%}
   .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
   .chips{display:flex;flex-wrap:wrap;gap:8px}
   .chip{border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:.78rem}
   .chip.ok{color:var(--green);border-color:rgba(34,197,94,.4)}
-  .hours{display:flex;align-items:flex-end;gap:3px;height:130px;margin-top:10px}
-  .hour{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
-  .hour-stack{width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
-  .hour-tp{background:var(--green)} .hour-sl{background:var(--red)}
-  .hour-label{font-size:.62rem;color:var(--muted)}
+  .hours{display:flex;align-items:flex-end;gap:4px;margin-top:12px;overflow-x:auto;padding-bottom:4px}
+  .hour{flex:1 0 26px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:26px}
+  .hour-stack{width:100%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px;overflow:hidden}
+  .hour-tp{background:var(--green);width:100%} .hour-sl{background:var(--red);width:100%}
+  .hour-count{font-size:.62rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .hour-label{font-size:.66rem;color:var(--muted);font-variant-numeric:tabular-nums}
   /* Puerta de contraseña: ocupa la pantalla hasta que el servidor valida el acceso. */
   #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg);z-index:10}
   #gate .box{width:min(400px,100%);text-align:center}
@@ -70,7 +71,32 @@
   .shots figcaption{color:var(--muted);font-size:.7rem;margin-bottom:4px}
   .shots img{width:100%;border:1px solid var(--border);border-radius:10px;display:block}
   footer{color:var(--muted);font-size:.75rem;text-align:center;margin-top:28px}
-  @media(max-width:640px){ th,td{padding:7px 8px} .wrap{padding:16px 12px 48px} }
+  /* Movil: el informe se consulta mucho desde el telefono, asi que las tablas se desplazan en
+     horizontal dentro de su tarjeta (nunca la pagina entera) y los controles pasan a ancho
+     completo para que se puedan pulsar con el dedo. */
+  @media(max-width:760px){
+    body{font-size:14px;overflow-x:hidden}
+    .wrap{padding:16px 12px 48px}
+    h1{font-size:1.25rem}
+    .card{padding:14px;border-radius:12px;margin-bottom:14px}
+    .app-header{flex-direction:column;align-items:stretch;gap:10px}
+    #refresh{width:100%}
+    .kpis{grid-template-columns:repeat(auto-fit,minmax(min(130px,45%),1fr));gap:8px}
+    .kpi{padding:10px}
+    .kpi strong{font-size:1.15rem}
+    .grid-2{grid-template-columns:1fr;gap:14px}
+    .filters{gap:8px}
+    .filters select,.filters input[type=search]{width:100%}
+    /* Los contenedores de tabla ya tienen overflow:auto; en movil hace falta el arrastre suave. */
+    .table-scroll{max-height:none;-webkit-overflow-scrolling:touch}
+    th,td{padding:7px 8px;font-size:.8rem}
+    .shots{grid-template-columns:1fr}
+    .hour{flex:1 0 22px;min-width:22px}
+  }
+  @media(max-width:420px){
+    .kpis{grid-template-columns:1fr 1fr}
+    th,td{padding:6px 6px;font-size:.75rem}
+  }
 </style>
 </head>
 <body>
@@ -477,13 +503,18 @@
       .filter(function (h) { return hours[h].tp + hours[h].sl > 0; });
     if (!keys.length) { document.getElementById('hoursCard').style.display = 'none'; return; }
     var max = Math.max.apply(null, keys.map(function (h) { return hours[h].tp + hours[h].sl; }));
+    // Alturas en PIXELES y no en porcentaje: el porcentaje se calcula sobre la altura del padre,
+    // que aqui no esta definida (es un item flexible), asi que resolvia a 0 y no se veia nada.
+    var MAX_BAR = 104;
     document.getElementById('hours').innerHTML = keys.map(function (h) {
       var v = hours[h], total = v.tp + v.sl;
-      var height = Math.max(10, (total / max) * 100);
+      var barH = Math.max(8, Math.round((total / max) * MAX_BAR));
+      var tpH = Math.round((v.tp / total) * barH);
       return '<div class="hour" title="' + h + ':00 · ' + v.tp + ' TP · ' + v.sl + ' SL">' +
-        '<div class="hour-stack" style="height:' + height + '%">' +
-        '<div class="hour-tp" style="height:' + ((v.tp / total) * 100) + '%"></div>' +
-        '<div class="hour-sl" style="height:' + ((v.sl / total) * 100) + '%"></div></div>' +
+        '<span class="hour-count">' + total + '</span>' +
+        '<div class="hour-stack" style="height:' + barH + 'px">' +
+        '<div class="hour-tp" style="height:' + tpH + 'px"></div>' +
+        '<div class="hour-sl" style="height:' + (barH - tpH) + 'px"></div></div>' +
         '<span class="hour-label">' + (h < 10 ? '0' + h : h) + '</span></div>';
     }).join('');
   }
