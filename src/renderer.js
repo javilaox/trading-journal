@@ -657,10 +657,11 @@ body.light #backtestingView .bt-session-card.is-active-session{
   padding:clamp(20px,2.4vw,28px);
   margin-top:clamp(20px,2.5vw,32px);
 }
+/* Este bloque ya no son tarjetas en rejilla, sino una tabla comparativa seguida del pie con
+   los totales y el acceso al simulador: tiene que fluir en bloque. Con la rejilla, el pie se
+   colocaba como una columna mas y se solapaba con la tabla. */
 #backtestingView #btScheduleStatsSection .schedule-discipline-metrics{
-  display:grid!important;
-  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:18px;
+  display:block!important;
   margin-top:16px;
   width:100%;
 }

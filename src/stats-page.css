@@ -288,8 +288,9 @@ body.light #statsView input[type="date"]::-webkit-calendar-picker-indicator {
   margin: 0;
   padding: var(--space-md) 0;
 }
+/* Tabla comparativa + pie de totales: flujo en bloque, no rejilla (ver dashboard.html). */
 #statsView .schedule-discipline-metrics {
-  display: grid !important;
+  display: block !important;
   margin-top: var(--space-sm);
 }
 #statsView .stats-schedule-notice {
