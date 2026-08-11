@@ -4974,6 +4974,98 @@
         background: transparent;
       }
 
+      /* Disciplina por horario: tabla comparativa en vez de tarjetas sueltas. Cada fila enfrenta
+         el mismo dato entre dentro / fuera / sin hora, que es como se lee la pregunta real. */
+      .schedule-compare-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--font-sm);
+      }
+      .schedule-compare-table th,
+      .schedule-compare-table td {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .schedule-compare-table thead th {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+      }
+      /* La primera columna son las etiquetas de fila, no datos: alineada a la izquierda. */
+      .schedule-compare-table tbody th,
+      .schedule-compare-table thead th:first-child {
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: var(--font-sm);
+      }
+      .schedule-compare-table tbody td {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      /* Un toque de color por columna para no tener que leer la cabecera cada vez. */
+      .schedule-compare-table .col-in { color: var(--green, #22c55e); }
+      .schedule-compare-table .col-out { color: var(--red, #ef4444); }
+      .schedule-compare-table tbody tr:last-child th,
+      .schedule-compare-table tbody tr:last-child td { border-bottom: none; }
+      .schedule-compare-table tbody tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+      .schedule-totals {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 28px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+      .schedule-total-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .schedule-total-item span {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+      }
+      .schedule-total-item strong {
+        font-size: 1.05rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* El grupo de exportar se monta desde JS dentro de barras de filtros que en algunos
+         apartados apilan sus elementos: sin esta separación queda pegado al campo de arriba. */
+      .backtesting-filter-bar .export-group,
+      .wd-filter-bar .export-group,
+      .dashboard-filter-row .export-group {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        width: 100%;
+        justify-content: flex-end;
+      }
+      /* En las barras que sí son de una sola fila, el grupo se queda a la derecha sin separador. */
+      @media (min-width: 720px) {
+        .dashboard-filter-row .export-group,
+        .wd-filter-bar .export-group {
+          width: auto;
+          margin-top: 0;
+          padding-top: 0;
+          border-top: none;
+          margin-left: auto;
+          padding-left: 18px;
+        }
+      }
+
       /* Botones de exportar a Excel / PDF. Se montan desde JS en la barra de filtros de cada
          apartado, por eso el grupo se separa del resto con margen automático a la izquierda. */
       .export-group {
@@ -7852,60 +7944,68 @@
         <div id="scheduleStatsEmpty" class="empty-state schedule-discipline-empty" hidden data-i18n="schedule_discipline_empty">
           No hay suficientes trades con horario configurado.
         </div>
-        <div id="scheduleStatsMetrics" class="stats-grid schedule-discipline-metrics">
-          <div class="advanced-item">
-            <span data-i18n="stat_trades_in_schedule">Trades dentro de horario</span>
-            <h2 id="statTradesInSchedule">0</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_trades_out_schedule">Trades fuera de horario</span>
-            <h2 id="statTradesOutSchedule">0</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_trades_missing_time">Sin hora</span>
-            <h2 id="statTradesMissingTime">0</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_trades_no_schedule">Sin horario configurado</span>
-            <h2 id="statTradesNoSchedule">0</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_schedule_compliance">% respetando horario</span>
-            <h2 id="statScheduleCompliance">—</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_winrate_in_schedule">Winrate dentro de horario</span>
-            <h2 id="statWinrateInSchedule">—</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_winrate_out_schedule">Winrate fuera de horario</span>
-            <h2 id="statWinrateOutSchedule">—</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_winrate_total">Winrate total</span>
-            <h2 id="statWinrateTotal">—</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_pnl_in_schedule">PnL dentro de horario</span>
-            <h2 id="statPnlInSchedule">0.00€</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_pnl_out_schedule">PnL fuera de horario</span>
-            <h2 id="statPnlOutSchedule">0.00€</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_pnl_missing_time">PnL sin hora</span>
-            <h2 id="statPnlMissingTime">0.00€</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_avg_duration_in_schedule">Duración media dentro de horario</span>
-            <h2 id="statAvgDurationInSchedule">—</h2>
-          </div>
-          <div class="advanced-item">
-            <span data-i18n="stat_avg_duration_out_schedule">Duración media fuera de horario</span>
-            <h2 id="statAvgDurationOutSchedule">—</h2>
-          </div>
-        </div>
+        <div id="scheduleStatsMetrics" class="schedule-discipline-metrics">
+                <!-- Antes eran 14 tarjetas sueltas: para responder "¿me va mejor dentro o fuera
+                     de mi horario?" había que ir saltando de una a otra. En tabla comparativa,
+                     cada fila enfrenta el mismo dato entre los tres grupos y se lee de corrido.
+                     Se conservan todos los ids para no tocar la lógica que los rellena. -->
+                <div class="table-wrap">
+                  <table class="schedule-compare-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th class="col-in">Dentro de horario</th>
+                        <th class="col-out">Fuera de horario</th>
+                        <th class="col-none">Sin hora registrada</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th>Trades</th>
+                        <td id="statTradesInSchedule">0</td>
+                        <td id="statTradesOutSchedule">0</td>
+                        <td id="statTradesMissingTime">0</td>
+                      </tr>
+                      <tr>
+                        <th>Acierto</th>
+                        <td id="statWinrateInSchedule">—</td>
+                        <td id="statWinrateOutSchedule">—</td>
+                        <td class="muted">—</td>
+                      </tr>
+                      <tr>
+                        <th>PnL</th>
+                        <td id="statPnlInSchedule">0.00€</td>
+                        <td id="statPnlOutSchedule">0.00€</td>
+                        <td id="statPnlMissingTime">0.00€</td>
+                      </tr>
+                      <tr>
+                        <th>Duración media</th>
+                        <td id="statAvgDurationInSchedule">—</td>
+                        <td id="statAvgDurationOutSchedule">—</td>
+                        <td class="muted">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="schedule-totals">
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_schedule_compliance">% respetando horario</span>
+                    <strong id="statScheduleCompliance">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_winrate_total">Acierto total</span>
+                    <strong id="statWinrateTotal">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_avg_duration_total">Duración media total</span>
+                    <strong id="statAvgDurationTotal">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_trades_no_schedule">Trades sin horario configurado</span>
+                    <strong id="statTradesNoSchedule">0</strong>
+                  </div>
+                </div>
+              </div>
         <div id="statHourConcentration" class="hour-concentration" hidden></div>
       </section>
 
@@ -8246,62 +8346,66 @@
                 <div class="bt-schedule-verdict-detail" id="btScheduleVerdictDetail"></div>
                 <div class="bt-schedule-verdict-compare" id="btScheduleVerdictCompare"></div>
               </div>
-              <div id="btScheduleStatsMetrics" class="stats-grid schedule-discipline-metrics">
-                <div class="advanced-item">
-                  <span data-i18n="stat_trades_in_schedule">Trades dentro de horario</span>
-                  <h2 id="btStatTradesInSchedule">0</h2>
+              <div id="btScheduleStatsMetrics" class="schedule-discipline-metrics">
+                <!-- Antes eran 14 tarjetas sueltas: para responder "¿me va mejor dentro o fuera
+                     de mi horario?" había que ir saltando de una a otra. En tabla comparativa,
+                     cada fila enfrenta el mismo dato entre los tres grupos y se lee de corrido.
+                     Se conservan todos los ids para no tocar la lógica que los rellena. -->
+                <div class="table-wrap">
+                  <table class="schedule-compare-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th class="col-in">Dentro de horario</th>
+                        <th class="col-out">Fuera de horario</th>
+                        <th class="col-none">Sin hora registrada</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th>Trades</th>
+                        <td id="btStatTradesInSchedule">0</td>
+                        <td id="btStatTradesOutSchedule">0</td>
+                        <td id="btStatTradesMissingTime">0</td>
+                      </tr>
+                      <tr>
+                        <th>Acierto</th>
+                        <td id="btStatWinrateInSchedule">—</td>
+                        <td id="btStatWinrateOutSchedule">—</td>
+                        <td class="muted">—</td>
+                      </tr>
+                      <tr>
+                        <th>PnL</th>
+                        <td id="btStatPnlInSchedule">0.00€</td>
+                        <td id="btStatPnlOutSchedule">0.00€</td>
+                        <td id="btStatPnlMissingTime">0.00€</td>
+                      </tr>
+                      <tr>
+                        <th>Duración media</th>
+                        <td id="btStatAvgDurationInSchedule">—</td>
+                        <td id="btStatAvgDurationOutSchedule">—</td>
+                        <td class="muted">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_trades_out_schedule">Trades fuera de horario</span>
-                  <h2 id="btStatTradesOutSchedule">0</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_trades_missing_time">Sin hora</span>
-                  <h2 id="btStatTradesMissingTime">0</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_trades_no_schedule">Sin horario configurado</span>
-                  <h2 id="btStatTradesNoSchedule">0</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_schedule_compliance">% respetando horario</span>
-                  <h2 id="btStatScheduleCompliance">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_winrate_in_schedule">Winrate dentro de horario</span>
-                  <h2 id="btStatWinrateInSchedule">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_winrate_out_schedule">Winrate fuera de horario</span>
-                  <h2 id="btStatWinrateOutSchedule">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_winrate_total">Winrate total</span>
-                  <h2 id="btStatWinrateTotal">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_pnl_in_schedule">PnL dentro de horario</span>
-                  <h2 id="btStatPnlInSchedule">0.00€</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_pnl_out_schedule">PnL fuera de horario</span>
-                  <h2 id="btStatPnlOutSchedule">0.00€</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_pnl_missing_time">PnL sin hora</span>
-                  <h2 id="btStatPnlMissingTime">0.00€</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_avg_duration_in_schedule">Duración media dentro de horario</span>
-                  <h2 id="btStatAvgDurationInSchedule">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_avg_duration_out_schedule">Duración media fuera de horario</span>
-                  <h2 id="btStatAvgDurationOutSchedule">—</h2>
-                </div>
-                <div class="advanced-item">
-                  <span data-i18n="stat_avg_duration_total">Duración media total</span>
-                  <h2 id="btStatAvgDurationTotal">—</h2>
+                <div class="schedule-totals">
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_schedule_compliance">% respetando horario</span>
+                    <strong id="btStatScheduleCompliance">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_winrate_total">Acierto total</span>
+                    <strong id="btStatWinrateTotal">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_avg_duration_total">Duración media total</span>
+                    <strong id="btStatAvgDurationTotal">—</strong>
+                  </div>
+                  <div class="schedule-total-item">
+                    <span data-i18n="stat_trades_no_schedule">Trades sin horario configurado</span>
+                    <strong id="btStatTradesNoSchedule">0</strong>
+                  </div>
                 </div>
               </div>
               <div id="btHourConcentration" class="hour-concentration" hidden></div>
