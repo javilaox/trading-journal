@@ -8528,9 +8528,41 @@
                   </div>
                 </div>
 
-                <div class="bt-analysis-card card panel-card" id="btMetricAnalysisSection">
+                <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btMetricExplorerSection">
+                  <h3 class="subsection-title">Explorador de métricas</h3>
+                  <p class="muted small mb-md">
+                    Cruza métricas con resultados para responder preguntas concretas. Pulsa una
+                    métrica para exigir que se cumpla (✓), otra vez para exigir que NO se cumpla (✕),
+                    y otra para ignorarla.
+                  </p>
+                  <div class="bt-explorer-filters">
+                    <div class="bt-explorer-group">
+                      <span class="bt-explorer-label">Métricas</span>
+                      <div class="chips" id="btExplorerMetrics"></div>
+                    </div>
+                    <div class="bt-explorer-group">
+                      <span class="bt-explorer-label">Resultado</span>
+                      <div class="chips" id="btExplorerResults"></div>
+                    </div>
+                    <div class="bt-explorer-group">
+                      <span class="bt-explorer-label">Dirección</span>
+                      <div class="chips" id="btExplorerDirections"></div>
+                    </div>
+                    <button type="button" class="button button-cancel" id="btExplorerReset">Limpiar</button>
+                  </div>
+                  <p class="bt-explorer-query" id="btExplorerQuery"></p>
+                  <div class="stats-grid bt-explorer-kpis" id="btExplorerKpis"></div>
+                  <div class="table-wrap bt-explorer-table-wrap">
+                    <table class="data-table" id="btExplorerTable">
+                      <thead><tr><th>Fecha</th><th>Par</th><th>Dir.</th><th>Res.</th><th>PnL</th><th>R</th></tr></thead>
+                      <tbody id="btExplorerBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btMetricAnalysisSection">
                   <h3 class="subsection-title">Análisis por métricas</h3>
-                  <p class="muted small mb-md">Compara tus resultados cuando cumples cada métrica y cuando no. Solo métricas tipo checkbox activas.</p>
+                  <p class="muted small mb-md">Vista rápida: cada métrica se compara <strong>por separado</strong> contra su propia negación. Para cruzar varias entre sí, usa el explorador de arriba. Solo métricas tipo checkbox activas.</p>
                   <div class="table-wrap">
                     <table class="bt-metric-analysis-table" id="btMetricAnalysisTable">
                       <thead>

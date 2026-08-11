@@ -786,6 +786,22 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
 #backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 #backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+/* Explorador de metricas: filtros de tres estados para cruzar metricas con resultados. */
+#backtestingView .bt-analysis-card--full{grid-column:1/-1}
+.bt-explorer-filters{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;margin-bottom:12px}
+.bt-explorer-group{display:flex;flex-direction:column;gap:6px;min-width:0}
+.bt-explorer-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+.bt-explorer-chip{border:1px solid var(--border);background:transparent;color:var(--text-muted);
+  border-radius:999px;padding:5px 12px;font-size:.8rem;cursor:pointer;font-family:inherit;
+  transition:border-color .15s ease,color .15s ease,background .15s ease}
+.bt-explorer-chip:hover{color:var(--text)}
+/* Tres estados: exigido (verde), excluido (rojo) e ignorado (neutro). El simbolo del texto
+   acompana al color para no depender solo de el. */
+.bt-explorer-chip.chip-on{color:var(--green,#22c55e);border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.08)}
+.bt-explorer-chip.chip-off{color:var(--red,#ef4444);border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.08)}
+.bt-explorer-query{margin:4px 0 12px;font-size:.85rem;color:var(--text);font-weight:600}
+.bt-explorer-kpis{margin-bottom:14px}
+.bt-explorer-table-wrap{max-height:340px;overflow:auto}
 /* Modal de compartir resultados por enlace. */
 #btShareOverlay .bt-share-modal{max-width:min(620px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
 #btShareOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
@@ -13124,6 +13140,201 @@ function analyzeCheckboxMetric(trades, metricName) {
   };
 }
 
+/* ---------------------------- Explorador de métricas ----------------------------
+ * La tabla de «Análisis por métricas» compara cada métrica por separado contra su propia
+ * negación, y eso se queda corto cuando las métricas describen escenarios relacionados
+ * (por ejemplo «llegó al 0.5%» y «llegó al 0%»): la pregunta real es «de las operaciones que
+ * llegaron al 0.5%, ¿cuántas habrían llegado al 0%?», y eso exige cruzar condiciones.
+ *
+ * Aquí cada métrica es un filtro de tres estados (ignorar / exigir cumplida / exigir NO
+ * cumplida) que se puede combinar con el resultado y la dirección. El resumen se recalcula
+ * sobre el subconjunto resultante.
+ */
+
+/** { nombreMétrica: 'yes' | 'no' }. Lo que no aparece se ignora. */
+let btExplorerMetricState = {};
+let btExplorerResults = new Set();
+let btExplorerDirections = new Set();
+
+const BT_EXPLORER_RESULTS = [
+  ['TP', 'TP'],
+  ['SL', 'SL'],
+  ['BE', 'BE'],
+];
+const BT_EXPLORER_DIRECTIONS = [
+  ['LONG', 'Compras'],
+  ['SHORT', 'Ventas'],
+];
+
+function cycleBtExplorerMetric(name) {
+  const current = btExplorerMetricState[name];
+  if (!current) btExplorerMetricState[name] = 'yes';
+  else if (current === 'yes') btExplorerMetricState[name] = 'no';
+  else delete btExplorerMetricState[name];
+}
+
+function applyBtExplorerFilters(trades) {
+  return (trades || []).filter((trade) => {
+    const result = String(trade.result || '').toUpperCase();
+    if (btExplorerResults.size && !btExplorerResults.has(result)) return false;
+
+    const direction = String(trade.direction || '').toUpperCase();
+    if (btExplorerDirections.size && !btExplorerDirections.has(direction)) return false;
+
+    const metrics = parseTradeCustomMetrics(trade);
+    return Object.entries(btExplorerMetricState).every(([name, want]) =>
+      want === 'yes' ? metrics[name] === true : metrics[name] === false
+    );
+  });
+}
+
+/** Frase que describe el filtro activo, para que el subconjunto no sea ambiguo. */
+function describeBtExplorerQuery(matching, total) {
+  const parts = [];
+  if (btExplorerResults.size) parts.push(`resultado ${[...btExplorerResults].join(' o ')}`);
+  if (btExplorerDirections.size) {
+    const labels = [...btExplorerDirections].map(
+      (d) => BT_EXPLORER_DIRECTIONS.find(([v]) => v === d)?.[1] || d
+    );
+    parts.push(labels.join(' o ').toLowerCase());
+  }
+  Object.entries(btExplorerMetricState).forEach(([name, want]) => {
+    parts.push(`${want === 'yes' ? 'con' : 'sin'} «${name}»`);
+  });
+
+  if (!parts.length) return `Todas las operaciones (${total}). Pulsa los filtros para acotar.`;
+  return `${matching} de ${total} operaciones: ${parts.join(', ')}.`;
+}
+
+function renderBacktestingMetricExplorer(filtered) {
+  const section = document.getElementById('btMetricExplorerSection');
+  if (!section) return;
+
+  const metricNames = (cachedBacktestingMetrics || [])
+    .filter((m) => m.is_active && m.metric_type === 'checkbox')
+    .map((m) => m.name)
+    .filter(Boolean);
+
+  // Si se borra una métrica, su filtro deja de tener sentido.
+  Object.keys(btExplorerMetricState).forEach((name) => {
+    if (!metricNames.includes(name)) delete btExplorerMetricState[name];
+  });
+
+  section.hidden = !metricNames.length;
+  if (!metricNames.length) return;
+
+  const chip = (label, state, attr) => {
+    const mark = state === 'yes' ? '✓ ' : state === 'no' ? '✕ ' : '';
+    const cls = state === 'yes' ? 'chip-on' : state === 'no' ? 'chip-off' : '';
+    return `<button type="button" class="bt-explorer-chip ${cls}" ${attr}>${mark}${escapeHtmlAssetLabel(label)}</button>`;
+  };
+
+  const metricsHost = document.getElementById('btExplorerMetrics');
+  if (metricsHost) {
+    metricsHost.innerHTML = metricNames
+      .map((name) =>
+        chip(name, btExplorerMetricState[name], `data-metric="${escapeAttrChip(name)}"`)
+      )
+      .join('');
+  }
+
+  const resultsHost = document.getElementById('btExplorerResults');
+  if (resultsHost) {
+    resultsHost.innerHTML = BT_EXPLORER_RESULTS.map(([value, label]) =>
+      chip(label, btExplorerResults.has(value) ? 'yes' : '', `data-result="${value}"`)
+    ).join('');
+  }
+
+  const dirHost = document.getElementById('btExplorerDirections');
+  if (dirHost) {
+    dirHost.innerHTML = BT_EXPLORER_DIRECTIONS.map(([value, label]) =>
+      chip(label, btExplorerDirections.has(value) ? 'yes' : '', `data-direction="${value}"`)
+    ).join('');
+  }
+
+  const pool = filtered || [];
+  const subset = applyBtExplorerFilters(pool);
+  const stats = summarizeBacktestingSubset(subset);
+
+  const queryEl = document.getElementById('btExplorerQuery');
+  if (queryEl) queryEl.textContent = describeBtExplorerQuery(subset.length, pool.length);
+
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+  const tone = (v) => (v > 0 ? 'positive' : v < 0 ? 'negative' : '');
+  const share = pool.length ? (subset.length / pool.length) * 100 : 0;
+
+  const kpis = [
+    ['Operaciones', String(stats.n), ''],
+    ['% del total', `${share.toFixed(1)}%`, ''],
+    ['Acierto', stats.winrate == null ? '—' : `${stats.winrate.toFixed(1)}%`, ''],
+    ['PnL', money(stats.pnl), tone(stats.pnl)],
+    ['R acumulada', `${stats.sumR >= 0 ? '+' : ''}${stats.sumR.toFixed(2)}`, tone(stats.sumR)],
+    ['PnL medio', stats.n ? money(stats.pnl / stats.n) : '—', tone(stats.pnl)],
+  ];
+
+  const kpisHost = document.getElementById('btExplorerKpis');
+  if (kpisHost) {
+    kpisHost.innerHTML = kpis
+      .map(
+        ([label, value, cls]) =>
+          `<div class="advanced-item"><span>${label}</span><h2 class="${cls}">${value}</h2></div>`
+      )
+      .join('');
+  }
+
+  const body = document.getElementById('btExplorerBody');
+  if (body) {
+    const rows = [...subset]
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .slice(0, 100);
+    body.innerHTML = rows.length
+      ? rows
+          .map((t) => {
+            const pnl = getBacktestingTradePnlEuros(t);
+            const r = getBacktestingTradeRValue(t);
+            const res = String(t.result || '').toUpperCase();
+            const dir = String(t.direction || '').toUpperCase() === 'SHORT' ? 'Venta' : 'Compra';
+            return `<tr>
+              <td>${formatDateEs(t.date)}</td>
+              <td>${escapeHtmlAssetLabel(t.asset || '—')}</td>
+              <td>${dir}</td>
+              <td><span class="bt-result-badge ${res === 'TP' || res === 'SL' ? res.toLowerCase() : 'be'}">${res || '—'}</span></td>
+              <td class="${tone(pnl)}">${money(pnl)}</td>
+              <td class="${tone(r)}">${r.toFixed(2)}</td>
+            </tr>`;
+          })
+          .join('') +
+        (subset.length > 100
+          ? `<tr><td colspan="6" class="muted">…y ${subset.length - 100} operaciones más</td></tr>`
+          : '')
+      : '<tr><td colspan="6" class="muted">Ninguna operación cumple estos filtros.</td></tr>';
+  }
+
+  if (section.dataset.bound !== 'true') {
+    section.dataset.bound = 'true';
+    section.addEventListener('click', (event) => {
+      const btn = event.target.closest('.bt-explorer-chip');
+      const reset = event.target.closest('#btExplorerReset');
+      if (reset) {
+        btExplorerMetricState = {};
+        btExplorerResults.clear();
+        btExplorerDirections.clear();
+      } else if (btn?.dataset.metric) {
+        cycleBtExplorerMetric(btn.dataset.metric);
+      } else if (btn?.dataset.result) {
+        const v = btn.dataset.result;
+        btExplorerResults.has(v) ? btExplorerResults.delete(v) : btExplorerResults.add(v);
+      } else if (btn?.dataset.direction) {
+        const v = btn.dataset.direction;
+        btExplorerDirections.has(v) ? btExplorerDirections.delete(v) : btExplorerDirections.add(v);
+      } else {
+        return;
+      }
+      renderBacktestingMetricExplorer(getBacktestingTradesForMetrics());
+    });
+  }
+}
+
 function renderBacktestingMetricAnalysis(filtered) {
   const tbody = document.getElementById('btMetricAnalysisBody');
   if (!tbody) return;
@@ -15841,6 +16052,7 @@ function rerenderBacktestingLocal() {
   renderBacktestingScheduleDiscipline(filteredForDiscipline);
   renderBacktestingPairTable(filteredForMetrics);
   renderBacktestingMetricAnalysis(filteredForMetrics);
+  renderBacktestingMetricExplorer(filteredForMetrics);
   renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
   renderBacktestingDayTrades();
   initBacktestingIncludeBeSwitch();
