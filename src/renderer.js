@@ -786,22 +786,61 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
 #backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 #backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
-/* Explorador de metricas: filtros de tres estados para cruzar metricas con resultados. */
+/* Explorador de metricas: filtros de tres estados para cruzar metricas con resultados.
+   Se prioriza la densidad: filtros en una linea, KPIs en tira horizontal y listado con scroll,
+   para que toda la herramienta quepa de un vistazo sin desplazarse. */
 #backtestingView .bt-analysis-card--full{grid-column:1/-1}
-.bt-explorer-filters{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;margin-bottom:12px}
-.bt-explorer-group{display:flex;flex-direction:column;gap:6px;min-width:0}
-.bt-explorer-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+#backtestingView #btMetricExplorerSection .subsection-title{margin-bottom:2px}
+#backtestingView #btMetricExplorerSection > p.muted{margin-bottom:10px}
+
+.bt-explorer-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-bottom:10px}
+.bt-explorer-group{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.bt-explorer-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);white-space:nowrap}
+.bt-explorer-filters .chips{gap:6px}
 .bt-explorer-chip{border:1px solid var(--border);background:transparent;color:var(--text-muted);
-  border-radius:999px;padding:5px 12px;font-size:.8rem;cursor:pointer;font-family:inherit;
+  border-radius:999px;padding:4px 11px;font-size:.78rem;line-height:1.3;cursor:pointer;font-family:inherit;
   transition:border-color .15s ease,color .15s ease,background .15s ease}
 .bt-explorer-chip:hover{color:var(--text)}
 /* Tres estados: exigido (verde), excluido (rojo) e ignorado (neutro). El simbolo del texto
    acompana al color para no depender solo de el. */
 .bt-explorer-chip.chip-on{color:var(--green,#22c55e);border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.08)}
 .bt-explorer-chip.chip-off{color:var(--red,#ef4444);border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.08)}
-.bt-explorer-query{margin:4px 0 12px;font-size:.85rem;color:var(--text);font-weight:600}
-.bt-explorer-kpis{margin-bottom:14px}
-.bt-explorer-table-wrap{max-height:340px;overflow:auto}
+#btExplorerReset{padding:4px 12px;font-size:.78rem;margin-left:auto}
+
+.bt-explorer-query{margin:0 0 10px;font-size:.82rem;color:var(--text);font-weight:600}
+
+/* .stats-grid solo define rejilla dentro de #statsView, asi que aqui hay que darsela: sin esto
+   los KPI se apilaban uno debajo de otro y la tarjeta se volvia larguisima. */
+#backtestingView .bt-explorer-kpis{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+#backtestingView .bt-explorer-kpis .advanced-item{
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:8px 10px;
+  min-width:0;
+}
+#backtestingView .bt-explorer-kpis .advanced-item span{
+  display:block;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#backtestingView .bt-explorer-kpis .advanced-item h2{
+  margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+
+.bt-explorer-table-wrap{max-height:260px;overflow:auto}
+#btExplorerTable th,#btExplorerTable td{padding:6px 10px;font-size:.8rem;white-space:nowrap}
+#btExplorerTable th{position:sticky;top:0;background:var(--card-bg,#131f37);z-index:1}
+
+@media(max-width:900px){
+  #btExplorerReset{margin-left:0}
+  .bt-explorer-group{width:100%}
+}
+
 /* Modal de compartir resultados por enlace. */
 #btShareOverlay .bt-share-modal{max-width:min(620px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
 #btShareOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
