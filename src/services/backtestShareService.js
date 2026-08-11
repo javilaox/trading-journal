@@ -10,6 +10,7 @@
 const { supabase } = require('./supabaseClient');
 const { getCurrentUserId } = require('./supabaseAuth');
 const { supabaseUrl, supabaseAnonKey } = require('./supabaseConfig');
+const { shareViewerUrl } = require('./shareViewerConfig');
 const { ensureFreshSupabaseSession, friendlyServiceError } = require('./supabaseWriteHelpers');
 const { buildViewerHtml } = require('./backtestShareViewer');
 
@@ -31,6 +32,17 @@ function generateSharePassword(length = 10) {
     if (i === 4 && length > 6) out += '-'; // ABCDE-FGHIJ, más fácil de leer
   }
   return out;
+}
+
+/**
+ * Enlace final: la página del visor con el informe en el fragmento. Se usa la dirección que
+ * viene en el build; `override` solo existe para pruebas y para poder apuntar a otro visor sin
+ * recompilar.
+ */
+function buildShareUrl(override, token) {
+  const base = String(override || shareViewerUrl || '').trim();
+  if (!base || !token) return '';
+  return `${base}${base.includes('#') ? '' : '#'}${token}`;
 }
 
 /** Solo los campos que deben viajar al informe compartido. */
@@ -93,8 +105,7 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
     return { success: false, error: friendlyServiceError(error) };
   }
 
-  const base = String(viewerBaseUrl || '').trim();
-  const url = base ? `${base}${base.includes('#') ? '' : '#'}${token}` : '';
+  const url = buildShareUrl(viewerBaseUrl, token);
 
   return {
     success: true,
@@ -124,11 +135,7 @@ async function listBacktestShareLinks(viewerBaseUrl) {
     return { success: false, error: friendlyServiceError(error), data: [] };
   }
 
-  const base = String(viewerBaseUrl || '').trim();
-  const rows = (data || []).map((row) => ({
-    ...row,
-    url: base ? `${base}${base.includes('#') ? '' : '#'}${row.id}` : '',
-  }));
+  const rows = (data || []).map((row) => ({ ...row, url: buildShareUrl(viewerBaseUrl, row.id) }));
 
   return { success: true, data: rows };
 }
@@ -161,6 +168,7 @@ function buildShareViewerFile() {
 }
 
 module.exports = {
+  buildShareUrl,
   buildShareViewerFile,
   createBacktestShareLink,
   listBacktestShareLinks,

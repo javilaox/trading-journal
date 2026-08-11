@@ -13787,10 +13787,12 @@ function openBacktestingTradeDetail(trade) {
 
 /* ==================== Compartir resultados de backtesting por enlace ==================== */
 
-/** Dirección del visor publicado por el usuario. Se configura una vez y se recuerda. */
-const SHARE_VIEWER_URL_KEY = 'backtest_share_viewer_url';
-
-const getShareViewerUrl = () => (localStorage.getItem(SHARE_VIEWER_URL_KEY) || '').trim();
+/**
+ * La dirección del visor viaja dentro del build (SHARE_VIEWER_URL), así que el cliente no
+ * configura nada: genera el enlace y listo. Esta anulación por localStorage existe solo para
+ * poder apuntar a otro visor en pruebas sin recompilar.
+ */
+const getShareViewerUrl = () => (localStorage.getItem('backtest_share_viewer_url') || '').trim();
 
 /** Nombres de las métricas checkbox activas, que son las que el visor puede analizar. */
 function getShareableBacktestingMetricNames() {
@@ -13831,23 +13833,6 @@ async function openBacktestShareModal() {
         </div>
         <div class="pro-modal-scroll">
           <p class="muted small" id="btShareSummary"></p>
-
-          <div class="bt-share-setup" id="btShareSetup">
-            <h4>Configuración (una sola vez)</h4>
-            <p class="muted small">
-              Supabase no puede servir páginas HTML, así que el visor se publica en un alojamiento
-              estático gratuito (GitHub Pages, Netlify, Cloudflare Pages…). Descarga el archivo,
-              súbelo una vez y pega aquí su dirección. A partir de ahí, cada enlace es esa misma
-              página con el informe detrás.
-            </p>
-            <button type="button" class="button button-cancel" id="btShareDownloadViewer" style="margin-bottom:10px">
-              Descargar visor.html
-            </button>
-            <div class="bt-share-field" style="margin-top:0">
-              <label for="btShareViewerUrl">Dirección del visor publicado</label>
-              <input type="text" id="btShareViewerUrl" placeholder="https://usuario.github.io/informes/visor.html" />
-            </div>
-          </div>
 
           <div class="field" style="margin-top:14px">
             <label for="btShareMaxDevices">Dispositivos que podrán abrirlo</label>
@@ -13906,11 +13891,6 @@ async function openBacktestShareModal() {
     document.getElementById('btShareClose')?.addEventListener('click', close);
     document.getElementById('btShareCloseFooter')?.addEventListener('click', close);
     document.getElementById('btShareGenerate')?.addEventListener('click', generateBacktestShareLink);
-    document.getElementById('btShareDownloadViewer')?.addEventListener('click', async () => {
-      const res = await getBackendApi()?.saveShareViewer?.();
-      if (res?.success) showToast('Visor guardado. Súbelo a tu alojamiento y pega aquí su dirección.', 'success');
-      else if (!res?.cancelled) showToast('No se pudo guardar el visor', 'error');
-    });
 
     // El modal se crea después de que initCustomSelects() haya recorrido la página, así que su
     // <select> se quedaba con el desplegable nativo de Windows, sin tematizar. Hay que envolverlo
@@ -13924,19 +13904,6 @@ async function openBacktestShareModal() {
       if (!input?.value) return;
       void navigator.clipboard.writeText(input.value).then(() => showToast('Copiado', 'success'));
     });
-  }
-
-  // La dirección del visor se recuerda entre sesiones: se configura una vez y ya.
-  const urlInput = document.getElementById('btShareViewerUrl');
-  if (urlInput) {
-    urlInput.value = localStorage.getItem(SHARE_VIEWER_URL_KEY) || '';
-    if (!urlInput.dataset.bound) {
-      urlInput.dataset.bound = 'true';
-      urlInput.addEventListener('change', () => {
-        localStorage.setItem(SHARE_VIEWER_URL_KEY, urlInput.value.trim());
-        void refreshBacktestShareList();
-      });
-    }
   }
 
   const payload = buildBacktestSharePayload();
@@ -13996,10 +13963,11 @@ async function generateBacktestShareLink() {
     document.getElementById('btSharePassword').value = result.data.password;
     document.getElementById('btShareResult').hidden = false;
     if (msg) {
-      msg.textContent = getShareViewerUrl()
+      const gotUrl = Boolean(result.data.url);
+      msg.textContent = gotUrl
         ? 'Enlace listo. Envía el enlace y la contraseña por separado.'
-        : 'Informe creado, pero falta configurar la dirección del visor para poder formar el enlace.';
-      msg.className = getShareViewerUrl() ? 'form-hint success' : 'form-hint error';
+        : 'Informe creado, pero esta versión no tiene configurada la página del visor.';
+      msg.className = gotUrl ? 'form-hint success' : 'form-hint error';
     }
     void refreshBacktestShareList();
   } finally {
