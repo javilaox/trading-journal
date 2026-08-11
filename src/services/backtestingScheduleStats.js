@@ -3,6 +3,7 @@ const {
   filterTradesByScheduleCompliance,
   computeDurationMinutes,
   strategyHasEvaluableSchedule,
+  parseOperatingHours,
   buildScheduleInsights,
 } = require('./scheduleUtils');
 
@@ -60,6 +61,29 @@ function classifyBacktestingTrade(trade, ctx) {
   const ownName = String(trade?.strategy || '').trim();
   const own = ownName ? strategyByName.get(ownName) : null;
   return getTradeScheduleStatus(trade, own);
+}
+
+/**
+ * Rangos horarios que la estrategia de referencia tiene configurados. Si no hay una sesión
+ * única filtrada, se usa la primera estrategia con horario evaluable entre las que aparecen en
+ * los trades, que es lo más parecido a "mi horario" cuando se miran varias sesiones a la vez.
+ */
+function resolveConfiguredRanges(strategyByName, selectedStrategyName, trades) {
+  const fromStrategy = (strategy) =>
+    strategyHasEvaluableSchedule(strategy) ? parseOperatingHours(strategy.operating_hours) : [];
+
+  const refName = selectedStrategyName ? String(selectedStrategyName).trim() : '';
+  if (refName) {
+    const ranges = fromStrategy(strategyByName.get(refName));
+    if (ranges.length) return ranges;
+  }
+
+  const names = [...new Set((trades || []).map((t) => String(t?.strategy || '').trim()))].filter(Boolean);
+  for (const name of names) {
+    const ranges = fromStrategy(strategyByName.get(name));
+    if (ranges.length) return ranges;
+  }
+  return [];
 }
 
 function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
@@ -148,6 +172,9 @@ function calculateBacktestingScheduleDiscipline(trades, ctx = {}) {
     avgDurationOut: avg(durationsOut),
     avgDurationTotal: avg(durationsAll),
     hasEvaluableDiscipline: disciplineTotal > 0,
+    // Rangos del horario realmente configurado. Se exponen para que el simulador pueda
+    // arrancar precargado con ellos: el punto de partida natural para "ampliar o acortar".
+    referenceRanges: resolveConfiguredRanges(strategyByName, selectedStrategyName, list),
   };
 }
 

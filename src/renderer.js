@@ -2866,6 +2866,7 @@ const {
   formatOperatingHoursSummary,
   getTradeScheduleStatus,
   formatMinutesAsHm,
+  simulateScheduleRanges,
 } = require('./services/scheduleUtils');
 const {
   parsePositionLegs,
@@ -14686,8 +14687,130 @@ function renderBacktestingScheduleDiscipline(trades) {
   set('btStatWinrateOutSchedule', pctOrDash(sched.winRateOut));
   set('btStatWinrateTotal', pctOrDash(sched.winRateTotal));
 
+  // Columna Total: la suma de los tres grupos. Se calcula aquí y no en el servicio porque es
+  // literalmente la suma de valores que ese servicio ya devuelve.
+  set(
+    'btStatTradesTotal',
+    String(sched.tradesIn + sched.tradesOut + sched.tradesMissingTime)
+  );
+  set('btStatPnlTotal', money(sched.pnlIn + sched.pnlOut + sched.pnlMissingTime));
+
   renderHourConcentration('btHourConcentration', sched);
   renderBacktestingScheduleVerdict(sched);
+  renderBacktestingScheduleSimulator(sched);
+}
+
+/* ------------------------- Simulador de horario (backtesting) -------------------------
+ * Responde «¿me renta ampliar o acortar mi horario?» sin tocar la estrategia: reparte los
+ * mismos trades con los rangos que escriba el usuario y compara el resultado contra el
+ * horario realmente configurado.
+ */
+let btScheduleSimRanges = null;
+
+function getBacktestingSimRanges() {
+  return document.querySelectorAll('#btStatScheduleSimRanges .schedule-sim-range').length
+    ? [...document.querySelectorAll('#btStatScheduleSimRanges .schedule-sim-range')].map((row) => ({
+        start: row.querySelector('.sim-start')?.value || '',
+        end: row.querySelector('.sim-end')?.value || '',
+      }))
+    : [];
+}
+
+function renderBacktestingSimRangeInputs() {
+  const host = document.getElementById('btStatScheduleSimRanges');
+  if (!host) return;
+  host.innerHTML = (btScheduleSimRanges || [])
+    .map(
+      (r, i) => `
+      <div class="schedule-sim-range">
+        <input type="time" class="input sim-start" value="${escapeAttrChip(r.start || '')}" />
+        <span class="muted">a</span>
+        <input type="time" class="input sim-end" value="${escapeAttrChip(r.end || '')}" />
+        <button type="button" class="schedule-sim-remove" data-sim-remove="${i}" aria-label="Quitar rango">✕</button>
+      </div>`
+    )
+    .join('');
+}
+
+function renderBacktestingScheduleSimulator(sched) {
+  const section = document.getElementById('btStatScheduleSim');
+  if (!section) return;
+
+  // La primera vez se precarga con el horario configurado: así el punto de partida es el
+  // horario real y el usuario solo tiene que estirarlo o encogerlo.
+  if (btScheduleSimRanges == null) {
+    const configured = Array.isArray(sched?.referenceRanges) ? sched.referenceRanges : [];
+    btScheduleSimRanges = configured.length
+      ? configured.map((r) => ({ start: r.start, end: r.end }))
+      : [{ start: '08:00', end: '17:00' }];
+    renderBacktestingSimRangeInputs();
+  }
+
+  const ranges = getBacktestingSimRanges().filter((r) => r.start && r.end);
+  const sim = simulateScheduleRanges(
+    getFilteredBacktestingTrades(),
+    ranges,
+    getBacktestingTradePnlEuros
+  );
+
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+  const pct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+
+  set('btStatSimTradesIn', String(sim.inside.n));
+  set('btStatSimTradesOut', String(sim.outside.n));
+  set('btStatSimTradesMissing', String(sim.missing.n));
+  set('btStatSimWinrateIn', pct(sim.inside.winrate));
+  set('btStatSimWinrateOut', pct(sim.outside.winrate));
+  set('btStatSimPnlIn', money(sim.inside.pnl));
+  set('btStatSimPnlOut', money(sim.outside.pnl));
+  set('btStatSimPnlMissing', money(sim.missing.pnl));
+  set('btStatSimDurationIn', formatMinutesAsHm(sim.inside.avgDuration));
+  set('btStatSimDurationOut', formatMinutesAsHm(sim.outside.avgDuration));
+
+  const verdict = document.getElementById('btStatScheduleSimVerdict');
+  if (verdict) {
+    if (!ranges.length) {
+      verdict.textContent = 'Escribe al menos un rango para simular.';
+      verdict.className = 'schedule-sim-verdict muted';
+    } else {
+      // La comparación relevante es contra lo que hoy se opera dentro del horario configurado.
+      const diff = sim.inside.pnl - sched.pnlIn;
+      const label = ranges.map((r) => `${r.start}–${r.end}`).join(', ');
+      if (Math.abs(diff) < 0.005) {
+        verdict.textContent = `Con ${label} obtendrías lo mismo que con tu horario actual.`;
+        verdict.className = 'schedule-sim-verdict muted';
+      } else {
+        verdict.textContent =
+          diff > 0
+            ? `Con ${label} habrías ganado ${money(diff)} más que con tu horario actual.`
+            : `Con ${label} habrías ganado ${money(Math.abs(diff))} menos que con tu horario actual.`;
+        verdict.className = `schedule-sim-verdict ${diff > 0 ? 'good' : 'bad'}`;
+      }
+    }
+  }
+
+  if (section.dataset.bound !== 'true') {
+    section.dataset.bound = 'true';
+    section.addEventListener('input', () => renderBacktestingScheduleSimulator(sched));
+    section.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-sim-remove]');
+      const add = event.target.closest('#btStatScheduleSimAdd');
+      if (remove) {
+        btScheduleSimRanges = getBacktestingSimRanges();
+        btScheduleSimRanges.splice(Number(remove.dataset.simRemove), 1);
+      } else if (add) {
+        btScheduleSimRanges = [...getBacktestingSimRanges(), { start: '', end: '' }];
+      } else {
+        return;
+      }
+      renderBacktestingSimRangeInputs();
+      renderBacktestingScheduleSimulator(sched);
+    });
+  }
 }
 
 /**

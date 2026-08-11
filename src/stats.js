@@ -1825,6 +1825,12 @@ async function renderScheduleStats(trades) {
   );
   set('statAvgDurationInSchedule', formatMinutesAsHm(sched.avgDurationIn));
   set('statAvgDurationOutSchedule', formatMinutesAsHm(sched.avgDurationOut));
+  set('statAvgDurationTotal', formatMinutesAsHm(sched.avgDurationTotal));
+
+  // Columna Total de la comparativa: suma de dentro + fuera + sin hora.
+  set('statTradesTotal', String(sched.tradesIn + sched.tradesOut + sched.tradesMissingTime));
+  const pnlTotal = sched.pnlIn + sched.pnlOut + sched.pnlMissingTime;
+  set('statPnlTotal', `${pnlTotal >= 0 ? '+' : ''}${pnlTotal.toFixed(2)}€`);
 
   const pctOrDash = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
   set('statWinrateInSchedule', pctOrDash(sched.winRateIn));

@@ -5018,6 +5018,68 @@
       .schedule-compare-table tbody tr:last-child td { border-bottom: none; }
       .schedule-compare-table tbody tr:hover td { background: rgba(255, 255, 255, 0.02); }
 
+      .schedule-compare-table .col-total { color: var(--text); }
+      /* La columna Total separa visualmente porque no es un grupo más: es la suma de los otros. */
+      .schedule-compare-table th.col-total,
+      .schedule-compare-table td:last-child {
+        border-left: 1px solid var(--border);
+        font-weight: 700;
+      }
+
+      /* Simulador de horario: probar otro rango sin tocar la configuración de la estrategia. */
+      .schedule-sim {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      .schedule-sim-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .schedule-sim-head h4 { margin: 0 0 2px; font-size: 0.9rem; }
+      .schedule-sim-head p { margin: 0; max-width: 60ch; }
+      .schedule-sim-ranges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .schedule-sim-range {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px 10px;
+      }
+      .schedule-sim-range .input {
+        width: auto;
+        min-width: 108px;
+        padding: 5px 8px;
+        font-size: 0.85rem;
+      }
+      .schedule-sim-remove {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.85rem;
+        padding: 2px 4px;
+        border-radius: 6px;
+      }
+      .schedule-sim-remove:hover { color: var(--red, #ef4444); }
+      .schedule-sim-verdict {
+        margin: 0 0 12px;
+        font-weight: 600;
+        font-size: 0.88rem;
+      }
+      .schedule-sim-verdict.good { color: var(--green, #22c55e); }
+      .schedule-sim-verdict.bad { color: var(--red, #ef4444); }
+
       .schedule-totals {
         display: flex;
         flex-wrap: wrap;
@@ -7947,7 +8009,7 @@
         <div id="scheduleStatsMetrics" class="schedule-discipline-metrics">
                 <!-- Antes eran 14 tarjetas sueltas: para responder "¿me va mejor dentro o fuera
                      de mi horario?" había que ir saltando de una a otra. En tabla comparativa,
-                     cada fila enfrenta el mismo dato entre los tres grupos y se lee de corrido.
+                     cada fila enfrenta el mismo dato entre los grupos y se lee de corrido.
                      Se conservan todos los ids para no tocar la lógica que los rellena. -->
                 <div class="table-wrap">
                   <table class="schedule-compare-table">
@@ -7957,6 +8019,7 @@
                         <th class="col-in">Dentro de horario</th>
                         <th class="col-out">Fuera de horario</th>
                         <th class="col-none">Sin hora registrada</th>
+                        <th class="col-total">Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -7965,24 +8028,28 @@
                         <td id="statTradesInSchedule">0</td>
                         <td id="statTradesOutSchedule">0</td>
                         <td id="statTradesMissingTime">0</td>
+                        <td id="statTradesTotal">0</td>
                       </tr>
                       <tr>
                         <th>Acierto</th>
                         <td id="statWinrateInSchedule">—</td>
                         <td id="statWinrateOutSchedule">—</td>
                         <td class="muted">—</td>
+                        <td id="statWinrateTotal">—</td>
                       </tr>
                       <tr>
                         <th>PnL</th>
                         <td id="statPnlInSchedule">0.00€</td>
                         <td id="statPnlOutSchedule">0.00€</td>
                         <td id="statPnlMissingTime">0.00€</td>
+                        <td id="statPnlTotal">0.00€</td>
                       </tr>
                       <tr>
                         <th>Duración media</th>
                         <td id="statAvgDurationInSchedule">—</td>
                         <td id="statAvgDurationOutSchedule">—</td>
                         <td class="muted">—</td>
+                        <td id="statAvgDurationTotal">—</td>
                       </tr>
                     </tbody>
                   </table>
@@ -7991,14 +8058,6 @@
                   <div class="schedule-total-item">
                     <span data-i18n="stat_schedule_compliance">% respetando horario</span>
                     <strong id="statScheduleCompliance">—</strong>
-                  </div>
-                  <div class="schedule-total-item">
-                    <span data-i18n="stat_winrate_total">Acierto total</span>
-                    <strong id="statWinrateTotal">—</strong>
-                  </div>
-                  <div class="schedule-total-item">
-                    <span data-i18n="stat_avg_duration_total">Duración media total</span>
-                    <strong id="statAvgDurationTotal">—</strong>
                   </div>
                   <div class="schedule-total-item">
                     <span data-i18n="stat_trades_no_schedule">Trades sin horario configurado</span>
@@ -8349,7 +8408,7 @@
               <div id="btScheduleStatsMetrics" class="schedule-discipline-metrics">
                 <!-- Antes eran 14 tarjetas sueltas: para responder "¿me va mejor dentro o fuera
                      de mi horario?" había que ir saltando de una a otra. En tabla comparativa,
-                     cada fila enfrenta el mismo dato entre los tres grupos y se lee de corrido.
+                     cada fila enfrenta el mismo dato entre los grupos y se lee de corrido.
                      Se conservan todos los ids para no tocar la lógica que los rellena. -->
                 <div class="table-wrap">
                   <table class="schedule-compare-table">
@@ -8359,6 +8418,7 @@
                         <th class="col-in">Dentro de horario</th>
                         <th class="col-out">Fuera de horario</th>
                         <th class="col-none">Sin hora registrada</th>
+                        <th class="col-total">Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -8367,24 +8427,28 @@
                         <td id="btStatTradesInSchedule">0</td>
                         <td id="btStatTradesOutSchedule">0</td>
                         <td id="btStatTradesMissingTime">0</td>
+                        <td id="btStatTradesTotal">0</td>
                       </tr>
                       <tr>
                         <th>Acierto</th>
                         <td id="btStatWinrateInSchedule">—</td>
                         <td id="btStatWinrateOutSchedule">—</td>
                         <td class="muted">—</td>
+                        <td id="btStatWinrateTotal">—</td>
                       </tr>
                       <tr>
                         <th>PnL</th>
                         <td id="btStatPnlInSchedule">0.00€</td>
                         <td id="btStatPnlOutSchedule">0.00€</td>
                         <td id="btStatPnlMissingTime">0.00€</td>
+                        <td id="btStatPnlTotal">0.00€</td>
                       </tr>
                       <tr>
                         <th>Duración media</th>
                         <td id="btStatAvgDurationInSchedule">—</td>
                         <td id="btStatAvgDurationOutSchedule">—</td>
                         <td class="muted">—</td>
+                        <td id="btStatAvgDurationTotal">—</td>
                       </tr>
                     </tbody>
                   </table>
@@ -8395,16 +8459,40 @@
                     <strong id="btStatScheduleCompliance">—</strong>
                   </div>
                   <div class="schedule-total-item">
-                    <span data-i18n="stat_winrate_total">Acierto total</span>
-                    <strong id="btStatWinrateTotal">—</strong>
-                  </div>
-                  <div class="schedule-total-item">
-                    <span data-i18n="stat_avg_duration_total">Duración media total</span>
-                    <strong id="btStatAvgDurationTotal">—</strong>
-                  </div>
-                  <div class="schedule-total-item">
                     <span data-i18n="stat_trades_no_schedule">Trades sin horario configurado</span>
                     <strong id="btStatTradesNoSchedule">0</strong>
+                  </div>
+                </div>
+                <div class="schedule-sim" id="btStatScheduleSim">
+                  <div class="schedule-sim-head">
+                    <div>
+                      <h4>Probar otro horario</h4>
+                      <p class="muted small">
+                        Reparte los mismos trades con el rango que tú definas, para ver si te renta
+                        ampliarlo o acortarlo. No cambia el horario de la estrategia.
+                      </p>
+                    </div>
+                    <button type="button" class="button button-cancel" id="btStatScheduleSimAdd">Añadir rango</button>
+                  </div>
+                  <div class="schedule-sim-ranges" id="btStatScheduleSimRanges"></div>
+                  <p class="schedule-sim-verdict" id="btStatScheduleSimVerdict"></p>
+                  <div class="table-wrap">
+                    <table class="schedule-compare-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th class="col-in">Dentro del rango</th>
+                          <th class="col-out">Fuera del rango</th>
+                          <th class="col-none">Sin hora</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><th>Trades</th><td id="btStatSimTradesIn">0</td><td id="btStatSimTradesOut">0</td><td id="btStatSimTradesMissing">0</td></tr>
+                        <tr><th>Acierto</th><td id="btStatSimWinrateIn">—</td><td id="btStatSimWinrateOut">—</td><td class="muted">—</td></tr>
+                        <tr><th>PnL</th><td id="btStatSimPnlIn">0.00€</td><td id="btStatSimPnlOut">0.00€</td><td id="btStatSimPnlMissing">0.00€</td></tr>
+                        <tr><th>Duración media</th><td id="btStatSimDurationIn">—</td><td id="btStatSimDurationOut">—</td><td class="muted">—</td></tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

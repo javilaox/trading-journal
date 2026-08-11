@@ -380,8 +380,64 @@ function buildScheduleInsights(items) {
   };
 }
 
+/**
+ * Reparte los trades entre "dentro" y "fuera" de unos rangos horarios ARBITRARIOS, para poder
+ * responder «¿me renta ampliar o acortar mi horario?» sin tocar la configuración de la
+ * estrategia. Es deliberadamente independiente de `getTradeScheduleStatus`, que evalúa el
+ * horario realmente configurado: aquí el rango lo pone el usuario para simular.
+ *
+ * @param {Array}    trades  operaciones a repartir
+ * @param {Array}    ranges  [{ start:'HH:MM', end:'HH:MM' }]
+ * @param {Function} getPnl  cómo obtener el PnL de un trade (difiere entre real y backtesting)
+ */
+function simulateScheduleRanges(trades, ranges, getPnl = (t) => Number(t?.pnl || 0)) {
+  const parsed = (Array.isArray(ranges) ? ranges : [])
+    .map((r) => ({ start: parseTimeToMinutes(r?.start), end: parseTimeToMinutes(r?.end) }))
+    .filter((r) => r.start != null && r.end != null);
+
+  const bucket = () => ({ n: 0, wins: 0, losses: 0, be: 0, pnl: 0, durSum: 0, durN: 0 });
+  const out = { inside: bucket(), outside: bucket(), missing: bucket(), ranges: parsed.length };
+
+  const add = (group, trade) => {
+    group.n += 1;
+    group.pnl += Number(getPnl(trade)) || 0;
+    const result = String(trade?.result || '').toUpperCase();
+    if (result === 'TP') group.wins += 1;
+    else if (result === 'SL') group.losses += 1;
+    else group.be += 1;
+    const duration = computeDurationMinutes(trade?.entry_time, trade?.exit_time);
+    if (Number.isFinite(duration) && duration > 0) {
+      group.durSum += duration;
+      group.durN += 1;
+    }
+  };
+
+  (Array.isArray(trades) ? trades : []).forEach((trade) => {
+    const minutes = parseTimeToMinutes(trade?.entry_time);
+    if (minutes == null) {
+      add(out.missing, trade);
+      return;
+    }
+    // Un rango con fin anterior al inicio cruza la medianoche (22:00–02:00).
+    const inside = parsed.some(({ start, end }) =>
+      start <= end ? minutes >= start && minutes <= end : minutes >= start || minutes <= end
+    );
+    add(inside ? out.inside : out.outside, trade);
+  });
+
+  // El winrate excluye los BE del numerador pero no del denominador, igual que en el resto
+  // de la app, para que los números cuadren entre pantallas.
+  [out.inside, out.outside, out.missing].forEach((g) => {
+    g.winrate = g.n ? (g.wins / g.n) * 100 : null;
+    g.avgDuration = g.durN ? g.durSum / g.durN : null;
+  });
+
+  return out;
+}
+
 module.exports = {
   DAY_KEYS,
+  simulateScheduleRanges,
   buildScheduleInsights,
   parseTimeToMinutes,
   formatMinutesAsHm,
