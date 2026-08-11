@@ -8826,6 +8826,22 @@
 
             <div class="bt-config-section pro-section">
               <div class="pro-card">
+                <div class="section-header">
+                  <div>
+                    <h3>Recalcular PnL de las operaciones</h3>
+                    <p class="muted small">
+                      El PnL se calcula al crear cada operación y se guarda tal cual. Si después
+                      cambias el RR de una estrategia o el capital de una sesión, las operaciones
+                      antiguas se quedan con los números viejos. Esto las pone al día.
+                    </p>
+                  </div>
+                  <button type="button" class="button button-cancel" id="btRecalcOpen">Revisar y recalcular</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="bt-config-section pro-section">
+              <div class="pro-card">
               <div class="section-header">
                 <div>
                   <h3>Estrategias backtesting</h3>
@@ -9021,6 +9037,31 @@
         <div class="app-modal-footer modal-footer">
           <button type="button" id="cancelBtStrategyBtn" class="btn btn-secondary">Cancelar</button>
           <button type="button" id="saveBtStrategyBtn" class="btn btn-primary full">Guardar estrategia</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="btRecalcOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal bt-recalc-modal">
+        <div class="modal-header">
+          <h2>Recalcular PnL</h2>
+          <button type="button" class="modal-close" id="btRecalcClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="pro-modal-scroll">
+          <p class="form-hint" id="btRecalcSummary"></p>
+          <div class="table-wrap">
+            <table class="data-table" id="btRecalcTable">
+              <thead>
+                <tr><th>Fecha</th><th>Par</th><th>Estrategia</th><th>Res.</th><th>Riesgo</th><th>PnL</th><th>R</th></tr>
+              </thead>
+              <tbody id="btRecalcBody"></tbody>
+            </table>
+          </div>
+          <div id="btRecalcSkipped"></div>
+        </div>
+        <div class="pro-modal-footer">
+          <button type="button" class="button button-cancel" id="btRecalcCancel">Cancelar</button>
+          <button type="button" class="button button-save" id="btRecalcApply">Aplicar cambios</button>
         </div>
       </div>
     </div>

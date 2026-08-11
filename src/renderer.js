@@ -842,6 +842,17 @@ body.light #backtestingView .bt-session-card.is-active-session{
   .bt-explorer-group{width:100%}
 }
 
+/* Modal de recalculo de PnL: vista previa de los cambios antes de aplicarlos. */
+#btRecalcOverlay .bt-recalc-modal{max-width:min(900px,95vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
+#btRecalcOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
+#btRecalcOverlay .modal-header h2{margin:0;font-size:1.05rem}
+#btRecalcOverlay .modal-close{background:transparent;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;border-radius:8px}
+#btRecalcOverlay .modal-close:hover{color:var(--text);background:var(--hover-soft,rgba(148,163,184,.14))}
+#btRecalcOverlay .pro-modal-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 20px;scrollbar-color:rgba(148,163,184,.35) transparent}
+#btRecalcOverlay .pro-modal-footer{flex-shrink:0;padding:14px 24px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+#btRecalcTable th,#btRecalcTable td{padding:7px 10px;font-size:.82rem;white-space:nowrap}
+#btRecalcTable th{position:sticky;top:0;background:var(--card-bg,#131f37);z-index:1}
+#btRecalcOverlay .button:disabled{opacity:.5;cursor:default}
 /* Modal de compartir resultados por enlace. */
 #btShareOverlay .bt-share-modal{max-width:min(620px,94vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
 #btShareOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
@@ -2869,6 +2880,7 @@ const {
   formatMinutesAsHm,
   simulateScheduleRanges,
 } = require('./services/scheduleUtils');
+const { planBacktestRecalc } = require('./services/backtestRecalc');
 const {
   parsePositionLegs,
   validatePositionLegs,
@@ -14037,6 +14049,132 @@ function openBacktestingTradeDetail(trade) {
   overlay.classList.add('active');
 }
 
+/* ======================= Recalcular PnL de operaciones de backtesting =======================
+ * El PnL se guarda al crear cada operación. Si luego cambia el RR de la estrategia o el capital
+ * de la sesión, lo guardado se queda desfasado. Esto lo pone al día, pero SIEMPRE enseñando
+ * antes qué va a cambiar: reescribir PnL sin que el usuario lo vea es inaceptable.
+ */
+let btRecalcPlan = null;
+
+function openBacktestRecalcModal() {
+  const overlay = document.getElementById('btRecalcOverlay');
+  if (!overlay) return;
+
+  btRecalcPlan = planBacktestRecalc(
+    cachedBacktestingTrades || [],
+    getBacktestingStrategies(),
+    cachedBacktestingSessions || []
+  );
+
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+  const arrow = (from, to, fmt) =>
+    from === to
+      ? `<span class="muted">${fmt(to)}</span>`
+      : `<span class="muted">${fmt(from)}</span> → <strong>${fmt(to)}</strong>`;
+
+  const summary = document.getElementById('btRecalcSummary');
+  const body = document.getElementById('btRecalcBody');
+  const skipped = document.getElementById('btRecalcSkipped');
+  const applyBtn = document.getElementById('btRecalcApply');
+
+  const n = btRecalcPlan.changes.length;
+  if (summary) {
+    summary.textContent = n
+      ? `${n} de ${btRecalcPlan.total} operaciones cambiarían. Revisa la lista antes de aplicar.`
+      : `Todas las operaciones (${btRecalcPlan.total}) ya están al día. No hay nada que cambiar.`;
+    summary.className = n ? 'form-hint' : 'form-hint success';
+  }
+  if (applyBtn) applyBtn.disabled = !n;
+
+  if (body) {
+    body.innerHTML = n
+      ? btRecalcPlan.changes
+          .map(
+            (c) => `<tr>
+              <td>${formatDateEs(c.date)}</td>
+              <td>${escapeHtmlAssetLabel(c.asset || '—')}</td>
+              <td>${escapeHtmlAssetLabel(c.strategy)}</td>
+              <td>${c.result}</td>
+              <td>${money(c.risk)}</td>
+              <td>${arrow(c.from.pnl, c.to.pnl, money)}</td>
+              <td>${arrow(c.from.r, c.to.r, (v) => Number(v).toFixed(2))}</td>
+            </tr>`
+          )
+          .join('')
+      : '<tr><td colspan="7" class="muted">Nada que recalcular.</td></tr>';
+  }
+
+  if (skipped) {
+    // Las que no se pueden recalcular se listan aparte: si no, parecería que se han ignorado.
+    skipped.innerHTML = btRecalcPlan.skipped.length
+      ? `<p class="muted small" style="margin-top:12px">
+           ${btRecalcPlan.skipped.length} operaciones no se pueden recalcular y se dejarán tal cual:
+           ${[...new Set(btRecalcPlan.skipped.map((s) => s.reason))].map(escapeHtmlAssetLabel).join(' · ')}
+         </p>`
+      : '';
+  }
+
+  overlay.classList.add('active');
+
+  if (overlay.dataset.bound !== 'true') {
+    overlay.dataset.bound = 'true';
+    const close = () => overlay.classList.remove('active');
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.getElementById('btRecalcClose')?.addEventListener('click', close);
+    document.getElementById('btRecalcCancel')?.addEventListener('click', close);
+    document.getElementById('btRecalcApply')?.addEventListener('click', () => void applyBacktestRecalc());
+  }
+}
+
+async function applyBacktestRecalc() {
+  const backend = getBackendApi();
+  const applyBtn = document.getElementById('btRecalcApply');
+  if (!backend?.updateBacktestTrade || !btRecalcPlan?.changes?.length) return;
+
+  const ok = await showConfirmModal({
+    title: 'Aplicar recálculo',
+    message: `Se actualizarán ${btRecalcPlan.changes.length} operaciones. Solo cambian el PnL y la R; el resto de datos no se toca. ¿Continuar?`,
+    confirmText: 'Aplicar',
+    cancelText: 'Cancelar',
+  });
+  if (!ok) return;
+
+  if (applyBtn) applyBtn.disabled = true;
+  let done = 0;
+  let failed = 0;
+
+  for (const change of btRecalcPlan.changes) {
+    const trade = (cachedBacktestingTrades || []).find((t) => String(t.id) === String(change.id));
+    if (!trade) {
+      failed += 1;
+      continue;
+    }
+    // Se reenvía el trade completo con los dos campos corregidos, para no perder nada de lo demás.
+    const res = await backend.updateBacktestTrade({
+      ...trade,
+      pnl: change.to.pnl,
+      rr_result: change.to.r,
+    });
+    if (res?.success) done += 1;
+    else failed += 1;
+  }
+
+  document.getElementById('btRecalcOverlay')?.classList.remove('active');
+  showToast(
+    failed
+      ? `Recalculadas ${done} operaciones, ${failed} fallaron`
+      : `Recalculadas ${done} operaciones`,
+    failed ? 'warning' : 'success'
+  );
+
+  const reloaded = await backend.getBacktestTrades();
+  cachedBacktestingTrades = Array.isArray(reloaded) ? reloaded : [];
+  rerenderBacktestingLocal();
+  if (applyBtn) applyBtn.disabled = false;
+}
+
 /* ==================== Compartir resultados de backtesting por enlace ==================== */
 
 /**
@@ -15655,6 +15793,43 @@ function applyBacktestingAutoPnlIfUnset() {
   if (!magnitude) return;
 
   pnlInput.value = String(magnitude);
+  markBacktestingPnlAsAuto(pnlInput);
+}
+
+/* ---------------- PnL automático: recalcular la magnitud al cambiar el resultado ----------------
+ * El PnL de TP y de SL NO son el mismo número cuando el RR es distinto de 1: TP = riesgo × RR y
+ * SL = riesgo. Antes, al cambiar el desplegable de Resultado solo se invertía el signo del valor
+ * que ya hubiera, así que un TP autocalculado de 500 (riesgo 1000 × RR 0,5) se convertía en un SL
+ * de -500 cuando debía ser -1000. Con RR 1 coincidían y por eso pasó desapercibido.
+ *
+ * La magnitud solo se recalcula si el valor lo había puesto la app; si lo escribió el usuario a
+ * mano se respeta y únicamente se ajusta el signo.
+ */
+function markBacktestingPnlAsAuto(input) {
+  const el = input || getBacktestingPnlInputElement();
+  if (el) el.dataset.autoPnl = 'true';
+}
+
+function isBacktestingPnlAuto() {
+  return getBacktestingPnlInputElement()?.dataset.autoPnl === 'true';
+}
+
+function applyBacktestingAutoPnlForResultChange() {
+  const pnlInput = getBacktestingPnlInputElement();
+  const resultInput = document.getElementById('btResult');
+  if (!pnlInput || !resultInput) return;
+
+  if (parseBacktestingNumber(pnlInput.value) === 0) {
+    applyBacktestingAutoPnlIfUnset();
+    return;
+  }
+  if (!isBacktestingPnlAuto()) return;
+
+  const magnitude = computeBacktestingAutoPnlMagnitude(resultInput.value);
+  if (!magnitude) return;
+
+  pnlInput.value = String(magnitude);
+  markBacktestingPnlAsAuto(pnlInput);
 }
 
 function syncBacktestingResultFromPnl() {
@@ -15700,6 +15875,8 @@ function initBacktestingResultPnlSync() {
     pnlInput.dataset.resultSyncBound = 'true';
 
     pnlInput.addEventListener('input', () => {
+      // Lo ha escrito el usuario: a partir de aquí su valor manda sobre el cálculo automático.
+      pnlInput.dataset.autoPnl = 'false';
       syncBacktestingResultFromPnl();
     });
 
@@ -15713,7 +15890,7 @@ function initBacktestingResultPnlSync() {
     resultInput.dataset.pnlSyncBound = 'true';
 
     resultInput.addEventListener('change', () => {
-      applyBacktestingAutoPnlIfUnset();
+      applyBacktestingAutoPnlForResultChange();
       syncBacktestingPnlFromResult();
     });
   }
@@ -17561,6 +17738,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.getElementById('btClearBacktestForm')?.addEventListener('click', () => clearBacktestForm());
+  document.getElementById('btRecalcOpen')?.addEventListener('click', () => openBacktestRecalcModal());
   // --- Etiquetas de sesión (modal crear/editar, mismo patrón que estrategias) ---
   document.getElementById('openBtSessionTagModalBtn')?.addEventListener('click', () => {
     openBtSessionTagModal(null);
