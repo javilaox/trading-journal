@@ -842,6 +842,19 @@ body.light #backtestingView .bt-session-card.is-active-session{
   .bt-explorer-group{width:100%}
 }
 
+/* Listado de operaciones fuera de horario. */
+.bt-schedule-outside-btn{padding:4px 12px;font-size:.78rem;margin-left:auto}
+#btOutsideScheduleOverlay .bt-outside-modal{max-width:min(940px,95vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
+#btOutsideScheduleOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
+#btOutsideScheduleOverlay .modal-header h2{margin:0;font-size:1.05rem}
+#btOutsideScheduleOverlay .modal-close{background:transparent;border:none;color:var(--text-muted);font-size:16px;cursor:pointer;padding:4px 8px;border-radius:8px}
+#btOutsideScheduleOverlay .modal-close:hover{color:var(--text);background:var(--hover-soft,rgba(148,163,184,.14))}
+#btOutsideScheduleOverlay .pro-modal-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 20px;scrollbar-color:rgba(148,163,184,.35) transparent}
+#btOutsideScheduleOverlay .pro-modal-footer{flex-shrink:0;padding:14px 24px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end}
+#btOutsideTable th,#btOutsideTable td{padding:7px 10px;font-size:.82rem;white-space:nowrap}
+#btOutsideTable th{position:sticky;top:0;background:var(--card-bg,#131f37);z-index:1}
+.bt-outside-row{cursor:pointer}
+.bt-outside-row:hover td{background:rgba(255,255,255,.03)}
 /* Modal de recalculo de PnL: vista previa de los cambios antes de aplicarlos. */
 #btRecalcOverlay .bt-recalc-modal{max-width:min(900px,95vw);width:100%;max-height:min(88vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;border-radius:16px}
 #btRecalcOverlay .modal-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 24px 12px;flex-shrink:0}
@@ -3253,6 +3266,9 @@ function renderTradeCompositeDetailHtml(trade) {
 const {
   calculateBacktestingScheduleDiscipline,
   filterBacktestingTradesForMetrics,
+  buildBacktestingStrategyByNameMap,
+  getBacktestingReferenceStrategyName,
+  classifyBacktestingTrade,
   normalizeTimeField: normalizeBtTimeField,
 } = require('./services/backtestingScheduleStats');
 
@@ -15074,8 +15090,131 @@ function renderBacktestingScheduleVerdict(sched) {
   compareEl.innerHTML = `
     <span>Dentro: <strong>${money(sched.pnlIn)}</strong> · ${plural(sched.tradesIn, 'trade', 'trades')} · acierto <strong>${pct(sched.winRateIn)}</strong></span>
     <span>Fuera: <strong>${money(sched.pnlOut)}</strong> · ${plural(sched.tradesOut, 'trade', 'trades')} · acierto <strong>${pct(sched.winRateOut)}</strong></span>
+    ${
+      sched.tradesOut > 0
+        ? `<button type="button" class="button button-cancel bt-schedule-outside-btn" id="btScheduleOutsideOpen">Ver cuáles son</button>`
+        : ''
+    }
   `;
+
+  document.getElementById('btScheduleOutsideOpen')?.addEventListener('click', () => {
+    openBacktestingOutsideScheduleModal();
+  });
+
   box.hidden = false;
+}
+
+/**
+ * Listado de las operaciones que quedaron fuera del horario operativo.
+ *
+ * Importante para interpretarlo: una operación se clasifica por su HORA DE ENTRADA. Si entraste
+ * dentro de tu horario y el TP o el SL saltó más tarde, cuenta como dentro. Se dice de forma
+ * explícita en el modal porque es justo la duda que genera el dato.
+ */
+function openBacktestingOutsideScheduleModal() {
+  let overlay = document.getElementById('btOutsideScheduleOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'btOutsideScheduleOverlay';
+    overlay.className = 'modal-overlay app-modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal app-modal bt-outside-modal">
+        <div class="modal-header">
+          <h2>Operaciones fuera de horario</h2>
+          <button type="button" class="modal-close" id="btOutsideClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="pro-modal-scroll">
+          <p class="muted small">
+            Una operación cuenta como fuera de horario solo por su <strong>hora de entrada</strong>.
+            Si entraste dentro de tu franja y el TP o el SL saltó después, cuenta como dentro.
+          </p>
+          <p class="form-hint" id="btOutsideSummary"></p>
+          <div class="table-wrap">
+            <table class="data-table" id="btOutsideTable">
+              <thead>
+                <tr><th>Fecha</th><th>Par</th><th>Dir.</th><th>Entrada</th><th>Salida</th><th>Res.</th><th>PnL</th><th>R</th><th>Horario</th></tr>
+              </thead>
+              <tbody id="btOutsideBody"></tbody>
+            </table>
+          </div>
+          <p class="muted small" style="margin-top:10px">Pulsa una fila para ver la ficha completa.</p>
+        </div>
+        <div class="pro-modal-footer">
+          <button type="button" class="button button-save" id="btOutsideCloseFooter">Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.classList.remove('active');
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.getElementById('btOutsideClose')?.addEventListener('click', close);
+    document.getElementById('btOutsideCloseFooter')?.addEventListener('click', close);
+  }
+
+  // Se usa el mismo clasificador que el cálculo de disciplina para que el listado y el número
+  // del resumen no puedan discrepar nunca.
+  const strategyByName = buildBacktestingStrategyByNameMap(getBacktestingStrategies());
+  const selectedStrategyName = getBacktestingReferenceStrategyName(
+    selectedBacktestingSessionIds,
+    cachedBacktestingSessions || []
+  );
+  const outside = getFilteredBacktestingTrades().filter(
+    (trade) =>
+      classifyBacktestingTrade(trade, { strategyByName, selectedStrategyName }) === 'outside'
+  );
+
+  const money = (v) => `${v >= 0 ? '+' : ''}${Number(v || 0).toFixed(2)}€`;
+  const tone = (v) => (v > 0 ? 'positive' : v < 0 ? 'negative' : '');
+  const totalPnl = outside.reduce((acc, t) => acc + getBacktestingTradePnlEuros(t), 0);
+
+  const summary = document.getElementById('btOutsideSummary');
+  if (summary) {
+    summary.textContent = `${outside.length} ${outside.length === 1 ? 'operación' : 'operaciones'} fuera de horario · PnL ${money(totalPnl)}`;
+    summary.className = `form-hint ${totalPnl < 0 ? 'error' : ''}`;
+  }
+
+  const body = document.getElementById('btOutsideBody');
+  if (body) {
+    body.innerHTML = outside.length
+      ? [...outside]
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+          .map((t) => {
+            const pnl = getBacktestingTradePnlEuros(t);
+            const r = getBacktestingTradeRValue(t);
+            const res = String(t.result || '').toUpperCase();
+            const dir = String(t.direction || '').toUpperCase() === 'SHORT' ? 'Venta' : 'Compra';
+            const strategy = strategyByName.get(String(t.strategy || '').trim());
+            const hours = formatOperatingHoursSummary(strategy?.operating_hours) || '—';
+            return `<tr data-trade-id="${escapeAttrChip(String(t.id))}" class="bt-outside-row">
+              <td>${formatDateEs(t.date)}</td>
+              <td>${escapeHtmlAssetLabel(t.asset || '—')}</td>
+              <td>${dir}</td>
+              <td><strong>${escapeHtmlAssetLabel(t.entry_time || '—')}</strong></td>
+              <td>${escapeHtmlAssetLabel(t.exit_time || '—')}</td>
+              <td><span class="bt-result-badge ${res === 'TP' || res === 'SL' ? res.toLowerCase() : 'be'}">${res || '—'}</span></td>
+              <td class="${tone(pnl)}">${money(pnl)}</td>
+              <td class="${tone(r)}">${r.toFixed(2)}</td>
+              <td class="muted">${escapeHtmlAssetLabel(hours)}</td>
+            </tr>`;
+          })
+          .join('')
+      : '<tr><td colspan="9" class="muted">No hay operaciones fuera de horario.</td></tr>';
+
+    body.querySelectorAll('.bt-outside-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        const id = row.dataset.tradeId;
+        const trade = (cachedBacktestingTrades || []).find((t) => String(t.id) === String(id));
+        if (trade) {
+          overlay.classList.remove('active');
+          openBacktestingTradeDetail(trade);
+        }
+      });
+    });
+  }
+
+  overlay.classList.add('active');
 }
 
 function getBacktestingStrategyRiskEuroForForm(strategy) {
