@@ -16505,8 +16505,17 @@ async function saveBacktestingSessionFromModal() {
   refreshBacktestingFilterSelects();
 
   if (savedId) {
+    // La sesión recién guardada pasa a ser la activa (es sobre la que se va a trabajar), pero
+    // NO se toca el filtro si estaba en "todas": antes se reducía a la nueva sesión y, como el
+    // listado de tarjetas respeta ese filtro, las sesiones anteriores desaparecían de la vista
+    // y parecía que se habían borrado.
     activeBacktestingSessionId = savedId;
-    selectedBacktestingSessionIds = [String(savedId)];
+    if (!selectedBacktestingSessionIds.includes('all')) {
+      // Si había un filtro concreto, se añade la nueva para que no quede invisible.
+      selectedBacktestingSessionIds = [
+        ...new Set([...selectedBacktestingSessionIds, String(savedId)]),
+      ];
+    }
     initBacktestingSessionFilter();
   }
 
