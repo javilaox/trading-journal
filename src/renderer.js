@@ -14660,7 +14660,8 @@ function renderBacktestingScheduleDiscipline(trades) {
   const emptyEl = document.getElementById('btScheduleStatsEmpty');
   if (metricsEl) {
     metricsEl.hidden = false;
-    metricsEl.style.display = 'grid';
+    // El contenido ya no es una rejilla de tarjetas: debe fluir en bloque (ver CSS).
+    metricsEl.style.display = '';
   }
   if (emptyEl) emptyEl.hidden = sched.hasEvaluableDiscipline;
 
@@ -14733,7 +14734,7 @@ function renderBacktestingSimRangeInputs() {
 }
 
 function renderBacktestingScheduleSimulator(sched) {
-  const section = document.getElementById('btStatScheduleSim');
+  const section = document.getElementById('btScheduleSimOverlay');
   if (!section) return;
 
   // La primera vez se precarga con el horario configurado: así el punto de partida es el
@@ -14795,10 +14796,13 @@ function renderBacktestingScheduleSimulator(sched) {
 
   if (section.dataset.bound !== 'true') {
     section.dataset.bound = 'true';
+    const close = () => section.classList.remove('active');
     section.addEventListener('input', () => renderBacktestingScheduleSimulator(sched));
     section.addEventListener('click', (event) => {
+      if (event.target === section) return close();
       const remove = event.target.closest('[data-sim-remove]');
       const add = event.target.closest('#btStatScheduleSimAdd');
+      if (event.target.closest('#btScheduleSimClose, #btScheduleSimCloseFooter')) return close();
       if (remove) {
         btScheduleSimRanges = getBacktestingSimRanges();
         btScheduleSimRanges.splice(Number(remove.dataset.simRemove), 1);
@@ -14809,6 +14813,18 @@ function renderBacktestingScheduleSimulator(sched) {
       }
       renderBacktestingSimRangeInputs();
       renderBacktestingScheduleSimulator(sched);
+    });
+  }
+
+  // El botón de la tarjeta es lo único que se ve: toda la configuración vive en el modal para
+  // no llenar de controles una vista que se consulta mucho más de lo que se toca.
+  const openBtn = document.getElementById('btScheduleSimOpen');
+  if (openBtn && openBtn.dataset.bound !== 'true') {
+    openBtn.dataset.bound = 'true';
+    openBtn.addEventListener('click', () => {
+      renderBacktestingSimRangeInputs();
+      renderBacktestingScheduleSimulator(sched);
+      section.classList.add('active');
     });
   }
 }

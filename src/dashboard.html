@@ -2247,11 +2247,12 @@
         #managementView .wd-header { align-items: flex-start; }
         #managementView #openWithdrawalModalBtn { width: 100%; }
       }
+      /* Antes esto era una rejilla de tarjetas. Ahora el contenido es una tabla comparativa
+         seguida de una tira de totales, así que debe fluir en bloque: con la rejilla, la tira
+         se colocaba como una columna más y se solapaba con la tabla. */
       .schedule-discipline-metrics {
-        display: grid !important;
+        display: block !important;
         margin-top: var(--space-sm);
-        grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
-        gap: 12px;
       }
       #backtestingView .schedule-discipline-metrics .advanced-item {
         background: var(--card-bg);
@@ -5026,6 +5027,49 @@
         font-weight: 700;
       }
 
+      .schedule-sim-cta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      #btScheduleSimOverlay .bt-schedule-sim-modal {
+        max-width: min(680px, 94vw);
+        width: 100%;
+        max-height: min(88vh, 860px);
+        display: flex;
+        flex-direction: column;
+        padding: 0;
+        overflow: hidden;
+        border-radius: 16px;
+      }
+      #btScheduleSimOverlay .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 20px 24px 12px;
+        flex-shrink: 0;
+      }
+      #btScheduleSimOverlay .modal-header h2 { margin: 0; font-size: 1.05rem; }
+      #btScheduleSimOverlay .modal-close {
+        background: transparent; border: none; color: var(--text-muted);
+        font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 8px;
+      }
+      #btScheduleSimOverlay .modal-close:hover { color: var(--text); background: var(--hover-soft, rgba(148,163,184,.14)); }
+      #btScheduleSimOverlay .pro-modal-scroll {
+        flex: 1; min-height: 0; overflow-y: auto; padding: 0 24px 20px;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+      }
+      #btScheduleSimOverlay .pro-modal-footer {
+        flex-shrink: 0; padding: 14px 24px 20px;
+        border-top: 1px solid var(--border); display: flex; justify-content: flex-end;
+      }
+      #btStatScheduleSimAdd { margin-bottom: 14px; }
+
       /* Simulador de horario: probar otro rango sin tocar la configuración de la estrategia. */
       .schedule-sim {
         margin-top: 18px;
@@ -5306,10 +5350,7 @@
         margin: 0 0 12px;
       }
       #backtestingView #btScheduleStatsSection .schedule-discipline-metrics {
-        display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 18px;
-        margin-top: 16px;
+        display: block !important;
         width: 100%;
       }
       #backtestingView #btScheduleStatsSection .schedule-discipline-empty {
@@ -8463,37 +8504,11 @@
                     <strong id="btStatTradesNoSchedule">0</strong>
                   </div>
                 </div>
-                <div class="schedule-sim" id="btStatScheduleSim">
-                  <div class="schedule-sim-head">
-                    <div>
-                      <h4>Probar otro horario</h4>
-                      <p class="muted small">
-                        Reparte los mismos trades con el rango que tú definas, para ver si te renta
-                        ampliarlo o acortarlo. No cambia el horario de la estrategia.
-                      </p>
-                    </div>
-                    <button type="button" class="button button-cancel" id="btStatScheduleSimAdd">Añadir rango</button>
-                  </div>
-                  <div class="schedule-sim-ranges" id="btStatScheduleSimRanges"></div>
-                  <p class="schedule-sim-verdict" id="btStatScheduleSimVerdict"></p>
-                  <div class="table-wrap">
-                    <table class="schedule-compare-table">
-                      <thead>
-                        <tr>
-                          <th></th>
-                          <th class="col-in">Dentro del rango</th>
-                          <th class="col-out">Fuera del rango</th>
-                          <th class="col-none">Sin hora</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr><th>Trades</th><td id="btStatSimTradesIn">0</td><td id="btStatSimTradesOut">0</td><td id="btStatSimTradesMissing">0</td></tr>
-                        <tr><th>Acierto</th><td id="btStatSimWinrateIn">—</td><td id="btStatSimWinrateOut">—</td><td class="muted">—</td></tr>
-                        <tr><th>PnL</th><td id="btStatSimPnlIn">0.00€</td><td id="btStatSimPnlOut">0.00€</td><td id="btStatSimPnlMissing">0.00€</td></tr>
-                        <tr><th>Duración media</th><td id="btStatSimDurationIn">—</td><td id="btStatSimDurationOut">—</td><td class="muted">—</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+                <div class="schedule-sim-cta">
+                  <button type="button" class="button button-cancel" id="btScheduleSimOpen">
+                    Probar otro horario
+                  </button>
+                  <span class="muted small">Comprueba si te renta ampliar o acortar tu horario.</span>
                 </div>
               </div>
               <div id="btHourConcentration" class="hour-concentration" hidden></div>
@@ -8997,6 +9012,45 @@
         <div class="app-modal-footer modal-footer">
           <button type="button" id="cancelBtStrategyBtn" class="btn btn-secondary">Cancelar</button>
           <button type="button" id="saveBtStrategyBtn" class="btn btn-primary full">Guardar estrategia</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="btScheduleSimOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal bt-schedule-sim-modal">
+        <div class="modal-header">
+          <h2>Probar otro horario</h2>
+          <button type="button" class="modal-close" id="btScheduleSimClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="pro-modal-scroll">
+          <p class="muted small">
+            Reparte los mismos trades con el rango que definas, para ver si te renta ampliarlo o
+            acortarlo. No cambia el horario de la estrategia.
+          </p>
+          <div class="schedule-sim-ranges" id="btStatScheduleSimRanges"></div>
+          <button type="button" class="button button-cancel" id="btStatScheduleSimAdd">Crear nuevo rango</button>
+          <p class="schedule-sim-verdict" id="btStatScheduleSimVerdict"></p>
+          <div class="table-wrap">
+            <table class="schedule-compare-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th class="col-in">Dentro del rango</th>
+                  <th class="col-out">Fuera del rango</th>
+                  <th class="col-none">Sin hora</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th>Trades</th><td id="btStatSimTradesIn">0</td><td id="btStatSimTradesOut">0</td><td id="btStatSimTradesMissing">0</td></tr>
+                <tr><th>Acierto</th><td id="btStatSimWinrateIn">—</td><td id="btStatSimWinrateOut">—</td><td class="muted">—</td></tr>
+                <tr><th>PnL</th><td id="btStatSimPnlIn">0.00€</td><td id="btStatSimPnlOut">0.00€</td><td id="btStatSimPnlMissing">0.00€</td></tr>
+                <tr><th>Duración media</th><td id="btStatSimDurationIn">—</td><td id="btStatSimDurationOut">—</td><td class="muted">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="pro-modal-footer">
+          <button type="button" class="button button-save" id="btScheduleSimCloseFooter">Cerrar</button>
         </div>
       </div>
     </div>

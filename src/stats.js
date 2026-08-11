@@ -1798,7 +1798,8 @@ async function renderScheduleStats(trades) {
 
   if (metricsEl) {
     metricsEl.hidden = false;
-    metricsEl.style.display = 'grid';
+    // El contenido ya no es una rejilla de tarjetas: debe fluir en bloque (ver CSS).
+    metricsEl.style.display = '';
   }
   const showEmptyMessage =
     sched.useSelectedReference &&
