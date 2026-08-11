@@ -14318,7 +14318,7 @@ async function openBacktestShareModal() {
     // El backtesting no tiene filtro de fechas: siempre se comparte el rango completo testeado.
     // Se muestra ese rango solo como información, no como un filtro aplicado.
     summary.textContent = payload.trades.length
-      ? `Se compartirán las ${payload.trades.length} operaciones del rango completo${payload.range ? `, del ${payload.range}` : ''}. La página es de solo lectura: nadie podrá modificar nada.`
+      ? `Se compartirán las ${payload.trades.length} operaciones del rango completo${payload.range ? `, del ${payload.range}` : ''}. El enlace se mantiene al día solo: quien lo abra verá lo que haya en ese momento, siempre en modo lectura.`
       : 'No hay operaciones que compartir.';
   }
   document.getElementById('btShareResult').hidden = true;
@@ -14371,7 +14371,7 @@ async function generateBacktestShareLink() {
     if (msg) {
       const gotUrl = Boolean(result.data.url);
       msg.textContent = gotUrl
-        ? 'Enlace listo. Envía el enlace y la contraseña por separado.'
+        ? `Enlace listo${result.data.images ? ` (${result.data.images} capturas incluidas)` : ''}. Envía el enlace y la contraseña por separado.`
         : 'Informe creado, pero esta versión no tiene configurada la página del visor.';
       msg.className = gotUrl ? 'form-hint success' : 'form-hint error';
     }
@@ -16536,6 +16536,9 @@ async function refreshBacktestingView(opts = {}) {
   rerenderBacktestingLocal();
   refreshBacktestingFormUiWidgets();
   initBacktestingCommissionConfig();
+  // Las capturas de las operaciones nuevas se copian al bucket del informe compartido. Los datos
+  // del enlace son en vivo, pero las imágenes necesitan que la app esté abierta para copiarse.
+  void getBackendApi()?.syncLiveShareImages?.(cachedBacktestingTrades || []);
   void loadBtExcludeScheduleState();
   ensureBacktestingScheduleFormListeners();
 }

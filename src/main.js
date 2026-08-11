@@ -394,6 +394,11 @@ ipcMain.handle('revoke-backtest-share-link', async (_event, token) => {
   return backtestShareService.revokeBacktestShareLink(token);
 });
 
+/** Copia al bucket público las capturas nuevas de los enlaces en vivo. */
+ipcMain.handle('sync-live-share-images', async (_event, trades) => {
+  return backtestShareService.syncAllLiveShareImages(trades || []);
+});
+
 ipcMain.handle('get-app-version', async () => app.getVersion());
 
 ipcMain.handle('open-exported-file', async (_event, filePath) => {

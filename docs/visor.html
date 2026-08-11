@@ -60,6 +60,15 @@
   #gate button:disabled{opacity:.6;cursor:default}
   #gateError{margin-top:12px;color:var(--red);font-size:.85rem;min-height:20px}
   #app{display:none}
+  .app-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+  #refresh{background:rgba(255,255,255,.05);color:var(--text);border:1px solid var(--border);
+       border-radius:10px;padding:8px 14px;font-size:.82rem;cursor:pointer;font-family:inherit;white-space:nowrap}
+  #refresh:hover:not(:disabled){border-color:var(--accent)}
+  #refresh:disabled{opacity:.6;cursor:default}
+  .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px}
+  .shots figure{margin:0}
+  .shots figcaption{color:var(--muted);font-size:.7rem;margin-bottom:4px}
+  .shots img{width:100%;border:1px solid var(--border);border-radius:10px;display:block}
   footer{color:var(--muted);font-size:.75rem;text-align:center;margin-top:28px}
   @media(max-width:640px){ th,td{padding:7px 8px} .wrap{padding:16px 12px 48px} }
 </style>
@@ -76,9 +85,12 @@
 </div>
 
 <div id="app" class="wrap">
-  <header style="margin-bottom:18px">
-    <h1 id="title">Resultados de backtesting</h1>
-    <p class="muted small" id="subtitle"></p>
+  <header class="app-header">
+    <div>
+      <h1 id="title">Resultados de backtesting</h1>
+      <p class="muted small" id="subtitle"></p>
+    </div>
+    <button type="button" id="refresh" hidden>Actualizar</button>
   </header>
 
   <section class="card">
@@ -209,6 +221,7 @@
           return;
         }
         err.textContent = '';
+        PASSWORD = value;
         gate.style.display = 'none';
         document.getElementById('app').style.display = 'block';
         render(data);
@@ -232,6 +245,21 @@
   /* ------------------------------ Render ------------------------------ */
 
   var TRADES = [], SESSIONS = {}, sortKey = 'date', sortDir = 1;
+  var PASSWORD = '';
+
+  /**
+   * Las capturas viven en el bucket publico 'backtest-report-images', bajo la carpeta del
+   * informe. Solo se copian ahi las de las operaciones compartidas; el resto siguen privadas.
+   */
+  function imageUrl(path) {
+    var name = String(path || '').trim();
+    if (!name) return '';
+    if (/^https?:/i.test(name)) return name;
+    // Se guarda la ruta original (local o storage:...); aqui solo interesa el nombre de archivo.
+    var file = name.split(/[\\/]/).pop();
+    if (!file) return '';
+    return SUPABASE_URL + '/storage/v1/object/public/backtest-report-images/' + TOKEN + '/' + encodeURIComponent(file);
+  }
 
   var money = function (v) { return (v >= 0 ? '+' : '') + Number(v || 0).toFixed(2) + '\u20AC'; };
   var esDate = function (v) {
@@ -271,6 +299,33 @@
       document.getElementById(id).addEventListener('change', renderTrades);
     });
     document.getElementById('fSearch').addEventListener('input', renderTrades);
+
+    var refresh = document.getElementById('refresh');
+    if (refresh && data.live) {
+      // Solo tiene sentido en informes en vivo: en los congelados el contenido no cambia nunca.
+      refresh.hidden = false;
+      refresh.onclick = function () {
+        refresh.disabled = true;
+        refresh.textContent = 'Actualizando...';
+        fetch(SUPABASE_URL + '/rest/v1/rpc/open_backtest_report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: 'Bearer ' + ANON_KEY },
+          body: JSON.stringify({ p_token: TOKEN, p_password: PASSWORD, p_device: deviceId() })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (fresh) {
+            refresh.disabled = false;
+            refresh.textContent = 'Actualizar';
+            // Se recarga la página con los datos nuevos: rehacer las gráficas en caliente
+            // obligaría a destruirlas una a una y es más frágil que empezar de cero.
+            if (fresh && fresh.ok === true) location.reload();
+          })
+          .catch(function () {
+            refresh.disabled = false;
+            refresh.textContent = 'Actualizar';
+          });
+      };
+    }
 
     document.querySelectorAll('#tradesTable th[data-sort]').forEach(function (th) {
       th.addEventListener('click', function () {
@@ -502,8 +557,10 @@
       var cls = res === 'TP' ? 'tp' : res === 'SL' ? 'sl' : 'be';
       var dir = String(t.direction || '').toUpperCase() === 'SHORT' ? 'Venta' : 'Compra';
       var metrics = Object.keys(t.custom_metrics || {}).filter(function (k) { return k !== 'risk_eur'; });
+      // Las capturas se sirven desde el bucket publico de informes, en la carpeta del token.
+      var shots = [t.image_before, t.image_after].map(imageUrl).filter(Boolean);
       var detail = '';
-      if (metrics.length || t.notes) {
+      if (metrics.length || t.notes || shots.length) {
         detail = '<tr class="row-detail" id="d' + i + '" style="display:none"><td colspan="8">' +
           (metrics.length
             ? '<div class="chips" style="margin-bottom:8px">' + metrics.map(function (m) {
@@ -512,6 +569,12 @@
               }).join('') + '</div>'
             : '') +
           (t.notes ? '<div class="muted small">' + esc(t.notes) + '</div>' : '') +
+          (shots.length
+            ? '<div class="shots">' + shots.map(function (src, k) {
+                return '<figure><figcaption>' + (k === 0 && shots.length > 1 ? 'Antes' : shots.length > 1 ? 'Despues' : 'Captura') +
+                  '</figcaption><img loading="lazy" src="' + esc(src) + '" alt="Captura de la operacion" /></figure>';
+              }).join('') + '</div>'
+            : '') +
           '</td></tr>';
       }
       return '<tr class="row-main" data-detail="d' + i + '">' +

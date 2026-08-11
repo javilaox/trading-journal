@@ -9,6 +9,7 @@ const api = {
   listBacktestShareLinks: (viewerBaseUrl) => ipcRenderer.invoke('list-backtest-share-links', viewerBaseUrl),
   saveShareViewer: () => ipcRenderer.invoke('save-share-viewer'),
   revokeBacktestShareLink: (token) => ipcRenderer.invoke('revoke-backtest-share-link', token),
+  syncLiveShareImages: (trades) => ipcRenderer.invoke('sync-live-share-images', trades),
   exportReport: (report, format) => ipcRenderer.invoke('export-report', report, format),
   openExportedFile: (filePath) => ipcRenderer.invoke('open-exported-file', filePath),
   // Barra de título integrada: hay que recolorearla al cambiar de tema.
@@ -162,6 +163,7 @@ contextBridge.exposeInMainWorld('api', {
   listBacktestShareLinks: api.listBacktestShareLinks,
   saveShareViewer: api.saveShareViewer,
   revokeBacktestShareLink: api.revokeBacktestShareLink,
+  syncLiveShareImages: api.syncLiveShareImages,
   exportReport: api.exportReport,
   openExportedFile: api.openExportedFile,
   setTitleBarTheme: api.setTitleBarTheme,
