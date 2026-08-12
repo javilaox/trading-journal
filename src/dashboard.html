@@ -8724,33 +8724,19 @@
             </div>
             </div>
 
-            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelAnalysis">
-            <div class="bt-section pro-section">
+            <!-- Los challenges no son una estadistica mas del backtest: son una proyeccion a
+                 futuro sobre otra cuenta. Va en su propia seccion, fuera de "Analisis", para que
+                 no se lea como si fueran resultados ya conseguidos. -->
+            <div class="bt-tab-panel bt-tab-panel-stats bt-section pro-section bt-challenge-section" id="btChallengePanel">
               <div class="pro-card">
-              <div class="bt-section-title">
-                <div>
-                  <h3>Análisis</h3>
-                  <p>Rendimiento por par y por métricas personalizadas.</p>
-                </div>
-              </div>
-              <div class="bt-analysis-grid bt-analysis-grid--two">
-                <div class="bt-analysis-card card panel-card backtesting-stats-extra">
-                  <h3 class="subsection-title">Rendimiento por par</h3>
-                  <div class="table-wrap">
-                    <table class="data-table" id="btPairTable">
-                      <thead><tr><th>Par</th><th>Ops</th><th>PnL €</th><th>R Σ</th></tr></thead>
-                      <tbody id="btPairTableBody"></tbody>
-                    </table>
+                <div class="bt-section-title">
+                  <div>
+                    <h3><span class="bt-challenge-badge">Proyección</span> Challenges</h3>
+                    <p>Cuánto tardarías en pasar un challenge de prop firm y con qué probabilidad, según los resultados de este backtest.</p>
                   </div>
                 </div>
 
-                <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btChallengeSection">
-                  <h3 class="subsection-title">Challenges</h3>
-                  <p class="muted small">
-                    Con los resultados de este backtest, ¿cuánto tardarías en pasar un challenge y
-                    qué probabilidad tienes de conseguirlo? Configura las fases de tu prop.
-                  </p>
-
+                <div id="btChallengeSection">
                   <div class="challenge-config">
                     <label class="challenge-phases-field">
                       <span>Fases</span>
@@ -8777,6 +8763,28 @@
 
                   <div id="btChallengeResults"></div>
                   <p class="muted small" id="btChallengeCaveat"></p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btStatsPanelAnalysis">
+            <div class="bt-section pro-section">
+              <div class="pro-card">
+              <div class="bt-section-title">
+                <div>
+                  <h3>Análisis</h3>
+                  <p>Rendimiento por par y por métricas personalizadas.</p>
+                </div>
+              </div>
+              <div class="bt-analysis-grid bt-analysis-grid--two">
+                <div class="bt-analysis-card card panel-card backtesting-stats-extra">
+                  <h3 class="subsection-title">Rendimiento por par</h3>
+                  <div class="table-wrap">
+                    <table class="data-table" id="btPairTable">
+                      <thead><tr><th>Par</th><th>Ops</th><th>PnL €</th><th>R Σ</th></tr></thead>
+                      <tbody id="btPairTableBody"></tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <div class="bt-analysis-card card panel-card bt-analysis-card--full" id="btMetricExplorerSection">

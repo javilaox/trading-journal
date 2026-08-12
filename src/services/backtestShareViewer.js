@@ -338,12 +338,12 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     document.getElementById('challengeBody').innerHTML =
       '<div class="kpis" style="margin-bottom:14px">' +
         '<div class="kpi"><span>Probabilidad total</span><strong class="' + tone(sim.overallPassRate) + '">' + pct(sim.overallPassRate) + '</strong></div>' +
-        '<div class="kpi"><span>Operaciones (mediana)</span><strong>' + (sim.medianTradesTotal == null ? '—' : sim.medianTradesTotal) + '</strong></div>' +
-        '<div class="kpi"><span>Días estimados</span><strong>' + (toDays(sim.medianTradesTotal) == null ? '—' : toDays(sim.medianTradesTotal)) + '</strong></div>' +
-        '<div class="kpi"><span>Días en el peor 10%</span><strong>' + (toDays(sim.p90TradesTotal) == null ? '—' : toDays(sim.p90TradesTotal)) + '</strong></div>' +
+        '<div class="kpi"><span>Operaciones · caso normal</span><strong>' + (sim.medianTradesTotal == null ? '—' : sim.medianTradesTotal) + '</strong></div>' +
+        '<div class="kpi"><span>Días · caso normal</span><strong>' + (toDays(sim.medianTradesTotal) == null ? '—' : toDays(sim.medianTradesTotal)) + '</strong></div>' +
+        '<div class="kpi"><span>Días · si va mal</span><strong>' + (toDays(sim.p90TradesTotal) == null ? '—' : toDays(sim.p90TradesTotal)) + '</strong></div>' +
       '</div>' +
       '<div class="table-scroll"><table><thead><tr><th class="no-sort">Fase</th><th class="no-sort">Objetivo</th>' +
-      '<th class="num no-sort">Probabilidad</th><th class="num no-sort">Ops</th><th class="num no-sort">Días</th></tr></thead><tbody>' +
+      '<th class="num no-sort">Probabilidad</th><th class="num no-sort">Ops · normal</th><th class="num no-sort">Días</th></tr></thead><tbody>' +
       sim.phases.map(function (p, i) {
         return '<tr><td>Fase ' + p.index + '</td><td>' + cfg[i].target + '%</td>' +
           '<td class="num ' + tone(p.passRate) + '">' + pct(p.passRate) + '</td>' +
@@ -352,7 +352,9 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       }).join('') +
       '</tbody></table></div>';
 
-    document.getElementById('challengeCaveat').textContent =
+    document.getElementById('challengeCaveat').innerHTML =
+      '<strong>Caso normal</strong> = la mitad de las veces harían falta menos operaciones, y la otra mitad más. ' +
+      '<strong>Si va mal</strong> = el 10% de los casos peores.<br>' +
       'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest. ' +
       'Da por hecho que las próximas se parecerán a estas. No incluye el límite de pérdida diaria ' +
       'ni el mínimo de días operados que exija cada prop.';

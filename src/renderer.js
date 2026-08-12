@@ -787,6 +787,16 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
 #backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 #backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+/* Los challenges van en su propia seccion, separados del resto de estadisticas: no son
+   resultados del backtest sino una proyeccion. El acento morado y el margen extra son la
+   senal visual de "esto es otra cosa", sin llegar a parecer una pagina distinta. */
+#backtestingView .bt-challenge-section{margin-top:26px}
+#backtestingView .bt-challenge-section .pro-card{border-color:rgba(139,92,246,.32);
+  background:linear-gradient(180deg,rgba(139,92,246,.07),rgba(139,92,246,.02) 120px)}
+#backtestingView .bt-challenge-section .bt-section-title h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bt-challenge-badge{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;
+  padding:3px 8px;border-radius:999px;color:#c4b5fd;background:rgba(139,92,246,.16);
+  border:1px solid rgba(139,92,246,.38)}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-config{margin:14px 0 18px}
 .challenge-phases-field{display:flex;align-items:center;gap:10px;margin-bottom:12px}
@@ -13321,15 +13331,15 @@ function renderBacktestingChallenge(filtered) {
       </div>
       <div class="stats-grid challenge-kpis">
         <div class="advanced-item">
-          <span>Operaciones (mediana)</span>
+          <span>Operaciones · caso normal</span>
           <h2>${sim.medianTradesTotal ?? '—'}</h2>
         </div>
         <div class="advanced-item">
-          <span>Días estimados</span>
+          <span>Días · caso normal</span>
           <h2>${days ?? '—'}</h2>
         </div>
         <div class="advanced-item">
-          <span>Días en el peor 10%</span>
+          <span>Días · si va mal</span>
           <h2>${daysP90 ?? '—'}</h2>
         </div>
         <div class="advanced-item">
@@ -13340,7 +13350,7 @@ function renderBacktestingChallenge(filtered) {
       <div class="table-wrap">
         <table class="challenge-table">
           <thead>
-            <tr><th>Fase</th><th>Probabilidad de superarla</th><th>Operaciones (mediana)</th><th>Días</th></tr>
+            <tr><th>Fase</th><th>Probabilidad de superarla</th><th>Operaciones · caso normal</th><th>Días</th></tr>
           </thead>
           <tbody>
             ${sim.phases
@@ -13361,7 +13371,10 @@ function renderBacktestingChallenge(filtered) {
   if (caveat) {
     // El usuario tiene que poder juzgar cuánto fiarse: se dice el tamaño de la muestra y los
     // supuestos, en vez de dar un porcentaje a secas que parezca una certeza.
-    caveat.textContent =
+    caveat.innerHTML =
+      '<strong>Caso normal</strong> = la mitad de las veces necesitarías menos de esa cifra, y la otra mitad más. ' +
+      'No se usa la media porque unas pocas rachas malas muy largas la disparan y dejaría de representar lo habitual. ' +
+      '<strong>Si va mal</strong> = el 10% de los casos peores.<br>' +
       `Calculado repartiendo al azar 3.000 veces las ${sim.sampleSize} operaciones de este backtest. ` +
       'Da por hecho que tus próximas operaciones se parecerán a estas y son independientes entre sí. ' +
       'No tiene en cuenta el límite de pérdida diaria ni el mínimo de días operados que exija tu prop.';
