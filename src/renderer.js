@@ -2816,6 +2816,8 @@ function initSyncHealthIndicator() {
   el.addEventListener('click', async () => {
     const backend = getBackendApi();
     if (!backend) return;
+    // Reintento pedido a mano: se borra el freno de los intentos automáticos.
+    resetSessionRecoveryAttempts();
 
     // Antes de reintentar, mostramos el error real devuelto por Supabase: un "N sin sincronizar"
     // a secas no permite ni al usuario ni a soporte saber qué hay que arreglar.
@@ -2878,10 +2880,42 @@ let syncErrorToastShown = false;
 
 // Si main avisa de que no tiene sesión de Supabase, se la reenviamos desde el renderer (que sí
 // la tiene) y reintentamos. Sin esto, auth.uid() es NULL en main y todo insert choca contra RLS.
+//
+// El bucle que hay que evitar: main emite `needs_session` en CADA intento de sincronizar, y ese
+// aviso es justamente lo que dispara este reintento. Si por lo que sea la sesión no llega a
+// asentarse, cada intento genera otro aviso que genera otro intento, y la app se queda con el
+// "Restableciendo sesión..." puesto para siempre, consumiendo CPU y sin decir qué pasa. Por eso
+// hay una espera mínima entre intentos y un tope: al tercer fallo se para y se muestra el
+// problema, que es más útil que seguir girando en silencio.
+const SESSION_RECOVERY_COOLDOWN_MS = 15000;
+const SESSION_RECOVERY_MAX_ATTEMPTS = 3;
 let recoveringSyncSession = false;
+let lastSessionRecoveryAt = 0;
+let sessionRecoveryAttempts = 0;
+
+function resetSessionRecoveryAttempts() {
+  sessionRecoveryAttempts = 0;
+  lastSessionRecoveryAt = 0;
+}
+
 async function recoverSyncSessionAndRetry() {
   if (recoveringSyncSession) return;
+  if (Date.now() - lastSessionRecoveryAt < SESSION_RECOVERY_COOLDOWN_MS) return;
+
+  if (sessionRecoveryAttempts >= SESSION_RECOVERY_MAX_ATTEMPTS) {
+    console.warn('[sync] la sesión no se ha podido restablecer tras varios intentos; se deja de reintentar solo');
+    showToast?.(
+      'No se ha podido restablecer la sesión para sincronizar. Cierra sesión y vuelve a entrar, o toca el indicador de sincronización para reintentar.',
+      'warning'
+    );
+    sessionRecoveryAttempts = 0;
+    lastSessionRecoveryAt = Date.now() + 60000; // un minuto de tregua antes de volver a intentarlo
+    return;
+  }
+
   recoveringSyncSession = true;
+  lastSessionRecoveryAt = Date.now();
+  sessionRecoveryAttempts += 1;
   try {
     const ok = await syncSupabaseSessionWithMain();
     if (ok) {
@@ -2897,6 +2931,28 @@ async function recoverSyncSessionAndRetry() {
   }
 }
 
+/**
+ * Cada vez que la ventana renueva el token, se lo pasa al proceso principal.
+ *
+ * La ventana es la única que refresca la sesión (el cliente de main tiene el refresco
+ * desactivado justamente para que no compitan). Sin este aviso, el token de main caducaría a la
+ * hora y solo se arreglaría cuando algo fallara y pidiera la sesión; con él, main siempre tiene
+ * uno válido y ese aviso deja de hacer falta.
+ */
+function watchSupabaseTokenRefresh() {
+  try {
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return;
+      if (event !== 'TOKEN_REFRESHED' && event !== 'SIGNED_IN') return;
+      console.log('[auth] token renovado en la ventana; se envía al proceso de datos');
+      resetSessionRecoveryAttempts();
+      void syncSupabaseSessionWithMain();
+    });
+  } catch (err) {
+    console.warn('No se pudo escuchar la renovación de sesión:', err);
+  }
+}
+
 function applySyncHealthState(state, { pending = 0, failed = 0 } = {}) {
   setSyncHealthIndicatorVisual(state, { pending, failed });
 
@@ -2905,6 +2961,10 @@ function applySyncHealthState(state, { pending = 0, failed = 0 } = {}) {
     lastSyncHealthState = state;
     return;
   }
+
+  // Cualquier estado distinto de "necesito sesión" significa que main ya está operando con la
+  // sesión puesta: se olvida lo intentado hasta ahora.
+  resetSessionRecoveryAttempts();
 
   if (state === 'online_up_to_date') {
     syncErrorToastShown = false;
@@ -18404,6 +18464,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initSyncHealthIndicator();
   startSyncHealthAutoRetry();
   startRemoteRefreshSafetyNet();
+  watchSupabaseTokenRefresh();
 
   window.addEventListener('online', async () => {
     console.log('🌐 Conexión recuperada');

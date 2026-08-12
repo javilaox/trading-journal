@@ -66,21 +66,36 @@ async function getAllTradeIds() {
 
   const PAGE = 1000;
   const ids = [];
+  let total = null;
+
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('trades')
-      .select('id')
+      .select('id', { count: 'exact' })
       .eq('user_id', userId)
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
 
     if (error) return { success: false, error, ids: [] };
+    if (count != null) total = count;
     const page = Array.isArray(data) ? data : [];
     page.forEach((row) => ids.push(Number(row.id)));
-    if (page.length < PAGE) break;
+
+    // Se para cuando ya se tienen tantos ids como filas dice haber, o cuando una página viene
+    // vacía. No se usa "página incompleta = última página": si el servidor recorta las
+    // respuestas por debajo del tamaño pedido, la primera página parecería la última.
+    if (!page.length) break;
+    if (total != null && ids.length >= total) break;
   }
 
-  return { success: true, ids };
+  // El recuento es la garantía de que la lista está completa. Quien la usa borra de la caché
+  // local todo lo que no esté aquí, así que devolverla a medias sería borrar datos buenos:
+  // ante la duda, se prefiere fallar.
+  if (total != null && ids.length !== total) {
+    return { success: false, error: { message: `LISTA_INCOMPLETA (${ids.length}/${total})` }, ids: [] };
+  }
+
+  return { success: true, ids, total };
 }
 
 /**
