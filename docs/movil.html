@@ -29,7 +29,12 @@
   input,select,textarea{width:100%;background:rgba(255,255,255,.04);color:var(--text);
        border:1px solid var(--border);border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
   input:focus,select:focus{outline:none;border-color:var(--accent)}
+  /* Los campos de fecha y hora de iOS piden mas ancho del que tienen y se salian de su
+     columna, pisando la de al lado. min-width:0 permite que el hijo del grid se encoja. */
   .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row>*{min-width:0}
+  input,select{max-width:100%}
+  input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;min-height:46px}
   .field{margin-bottom:12px}
   /* Botones tipo segmento: en el movil se acierta mucho antes que con un desplegable. */
   .seg{display:flex;gap:8px}
@@ -61,6 +66,34 @@
   .checks label{display:flex;align-items:center;gap:10px;color:var(--text);font-size:.9rem;
        margin:0 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px}
   .checks input{width:22px;height:22px;flex:0 0 auto}
+  /* ── Calendario del mes ── */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+  .cal-head strong{font-size:1rem;text-transform:capitalize}
+  .cal-nav{display:flex;gap:6px}
+  .cal-nav button{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
+       background:rgba(255,255,255,.04);color:var(--text);font-size:1.1rem;font-family:inherit}
+  .cal-week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px}
+  .cal-week span{text-align:center;color:var(--muted);font-size:.66rem;text-transform:uppercase;letter-spacing:.03em}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-day{aspect-ratio:1;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);
+       display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+       font-family:inherit;color:var(--text);padding:2px}
+  .cal-day.empty{border:none;background:none}
+  .cal-day b{font-size:.82rem;font-weight:600;font-variant-numeric:tabular-nums}
+  .cal-day i{font-style:normal;font-size:.58rem;font-variant-numeric:tabular-nums;line-height:1}
+  .cal-day.win{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.45)}
+  .cal-day.win i{color:var(--green)}
+  .cal-day.loss{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.45)}
+  .cal-day.loss i{color:var(--red)}
+  .cal-day.flat{background:rgba(148,163,184,.14)}
+  .cal-day.flat i{color:var(--muted)}
+  .cal-day.today{box-shadow:inset 0 0 0 1px var(--accent)}
+  .cal-day.sel{outline:2px solid var(--accent);outline-offset:1px}
+  .cal-day.out{opacity:.28}
+  .cal-summary{display:flex;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;
+       border-top:1px solid var(--border);font-size:.85rem}
+  .day-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:4px}
+  .day-title h2{margin:0;text-transform:capitalize}
   .shots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .shot img{width:100%;border-radius:10px;border:1px solid var(--border);display:block;margin-top:6px}
   /* Barra inferior fija: el pulgar llega sin estirar la mano. */
@@ -187,8 +220,29 @@
   <!-- ───────── Lista de trades ───────── -->
   <section id="viewList" class="hidden">
     <div class="card">
-      <h2>Últimos trades</h2>
-      <div id="tradeList"><p class="muted small">Cargando…</p></div>
+      <div class="cal-head">
+        <strong id="calMonth">—</strong>
+        <div class="cal-nav">
+          <button type="button" id="calPrev" aria-label="Mes anterior">‹</button>
+          <button type="button" id="calToday" aria-label="Hoy">•</button>
+          <button type="button" id="calNext" aria-label="Mes siguiente">›</button>
+        </div>
+      </div>
+      <div class="cal-week">
+        <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-summary">
+        <span class="muted">Mes: <b id="calMonthOps">0</b> ops</span>
+        <strong id="calMonthPnl">0.00€</strong>
+      </div>
+    </div>
+    <div class="card">
+      <div class="day-title">
+        <h2 id="dayTitle">Selecciona un día</h2>
+        <strong id="dayPnl" class="small"></strong>
+      </div>
+      <div id="tradeList"><p class="muted small">Toca un día del calendario.</p></div>
     </div>
   </section>
 
@@ -233,6 +287,9 @@
   var ACCOUNTS = [];
   var STRATEGIES = [];
   var TRADES = [];
+  var MONTH = null;            // { y, m } del mes que muestra el calendario
+  var MONTH_TRADES = [];       // trades de ese mes (consulta propia, no depende del limite)
+  var SELECTED_DAY = null;     // 'AAAA-MM-DD' del dia abierto bajo el calendario
   var EDITING = null;          // trade que se está editando, o null si es uno nuevo
   var IMAGES = { before: null, after: null };  // referencias "storage:..." ya subidas
   var netTouched = false;      // si el usuario escribe el neto a mano, se deja de calcular
@@ -307,7 +364,8 @@
     $('app').classList.remove('hidden');
     $('nav').classList.remove('hidden');
     resetForm();
-    await Promise.all([loadCatalogs(), loadTrades()]);
+    SELECTED_DAY = todayIso();
+    await Promise.all([loadCatalogs(), loadTrades(), loadMonth()]);
   }
 
   /* ─────────────────────── Cuentas y estrategias ─────────────────────── */
@@ -531,7 +589,7 @@
     localStorage.setItem('lastAsset', ($('fAsset').value || '').trim());
     toast(EDITING ? 'Trade actualizado' : 'Trade guardado', 'ok');
     resetForm();
-    await loadTrades();
+    await Promise.all([loadTrades(), loadMonth()]);
   });
 
   $('cancelEditBtn').addEventListener('click', function () { resetForm(); });
@@ -543,7 +601,7 @@
     if (out.error) { toast('No se pudo eliminar: ' + out.error.message, 'err'); return; }
     toast('Trade eliminado', 'ok');
     resetForm();
-    await loadTrades();
+    await Promise.all([loadTrades(), loadMonth()]);
     showView('list');
   });
 
@@ -553,7 +611,6 @@
     var res = await db.from('trades').select('*').order('date', { ascending: false }).limit(200);
     if (res.error) { toast('No se pudieron cargar los trades', 'err'); return; }
     TRADES = res.data || [];
-    renderList();
     renderStats();
     renderAssetSuggestions();
   }
@@ -569,33 +626,185 @@
     }).join('');
   }
 
-  function renderList() {
+  /* ───────── Calendario del mes ─────────
+   * Misma idea que el calendario del ordenador: un vistazo al mes y el color dice si el día fue
+   * bueno o malo. Se consulta el mes entero por su rango de fechas y no se reutiliza la lista
+   * de "últimos trades", porque al retroceder meses esa lista se queda corta y el calendario
+   * mostraría días vacíos que sí tienen operaciones.
+   */
+
+  var MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+                     'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  var DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function isoOf(y, m, d) { return y + '-' + pad2(m + 1) + '-' + pad2(d); }
+
+  async function loadMonth() {
+    if (!MONTH) {
+      var now = new Date();
+      MONTH = { y: now.getFullYear(), m: now.getMonth() };
+    }
+    var first = isoOf(MONTH.y, MONTH.m, 1);
+    var lastDay = new Date(MONTH.y, MONTH.m + 1, 0).getDate();
+    var last = isoOf(MONTH.y, MONTH.m, lastDay);
+
+    var res = await db.from('trades').select('*').gte('date', first).lte('date', last);
+    if (res.error) { toast('No se pudo cargar el mes', 'err'); return; }
+    MONTH_TRADES = res.data || [];
+    renderCalendar();
+  }
+
+  function byDay() {
+    var map = {};
+    MONTH_TRADES.forEach(function (t) {
+      var key = String(t.date || '').slice(0, 10);
+      if (!map[key]) map[key] = { pnl: 0, n: 0, trades: [] };
+      map[key].pnl += Number(t.pnl) || 0;
+      map[key].n += 1;
+      map[key].trades.push(t);
+    });
+    return map;
+  }
+
+  /** 1.118 € ocupa demasiado en una celda de 45 px: se abrevia a 1.1k. */
+  function shortMoney(v) {
+    var n = Number(v) || 0;
+    var sign = n > 0 ? '+' : n < 0 ? '-' : '';
+    var abs = Math.abs(n);
+    if (abs >= 1000) return sign + (abs / 1000).toFixed(abs >= 10000 ? 0 : 1) + 'k';
+    return sign + Math.round(abs);
+  }
+
+  function renderCalendar() {
+    var map = byDay();
+    $('calMonth').textContent = MONTH_NAMES[MONTH.m] + ' ' + MONTH.y;
+
+    // La semana empieza en lunes, como en el ordenador (getDay() da 0 para domingo).
+    var firstWeekday = (new Date(MONTH.y, MONTH.m, 1).getDay() + 6) % 7;
+    var days = new Date(MONTH.y, MONTH.m + 1, 0).getDate();
+    var todayIsoStr = todayIso();
+
+    var cells = [];
+    for (var b = 0; b < firstWeekday; b += 1) cells.push('<div class="cal-day empty"></div>');
+    for (var d = 1; d <= days; d += 1) {
+      var iso = isoOf(MONTH.y, MONTH.m, d);
+      var info = map[iso];
+      var cls = 'cal-day';
+      if (info) cls += info.pnl > 0 ? ' win' : info.pnl < 0 ? ' loss' : ' flat';
+      else cls += ' out';
+      if (iso === todayIsoStr) cls += ' today';
+      if (iso === SELECTED_DAY) cls += ' sel';
+      cells.push(
+        '<button type="button" class="' + cls + '" data-day="' + iso + '">' +
+          '<b>' + d + '</b>' +
+          (info ? '<i>' + shortMoney(info.pnl) + '</i>' : '') +
+        '</button>'
+      );
+    }
+    $('calGrid').innerHTML = cells.join('');
+
+    var monthPnl = 0;
+    MONTH_TRADES.forEach(function (t) { monthPnl += Number(t.pnl) || 0; });
+    $('calMonthOps').textContent = MONTH_TRADES.length;
+    var pnlEl = $('calMonthPnl');
+    pnlEl.textContent = money(monthPnl);
+    pnlEl.className = monthPnl >= 0 ? 'pos' : 'neg';
+
+    $('calGrid').querySelectorAll('[data-day]').forEach(function (el) {
+      el.addEventListener('click', function () { selectDay(el.getAttribute('data-day')); });
+    });
+
+    // Si el día abierto ya no pertenece a este mes, se limpia el detalle.
+    if (SELECTED_DAY && SELECTED_DAY.slice(0, 7) !== MONTH.y + '-' + pad2(MONTH.m + 1)) {
+      SELECTED_DAY = null;
+    }
+    renderDay();
+  }
+
+  function selectDay(iso) {
+    SELECTED_DAY = SELECTED_DAY === iso ? null : iso;
+    renderCalendar();
+  }
+
+  function renderDay() {
     var host = $('tradeList');
-    if (!TRADES.length) {
-      host.innerHTML = '<p class="muted small">Aún no hay trades.</p>';
+    var title = $('dayTitle');
+    var pnlEl = $('dayPnl');
+
+    if (!SELECTED_DAY) {
+      title.textContent = 'Selecciona un día';
+      pnlEl.textContent = '';
+      host.innerHTML = '<p class="muted small">Toca un día del calendario para ver sus operaciones.</p>';
       return;
     }
-    host.innerHTML = TRADES.slice(0, 60).map(function (t) {
-      var r = String(t.result || '').toUpperCase();
-      var cls = r === 'TP' ? 'tp' : r === 'SL' ? 'sl' : 'be';
-      var pnl = Number(t.pnl) || 0;
-      return '<div class="trade" data-id="' + t.id + '">' +
-        '<div class="trade-main">' +
-          '<strong><span class="badge ' + cls + '">' + escapeHtml(r || '—') + '</span>' + escapeHtml(t.asset || '—') + '</strong>' +
-          '<small>' + displayDate(t.date) + (t.strategy ? ' · ' + escapeHtml(t.strategy) : '') +
-          (t.direction ? ' · ' + (t.direction === 'SHORT' ? 'Venta' : 'Compra') : '') + '</small>' +
-        '</div>' +
-        '<div class="trade-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + money(pnl) + '</div>' +
-      '</div>';
-    }).join('');
 
+    var parts = SELECTED_DAY.split('-');
+    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    title.textContent = DAY_NAMES[date.getDay()] + ' ' + Number(parts[2]) + ' de ' + MONTH_NAMES[date.getMonth()];
+
+    var list = MONTH_TRADES.filter(function (t) { return String(t.date || '').slice(0, 10) === SELECTED_DAY; });
+    list.sort(function (a, b) {
+      return String(a.entry_time || '').localeCompare(String(b.entry_time || ''));
+    });
+
+    var pnl = 0;
+    list.forEach(function (t) { pnl += Number(t.pnl) || 0; });
+    pnlEl.textContent = list.length ? money(pnl) : '';
+    pnlEl.className = 'small ' + (pnl >= 0 ? 'pos' : 'neg');
+
+    if (!list.length) {
+      host.innerHTML = '<p class="muted small">Sin operaciones este día. ' +
+        '<button class="link" id="newHere" style="color:var(--accent)">Añadir una</button></p>';
+      $('newHere').addEventListener('click', function () {
+        resetForm();
+        $('fDate').value = SELECTED_DAY;
+        showView('form');
+      });
+      return;
+    }
+
+    host.innerHTML = list.map(function (t) { return tradeRow(t); }).join('');
     host.querySelectorAll('.trade').forEach(function (el) {
       el.addEventListener('click', function () { editTrade(Number(el.getAttribute('data-id'))); });
     });
   }
 
+  function tradeRow(t) {
+    var r = String(t.result || '').toUpperCase();
+    var cls = r === 'TP' ? 'tp' : r === 'SL' ? 'sl' : 'be';
+    var pnl = Number(t.pnl) || 0;
+    var meta = [];
+    if (t.entry_time) meta.push(String(t.entry_time).slice(0, 5));
+    if (t.strategy) meta.push(escapeHtml(t.strategy));
+    if (t.direction) meta.push(t.direction === 'SHORT' ? 'Venta' : 'Compra');
+    return '<div class="trade" data-id="' + t.id + '">' +
+      '<div class="trade-main">' +
+        '<strong><span class="badge ' + cls + '">' + escapeHtml(r || '—') + '</span>' + escapeHtml(t.asset || '—') + '</strong>' +
+        '<small>' + meta.join(' · ') + '</small>' +
+      '</div>' +
+      '<div class="trade-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + money(pnl) + '</div>' +
+    '</div>';
+  }
+
+  $('calPrev').addEventListener('click', function () {
+    MONTH = MONTH.m === 0 ? { y: MONTH.y - 1, m: 11 } : { y: MONTH.y, m: MONTH.m - 1 };
+    loadMonth();
+  });
+  $('calNext').addEventListener('click', function () {
+    MONTH = MONTH.m === 11 ? { y: MONTH.y + 1, m: 0 } : { y: MONTH.y, m: MONTH.m + 1 };
+    loadMonth();
+  });
+  $('calToday').addEventListener('click', function () {
+    var now = new Date();
+    MONTH = { y: now.getFullYear(), m: now.getMonth() };
+    SELECTED_DAY = todayIso();
+    loadMonth();
+  });
+
   async function editTrade(id) {
-    var t = TRADES.filter(function (x) { return Number(x.id) === id; })[0];
+    var pool = MONTH_TRADES.concat(TRADES);
+    var t = pool.filter(function (x) { return Number(x.id) === id; })[0];
     if (!t) return;
     resetForm();
     EDITING = t;
@@ -718,7 +927,8 @@
     if (!btn) return;
     var view = btn.getAttribute('data-view');
     if (view === 'form' && EDITING) resetForm();
-    if (view === 'list' || view === 'stats') loadTrades();
+    if (view === 'list') loadMonth();
+    if (view === 'stats') loadTrades();
     showView(view);
   });
 
