@@ -22,6 +22,8 @@
  * trade creado en el móvil sea indistinguible de uno creado en el ordenador.
  */
 
+const { ASSET_CATALOG } = require('./assetCatalog');
+
 function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   return `<!doctype html>
 <html lang="es">
@@ -91,6 +93,23 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   .checks label{display:flex;align-items:center;gap:10px;color:var(--text);font-size:.9rem;
        margin:0 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px}
   .checks input{width:22px;height:22px;flex:0 0 auto}
+  /* ── Selector de activo (hoja inferior) ── */
+  .picker{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+       background:rgba(255,255,255,.04);color:var(--text);border:1px solid var(--border);
+       border-radius:10px;padding:12px;font-size:16px;font-family:inherit;text-align:left}
+  .picker em{font-style:normal;color:var(--muted)}
+  .picker.empty span{color:var(--muted)}
+  .sheet{position:fixed;inset:0;background:rgba(2,6,23,.6);z-index:30;display:flex;align-items:flex-end}
+  .sheet-body{width:100%;max-height:86vh;display:flex;flex-direction:column;background:var(--card);
+       border-top-left-radius:18px;border-top-right-radius:18px;border-top:1px solid var(--border);
+       padding:14px 14px calc(14px + var(--safe-bottom))}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .sheet-list{overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:10px}
+  .sheet-group{color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;
+       margin:14px 0 6px}
+  .sheet-item{width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);
+       color:var(--text);font-size:.95rem;font-family:inherit;padding:13px 4px}
+  .sheet-item.on{color:var(--accent);font-weight:700}
   /* ── Calendario del mes ── */
   .cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
   .cal-head strong{font-size:1rem;text-transform:capitalize}
@@ -171,9 +190,11 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     <div class="card">
       <div class="row">
         <div class="field"><label for="fDate">Fecha</label><input id="fDate" type="date" /></div>
-        <div class="field"><label for="fAsset">Par</label><input id="fAsset" list="assetList" placeholder="NAS100" /></div>
+        <div class="field">
+          <label for="assetBtn">Par</label>
+          <button type="button" class="picker" id="assetBtn"><span id="assetLabel">Elegir activo</span><em>▾</em></button>
+        </div>
       </div>
-      <datalist id="assetList"></datalist>
       <div class="row">
         <div class="field"><label for="fEntry">Hora entrada</label><input id="fEntry" type="time" /></div>
         <div class="field"><label for="fExit">Hora salida</label><input id="fExit" type="time" /></div>
@@ -286,6 +307,19 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       <div id="statsByStrategy"></div>
     </div>
   </section>
+</div>
+
+<!-- Selector de activo: hoja inferior con buscador. La lista es cerrada a proposito (ver
+     services/assetCatalog.js): un activo escrito a mano parte las estadisticas por par. -->
+<div class="sheet hidden" id="assetSheet">
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <strong>Elegir activo</strong>
+      <button type="button" class="link" id="assetClose">Cerrar</button>
+    </div>
+    <input type="search" id="assetSearch" placeholder="Buscar activo…" autocomplete="off" />
+    <div class="sheet-list" id="assetOptions"></div>
+  </div>
 </div>
 
 <nav class="hidden" id="nav">
@@ -535,7 +569,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     netTouched = false;
     $('viewTitle').textContent = 'Nuevo trade';
     $('fDate').value = todayIso();
-    $('fAsset').value = localStorage.getItem('lastAsset') || '';
+    setAsset(localStorage.getItem('lastAsset') || '');
     $('fEntry').value = '';
     $('fExit').value = '';
     $('fPnl').value = '';
@@ -561,6 +595,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     if (!isFinite(pnl)) return { error: 'Escribe el PnL de la operación.' };
     var result = segValue('segResult');
     if (!result) return { error: 'Marca si fue TP, SL o BE.' };
+    if (!ASSET) return { error: 'Elige el activo de la lista.' };
     var comm = Number($('fComm').value) || 0;
     var netRaw = $('fNet').value;
     var net = netRaw === '' ? pnl - comm : Number(netRaw) || 0;
@@ -568,7 +603,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     return {
       row: {
         date: $('fDate').value || todayIso(),
-        asset: ($('fAsset').value || '').trim(),
+        asset: ASSET,
         result: result,
         be_after_result: result === 'BE' ? (segValue('segBeAfter') || null) : null,
         pnl: pnl,
@@ -611,7 +646,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
 
     localStorage.setItem('lastAccount', $('fAccount').value || '');
     localStorage.setItem('lastStrategy', $('fStrategy').value || '');
-    localStorage.setItem('lastAsset', ($('fAsset').value || '').trim());
+    localStorage.setItem('lastAsset', ASSET);
     toast(EDITING ? 'Trade actualizado' : 'Trade guardado', 'ok');
     resetForm();
     await Promise.all([loadTrades(), loadMonth()]);
@@ -637,19 +672,81 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     if (res.error) { toast('No se pudieron cargar los trades', 'err'); return; }
     TRADES = res.data || [];
     renderStats();
-    renderAssetSuggestions();
   }
 
-  function renderAssetSuggestions() {
+  /* ───────── Selector de activo ─────────
+   * Lista cerrada (la misma del ordenador) y buscador. Antes era un campo de texto libre: se
+   * podia guardar "Nas100" o un activo inventado, y como el activo es la clave con la que se
+   * agrupan las estadisticas por par, cada variante habria contado como un activo distinto.
+   */
+
+  var ASSET_CATALOG = ${JSON.stringify(ASSET_CATALOG)};
+  var ASSET = '';
+
+  function setAsset(value) {
+    ASSET = value || '';
+    var btn = $('assetBtn');
+    $('assetLabel').textContent = ASSET || 'Elegir activo';
+    btn.classList.toggle('empty', !ASSET);
+  }
+
+  function recentAssets() {
     var seen = {};
     var out = [];
     TRADES.forEach(function (t) {
       if (t.asset && !seen[t.asset]) { seen[t.asset] = true; out.push(t.asset); }
     });
-    $('assetList').innerHTML = out.slice(0, 12).map(function (a) {
-      return '<option value="' + escapeAttr(a) + '"></option>';
-    }).join('');
+    return out.slice(0, 6);
   }
+
+  function renderAssetOptions() {
+    var q = ($('assetSearch').value || '').trim().toUpperCase();
+    var html = '';
+
+    // Los ultimos activos operados primero: en la practica se repiten casi siempre.
+    if (!q) {
+      var recent = recentAssets();
+      if (recent.length) {
+        html += '<div class="sheet-group">Recientes</div>' + recent.map(function (a) {
+          return '<button type="button" class="sheet-item' + (a === ASSET ? ' on' : '') +
+                 '" data-asset="' + escapeAttr(a) + '">' + escapeHtml(a) + '</button>';
+        }).join('');
+      }
+    }
+
+    ASSET_CATALOG.forEach(function (group) {
+      var items = group.assets.filter(function (a) {
+        return !q || a.value.toUpperCase().indexOf(q) >= 0 || String(a.label).toUpperCase().indexOf(q) >= 0;
+      });
+      if (!items.length) return;
+      html += '<div class="sheet-group">' + escapeHtml(group.group) + '</div>' + items.map(function (a) {
+        return '<button type="button" class="sheet-item' + (a.value === ASSET ? ' on' : '') +
+               '" data-asset="' + escapeAttr(a.value) + '">' + escapeHtml(a.label) + '</button>';
+      }).join('');
+    });
+
+    $('assetOptions').innerHTML = html || '<p class="muted small">Ningún activo coincide.</p>';
+    $('assetOptions').querySelectorAll('[data-asset]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        setAsset(el.getAttribute('data-asset'));
+        closeAssetSheet();
+      });
+    });
+  }
+
+  function openAssetSheet() {
+    $('assetSheet').classList.remove('hidden');
+    $('assetSearch').value = '';
+    renderAssetOptions();
+  }
+  function closeAssetSheet() { $('assetSheet').classList.add('hidden'); }
+
+  $('assetBtn').addEventListener('click', openAssetSheet);
+  $('assetClose').addEventListener('click', closeAssetSheet);
+  $('assetSearch').addEventListener('input', renderAssetOptions);
+  $('assetSheet').addEventListener('click', function (e) {
+    if (e.target === $('assetSheet')) closeAssetSheet();
+  });
 
   /* ───────── Calendario del mes ─────────
    * Misma idea que el calendario del ordenador: un vistazo al mes y el color dice si el día fue
@@ -840,7 +937,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     $('deleteBtn').classList.remove('hidden');
 
     $('fDate').value = String(t.date || '').slice(0, 10);
-    $('fAsset').value = t.asset || '';
+    setAsset(t.asset || '');
     $('fEntry').value = (t.entry_time || '').slice(0, 5);
     $('fExit').value = (t.exit_time || '').slice(0, 5);
     if (t.account) $('fAccount').value = t.account;

@@ -18,6 +18,31 @@ require('dotenv').config({
 });
 
 const { buildMobileHtml } = require('../src/services/mobileAppPage');
+const { assetValues } = require('../src/services/assetCatalog');
+
+/**
+ * El catálogo de activos está en dos sitios por necesidad: el desplegable del ordenador vive en
+ * dashboard.html (HTML estático) y la versión móvil lo necesita como datos. Para que no se
+ * separen en silencio, aquí se comparan y la generación falla si difieren: es preferible un
+ * error al publicar que una versión móvil a la que le faltan activos.
+ */
+function checkAssetCatalog() {
+  const html = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'dashboard.html'), 'utf8');
+  const start = html.indexOf('<select id="asset"');
+  const block = html.slice(start, html.indexOf('</select>', start));
+  const inHtml = [...block.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]).filter(Boolean);
+  const inCatalog = assetValues();
+
+  const missing = inHtml.filter((v) => inCatalog.indexOf(v) < 0);
+  const extra = inCatalog.filter((v) => inHtml.indexOf(v) < 0);
+  if (missing.length || extra.length) {
+    console.error('El catálogo de activos no coincide con el desplegable de dashboard.html.');
+    if (missing.length) console.error('  Faltan en src/services/assetCatalog.js:', missing.join(', '));
+    if (extra.length) console.error('  Sobran en src/services/assetCatalog.js:', extra.join(', '));
+    process.exit(1);
+  }
+  console.log('Catálogo de activos: ' + inCatalog.length + ' activos, coincide con la app.');
+}
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
@@ -26,6 +51,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY: la página móvil no podría iniciar sesión.');
   process.exit(1);
 }
+
+checkAssetCatalog();
 
 const outDir = path.resolve(__dirname, '..', 'docs');
 fs.mkdirSync(outDir, { recursive: true });

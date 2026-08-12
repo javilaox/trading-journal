@@ -1067,6 +1067,11 @@ let isSyncing = false;
 
 let tradesRealtimeChannel = null;
 let realtimeTimeout = null;
+// Estado del canal en vivo y momento de la última recarga: los usa la red de seguridad de abajo
+// para no depender solo de que el websocket esté sano.
+let realtimeConnected = false;
+let realtimeRetryTimeout = null;
+let lastRemoteRefreshAt = 0;
 
 let lastInsertedIds = new Set();
 
@@ -1084,6 +1089,7 @@ function triggerRealtimeUpdate() {
   clearTimeout(realtimeTimeout);
   realtimeTimeout = setTimeout(() => {
     console.log('🔄 Realtime aplicado');
+    lastRemoteRefreshAt = Date.now();
 
     if (typeof loadTrades === 'function') loadTrades();
     if (typeof loadStats === 'function') loadStats();
@@ -1133,14 +1139,56 @@ function subscribeToTradesRealtime() {
         triggerRealtimeUpdate();
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      // Saber si el canal está vivo importa: si no lo está, la red de seguridad de abajo pasa a
+      // consultar cada minuto en vez de quedarse esperando un aviso que no va a llegar.
+      realtimeConnected = status === 'SUBSCRIBED';
+      console.log('📡 Canal de trades en vivo:', status);
+
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        clearTimeout(realtimeRetryTimeout);
+        realtimeRetryTimeout = setTimeout(() => {
+          if (localStorage.getItem('user_id')) subscribeToTradesRealtime();
+        }, 8000);
+      }
+    });
 
   return tradesRealtimeChannel;
 }
 
+/**
+ * Red de seguridad de la sincronización.
+ *
+ * El canal en vivo es lo primero que trae un trade metido desde el móvil, pero es un websocket:
+ * se cae con el portátil suspendido, con un cambio de red o si Realtime no está habilitado para
+ * la tabla. Sin esto, la app se quedaría mostrando datos viejos sin avisar de nada.
+ *
+ *   - Al volver a la ventana (o al desbloquear el equipo) se recarga si hace más de 15 s de la
+ *     última vez. Es el momento en el que el usuario va a mirar, así que es cuando más vale.
+ *   - Mientras la ventana está a la vista, se consulta cada minuto solo si el canal NO está
+ *     conectado. Con el canal sano no se pide nada: sería gasto sin beneficio.
+ */
+function startRemoteRefreshSafetyNet() {
+  const refreshIfStale = (minAgeMs) => {
+    if (!isAppAuthenticated) return;
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastRemoteRefreshAt < minAgeMs) return;
+    triggerRealtimeUpdate();
+  };
+
+  document.addEventListener('visibilitychange', () => refreshIfStale(15000));
+  window.addEventListener('focus', () => refreshIfStale(15000));
+  setInterval(() => {
+    if (!realtimeConnected) refreshIfStale(45000);
+  }, 60000);
+}
+
 function unsubscribeTradesRealtime() {
   clearTimeout(realtimeTimeout);
+  clearTimeout(realtimeRetryTimeout);
   realtimeTimeout = null;
+  realtimeRetryTimeout = null;
+  realtimeConnected = false;
   if (tradesRealtimeChannel) {
     supabase.removeChannel(tradesRealtimeChannel);
     tradesRealtimeChannel = null;
@@ -18335,6 +18383,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   initSyncHealthIndicator();
   startSyncHealthAutoRetry();
+  startRemoteRefreshSafetyNet();
 
   window.addEventListener('online', async () => {
     console.log('🌐 Conexión recuperada');
