@@ -6482,23 +6482,6 @@ function updateTradeScheduleHints({ strategyId = 'strategy', entryId = 'entryTim
   }
 }
 
-/**
- * Garantiza que un valor concreto exista como opción del desplegable, aunque ya no esté en la
- * lista actual. Se usa al editar registros antiguos: la opción se añade marcada, para que se vea
- * que es algo que ya no se ofrece pero se conserva.
- */
-function ensureSelectHasValue(selectId, value, suffix = '') {
-  const select = document.getElementById(selectId);
-  const wanted = String(value || '').trim();
-  if (!select || !wanted) return;
-  const exists = [...select.options].some((opt) => opt.value === wanted);
-  if (exists) return;
-  const option = document.createElement('option');
-  option.value = wanted;
-  option.textContent = wanted + suffix;
-  select.appendChild(option);
-}
-
 function fillSelect(selectId, values, placeholderKey) {
   const select = document.getElementById(selectId);
   if (!select) return;
@@ -15235,7 +15218,14 @@ async function deleteBacktestingDayTrade(rawId) {
   await refreshBacktestingView({ skipTradeFetch: true });
 }
 
-function ensureSelectHasValue(selectEl, value) {
+/**
+ * Deja seleccionado un valor aunque ya no esté entre las opciones, añadiéndolo si hace falta.
+ *
+ * Es lo que permite editar registros antiguos cuyo valor ya no se ofrece (una cuenta que se
+ * deshabilitó, una estrategia que se borró): sin esto el campo saldría vacío y al guardar el
+ * registro perdería ese dato. `suffix` sirve para marcar esas opciones recuperadas.
+ */
+function ensureSelectHasValue(selectEl, value, suffix = '') {
   if (!selectEl) return;
   if (value == null || value === '') {
     selectEl.value = '';
@@ -15248,7 +15238,7 @@ function ensureSelectHasValue(selectEl, value) {
   }
   const op = document.createElement('option');
   op.value = v;
-  op.textContent = v;
+  op.textContent = v + suffix;
   selectEl.appendChild(op);
   selectEl.value = v;
 }
@@ -17870,11 +17860,9 @@ async function openTradeForEdit(tradeId) {
   setValue('editStrategy', trade.strategy || '');
   setValue('editResult', trade.result || '');
   setValue('editBeAfterResult', sanitizeBeAfterResult(trade.be_after_result) || '');
-  // Si el trade es de una cuenta que después se deshabilitó, su nombre ya no está en la lista.
-  // Se añade solo para este trade: sin esto, al abrir la edición el campo saldría vacío y al
-  // guardar el trade perdería la cuenta a la que pertenece.
-  ensureSelectHasValue('editAccount', trade.account || '', ' (deshabilitada)');
-  setValue('editAccount', trade.account || '');
+  // Si el trade es de una cuenta que después se deshabilitó, su nombre ya no está en la lista:
+  // se añade solo para este trade, marcado, en vez de dejar el campo vacío.
+  ensureSelectHasValue(document.getElementById('editAccount'), trade.account || '', ' (deshabilitada)');
 
   const lotValue = Number(trade.lotSize ?? trade.lotaje ?? 0) || 0;
   setValue('editLotSize', String(lotValue));
