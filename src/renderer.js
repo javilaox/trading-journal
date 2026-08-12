@@ -790,7 +790,6 @@ body.light #backtestingView .bt-session-card.is-active-session{
 /* Los challenges van en su propia seccion, separados del resto de estadisticas: no son
    resultados del backtest sino una proyeccion. El acento morado y el margen extra son la
    senal visual de "esto es otra cosa", sin llegar a parecer una pagina distinta. */
-#backtestingView .bt-challenge-section{margin-top:26px}
 #backtestingView .bt-challenge-section .pro-card{border-color:rgba(139,92,246,.32);
   background:linear-gradient(180deg,rgba(139,92,246,.07),rgba(139,92,246,.02) 120px)}
 #backtestingView .bt-challenge-section .bt-section-title h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -8455,28 +8454,44 @@ function switchManagementTab(tab) {
 
 let backtestingViewActiveTab = 'trades';
 
-/** Pestañas dentro de una sesión de backtesting: "Trades" (calendario + registro de
- * operaciones del día) vs "Estadísticas" (KPIs, disciplina por horario, análisis, simulaciones).
- * Separadas para reducir ruido visual; antes iba todo seguido en una sola vista muy larga. */
+/** Pestañas dentro de una sesión de backtesting: "Trades" (calendario y registro del día),
+ * "Estadísticas" (KPIs, disciplina por horario, análisis) y "Challenges" (proyección a una prop).
+ * Separadas para reducir ruido visual; antes iba todo seguido en una vista muy larga.
+ *
+ * Un panel puede pertenecer a más de una pestaña: el filtro de sesión lleva las clases de
+ * "Estadísticas" y "Challenges" porque ambas calculan sobre la sesión elegida. */
+const BT_VIEW_TAB_CLASSES = {
+  trades: 'bt-tab-panel-trades',
+  stats: 'bt-tab-panel-stats',
+  challenges: 'bt-tab-panel-challenge',
+};
+
 function switchBacktestingViewTab(tab) {
-  backtestingViewActiveTab = tab === 'stats' ? 'stats' : 'trades';
-  const showTrades = backtestingViewActiveTab === 'trades';
-  document.querySelectorAll('.bt-tab-panel-trades').forEach((el) => {
-    el.hidden = !showTrades;
+  backtestingViewActiveTab = BT_VIEW_TAB_CLASSES[tab] ? tab : 'trades';
+  const activeClass = BT_VIEW_TAB_CLASSES[backtestingViewActiveTab];
+
+  document.querySelectorAll('.bt-tab-panel').forEach((el) => {
+    el.hidden = !el.classList.contains(activeClass);
   });
-  document.querySelectorAll('.bt-tab-panel-stats').forEach((el) => {
-    el.hidden = showTrades;
+
+  document.querySelectorAll('[data-bt-view-tab]').forEach((btn) => {
+    const isActive = btn.dataset.btViewTab === backtestingViewActiveTab;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', String(isActive));
   });
-  document.getElementById('btViewTabBtnTrades')?.classList.toggle('active', showTrades);
-  document.getElementById('btViewTabBtnTrades')?.setAttribute('aria-selected', String(showTrades));
-  document.getElementById('btViewTabBtnStats')?.classList.toggle('active', !showTrades);
-  document.getElementById('btViewTabBtnStats')?.setAttribute('aria-selected', String(!showTrades));
+
+  // La simulación de challenges es cara (varios miles de repeticiones) y no se recalcula
+  // mientras la pestaña está oculta, así que se refresca al entrar.
+  if (backtestingViewActiveTab === 'challenges') {
+    renderBacktestingChallenge(getBacktestingTradesForMetrics());
+  }
 }
 
 function initBacktestingViewTabs() {
   if (!document.getElementById('backtestingView')) return;
-  document.getElementById('btViewTabBtnTrades')?.addEventListener('click', () => switchBacktestingViewTab('trades'));
-  document.getElementById('btViewTabBtnStats')?.addEventListener('click', () => switchBacktestingViewTab('stats'));
+  document.querySelectorAll('[data-bt-view-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => switchBacktestingViewTab(btn.dataset.btViewTab));
+  });
   switchBacktestingViewTab('trades');
 }
 
@@ -16925,7 +16940,9 @@ function rerenderBacktestingLocal() {
   renderBacktestingPairTable(filteredForMetrics);
   renderBacktestingMetricAnalysis(filteredForMetrics);
   renderBacktestingMetricExplorer(filteredForMetrics);
-  renderBacktestingChallenge(filteredForMetrics);
+  // Solo si su pestaña está a la vista: son ~9 simulaciones de Monte Carlo y no tiene sentido
+  // pagarlas en cada refresco del calendario. Al abrir la pestaña se recalcula.
+  if (backtestingViewActiveTab === 'challenges') renderBacktestingChallenge(filteredForMetrics);
   renderBacktestingCalendar(backtestingCurrentYear, backtestingCurrentMonth);
   renderBacktestingDayTrades();
   initBacktestingIncludeBeSwitch();
