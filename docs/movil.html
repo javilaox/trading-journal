@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Trading Journal" />
+<meta name="theme-color" content="#0f172a" />
+<title>Trading Journal · Móvil</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --card:#131f37; --border:rgba(148,163,184,.18);
+    --text:#e2e8f0; --muted:#94a3b8; --green:#22c55e; --red:#ef4444; --accent:#38bdf8;
+    --safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--text);font-size:16px;line-height:1.45;
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px calc(84px + var(--safe-bottom))}
+  h1{font-size:1.15rem;margin:0}
+  h2{font-size:1rem;margin:0 0 10px}
+  .muted{color:var(--muted)} .small{font-size:.82rem}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px}
+  label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:6px}
+  input,select,textarea{width:100%;background:rgba(255,255,255,.04);color:var(--text);
+       border:1px solid var(--border);border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field{margin-bottom:12px}
+  /* Botones tipo segmento: en el movil se acierta mucho antes que con un desplegable. */
+  .seg{display:flex;gap:8px}
+  .seg button{flex:1;padding:12px 6px;border-radius:10px;border:1px solid var(--border);
+       background:rgba(255,255,255,.04);color:var(--text);font-size:.9rem;font-weight:600;font-family:inherit}
+  .seg button.on{border-color:var(--accent);background:rgba(56,189,248,.16);color:#bae6fd}
+  .seg button.on.tp{border-color:var(--green);background:rgba(34,197,94,.16);color:#bbf7d0}
+  .seg button.on.sl{border-color:var(--red);background:rgba(239,68,68,.16);color:#fecaca}
+  .btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:1rem;
+       font-weight:700;font-family:inherit;background:var(--green);color:#04210f}
+  .btn:disabled{opacity:.6}
+  .btn.secondary{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border);font-weight:600}
+  .btn.danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.4);font-weight:600}
+  .btn+.btn{margin-top:10px}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .kpi{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .kpi span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em}
+  .kpi strong{display:block;font-size:1.2rem;margin-top:4px;font-variant-numeric:tabular-nums}
+  .trade{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .trade:last-child{border-bottom:none}
+  .trade-main{flex:1;min-width:0}
+  .trade-main strong{display:block;font-size:.95rem}
+  .trade-main small{color:var(--muted);font-size:.75rem}
+  .trade-pnl{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:.66rem;font-weight:800;margin-right:6px}
+  .badge.tp{background:rgba(34,197,94,.15);color:var(--green)}
+  .badge.sl{background:rgba(239,68,68,.15);color:var(--red)}
+  .badge.be{background:rgba(148,163,184,.15);color:var(--muted)}
+  .checks label{display:flex;align-items:center;gap:10px;color:var(--text);font-size:.9rem;
+       margin:0 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px}
+  .checks input{width:22px;height:22px;flex:0 0 auto}
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .shot img{width:100%;border-radius:10px;border:1px solid var(--border);display:block;margin-top:6px}
+  /* Barra inferior fija: el pulgar llega sin estirar la mano. */
+  nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:rgba(15,23,42,.96);
+      border-top:1px solid var(--border);padding-bottom:var(--safe-bottom);backdrop-filter:blur(10px);z-index:5}
+  nav button{flex:1;background:none;border:none;color:var(--muted);font-family:inherit;
+      font-size:.72rem;padding:10px 4px 12px;font-weight:600}
+  nav button.on{color:var(--accent)}
+  nav button i{display:block;font-size:1.15rem;font-style:normal;margin-bottom:2px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + var(--safe-bottom));
+      background:#0b1220;border:1px solid var(--border);border-radius:12px;padding:10px 16px;
+      font-size:.85rem;z-index:20;opacity:0;transition:opacity .2s ease;pointer-events:none;max-width:92vw}
+  .toast.show{opacity:1}
+  .toast.err{border-color:rgba(239,68,68,.5);color:#fecaca}
+  .toast.ok{border-color:rgba(34,197,94,.5);color:#bbf7d0}
+  #gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  #gate .card{width:100%;max-width:380px}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+  .link{background:none;border:none;color:var(--muted);font-size:.8rem;font-family:inherit;padding:0}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <h1 style="margin-bottom:4px">Trading Journal</h1>
+    <p class="muted small" style="margin:0 0 16px">Entra con la misma cuenta que usas en el ordenador.</p>
+    <div class="field">
+      <label for="email">Correo</label>
+      <input id="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" />
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input id="password" type="password" autocomplete="current-password" />
+    </div>
+    <button class="btn" id="loginBtn">Entrar</button>
+    <p class="small" id="gateError" style="color:var(--red);min-height:20px;margin:12px 0 0"></p>
+  </div>
+</div>
+
+<div class="wrap hidden" id="app">
+  <div class="head">
+    <h1 id="viewTitle">Nuevo trade</h1>
+    <button class="link" id="logoutBtn">Salir</button>
+  </div>
+
+  <!-- ───────── Nuevo / editar trade ───────── -->
+  <section id="viewForm">
+    <div class="card">
+      <div class="row">
+        <div class="field"><label for="fDate">Fecha</label><input id="fDate" type="date" /></div>
+        <div class="field"><label for="fAsset">Par</label><input id="fAsset" list="assetList" placeholder="NAS100" /></div>
+      </div>
+      <datalist id="assetList"></datalist>
+      <div class="row">
+        <div class="field"><label for="fEntry">Hora entrada</label><input id="fEntry" type="time" /></div>
+        <div class="field"><label for="fExit">Hora salida</label><input id="fExit" type="time" /></div>
+      </div>
+      <div class="field"><label for="fAccount">Cuenta</label><select id="fAccount"></select></div>
+      <div class="field"><label for="fStrategy">Estrategia</label><select id="fStrategy"></select></div>
+
+      <div class="field">
+        <label>Dirección</label>
+        <div class="seg" id="segDirection">
+          <button type="button" data-value="LONG">Compra</button>
+          <button type="button" data-value="SHORT">Venta</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Resultado</label>
+        <div class="seg" id="segResult">
+          <button type="button" class="tp" data-value="TP">TP</button>
+          <button type="button" class="sl" data-value="SL">SL</button>
+          <button type="button" data-value="BE">BE</button>
+        </div>
+      </div>
+
+      <div class="field hidden" id="beRow">
+        <label>El BE, ¿en qué habría acabado?</label>
+        <div class="seg" id="segBeAfter">
+          <button type="button" class="tp" data-value="TP">Habría sido TP</button>
+          <button type="button" class="sl" data-value="SL">Habría sido SL</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label for="fPnl">PnL (€)</label><input id="fPnl" type="number" inputmode="decimal" step="0.01" /></div>
+        <div class="field"><label for="fLot">Lotaje</label><input id="fLot" type="number" inputmode="decimal" step="0.01" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="fComm">Comisión (€)</label><input id="fComm" type="number" inputmode="decimal" step="0.01" /></div>
+        <div class="field"><label for="fNet">PnL neto (€)</label><input id="fNet" type="number" inputmode="decimal" step="0.01" /></div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="metricsCard">
+      <h2>Métricas de la estrategia</h2>
+      <div class="checks" id="metricsList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Capturas</h2>
+      <div class="shots">
+        <div class="shot">
+          <label for="fImgBefore">Antes</label>
+          <input id="fImgBefore" type="file" accept="image/*" />
+          <img id="imgBeforePreview" class="hidden" alt="" />
+        </div>
+        <div class="shot">
+          <label for="fImgAfter">Después</label>
+          <input id="fImgAfter" type="file" accept="image/*" />
+          <img id="imgAfterPreview" class="hidden" alt="" />
+        </div>
+      </div>
+    </div>
+
+    <button class="btn" id="saveBtn">Guardar trade</button>
+    <button class="btn secondary hidden" id="cancelEditBtn">Cancelar edición</button>
+    <button class="btn danger hidden" id="deleteBtn">Eliminar trade</button>
+  </section>
+
+  <!-- ───────── Lista de trades ───────── -->
+  <section id="viewList" class="hidden">
+    <div class="card">
+      <h2>Últimos trades</h2>
+      <div id="tradeList"><p class="muted small">Cargando…</p></div>
+    </div>
+  </section>
+
+  <!-- ───────── Resumen ───────── -->
+  <section id="viewStats" class="hidden">
+    <div class="card">
+      <div class="seg" id="segPeriod" style="margin-bottom:14px">
+        <button type="button" data-value="month" class="on">Este mes</button>
+        <button type="button" data-value="90">90 días</button>
+        <button type="button" data-value="all">Todo</button>
+      </div>
+      <div class="kpis" id="statsKpis"></div>
+    </div>
+    <div class="card">
+      <h2>Por estrategia</h2>
+      <div id="statsByStrategy"></div>
+    </div>
+  </section>
+</div>
+
+<nav class="hidden" id="nav">
+  <button data-view="form" class="on"><i>＋</i>Nuevo</button>
+  <button data-view="list"><i>≡</i>Trades</button>
+  <button data-view="stats"><i>◔</i>Resumen</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var SUPABASE_URL = "https://ohgpbiwjmvfaazwwboyq.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9oZ3BiaXdqbXZmYWF6d3dib3lxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczODI1MDgsImV4cCI6MjA5Mjk1ODUwOH0.mvdzKezAMKzYzCH2_y0_UcR2Ir7_Sq6ft_Qlulys52U";
+  var IMAGES_BUCKET = 'trade-images';
+
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage },
+  });
+
+  var USER = null;
+  var ACCOUNTS = [];
+  var STRATEGIES = [];
+  var TRADES = [];
+  var EDITING = null;          // trade que se está editando, o null si es uno nuevo
+  var IMAGES = { before: null, after: null };  // referencias "storage:..." ya subidas
+  var netTouched = false;      // si el usuario escribe el neto a mano, se deja de calcular
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function toast(msg, kind) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (kind || '');
+    setTimeout(function () { el.className = 'toast ' + (kind || ''); }, 2600);
+  }
+
+  function money(v) {
+    var n = Number(v) || 0;
+    return (n > 0 ? '+' : '') + n.toFixed(2) + '€';
+  }
+
+  function todayIso() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function displayDate(iso) {
+    var s = String(iso || '').slice(0, 10).split('-');
+    return s.length === 3 ? s[2] + '-' + s[1] + '-' + s[0] : String(iso || '');
+  }
+
+  /* ─────────────────────────── Sesión ─────────────────────────── */
+
+  async function boot() {
+    var res = await db.auth.getSession();
+    if (res.data && res.data.session) {
+      USER = res.data.session.user;
+      await startApp();
+    } else {
+      $('gate').classList.remove('hidden');
+    }
+  }
+
+  $('loginBtn').addEventListener('click', async function () {
+    var btn = $('loginBtn');
+    btn.disabled = true;
+    $('gateError').textContent = '';
+    var out = await db.auth.signInWithPassword({
+      email: ($('email').value || '').trim(),
+      password: $('password').value || '',
+    });
+    btn.disabled = false;
+    if (out.error) {
+      $('gateError').textContent = out.error.message === 'Invalid login credentials'
+        ? 'Correo o contraseña incorrectos.'
+        : out.error.message;
+      return;
+    }
+    USER = out.data.user;
+    $('gate').classList.add('hidden');
+    await startApp();
+  });
+
+  $('password').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') $('loginBtn').click();
+  });
+
+  $('logoutBtn').addEventListener('click', async function () {
+    await db.auth.signOut();
+    location.reload();
+  });
+
+  async function startApp() {
+    $('gate').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    $('nav').classList.remove('hidden');
+    resetForm();
+    await Promise.all([loadCatalogs(), loadTrades()]);
+  }
+
+  /* ─────────────────────── Cuentas y estrategias ─────────────────────── */
+
+  async function loadCatalogs() {
+    var accRes = await db.from('real_accounts').select('id,name').order('name');
+    var strRes = await db.from('real_strategies').select('id,name,custom_metrics,is_active').order('name');
+    ACCOUNTS = (accRes.data || []).filter(function (a) { return a.name; });
+    STRATEGIES = (strRes.data || []).filter(function (s) { return s.name && s.is_active !== false; });
+
+    fillSelect($('fAccount'), ACCOUNTS.map(function (a) { return a.name; }), localStorage.getItem('lastAccount'));
+    fillSelect($('fStrategy'), STRATEGIES.map(function (s) { return s.name; }), localStorage.getItem('lastStrategy'));
+    renderMetrics({});
+  }
+
+  function fillSelect(sel, names, preferred) {
+    sel.innerHTML = names.map(function (n) {
+      return '<option value="' + escapeAttr(n) + '">' + escapeHtml(n) + '</option>';
+    }).join('');
+    if (!names.length) sel.innerHTML = '<option value="">(sin datos)</option>';
+    if (preferred && names.indexOf(preferred) >= 0) sel.value = preferred;
+  }
+
+  function escapeHtml(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function escapeAttr(v) { return escapeHtml(v).replace(/"/g, '&quot;'); }
+
+  /** Checklist propio de la estrategia elegida; los valores viajan en custom_metrics del trade. */
+  function renderMetrics(values) {
+    var name = $('fStrategy').value;
+    var strategy = STRATEGIES.filter(function (s) { return s.name === name; })[0];
+    var raw = strategy && strategy.custom_metrics;
+    var list = Array.isArray(raw) ? raw : [];
+    var names = list.map(function (m) { return typeof m === 'string' ? m : String((m && m.name) || ''); })
+                    .filter(Boolean);
+
+    if (!names.length) {
+      $('metricsCard').classList.add('hidden');
+      $('metricsList').innerHTML = '';
+      return;
+    }
+    $('metricsCard').classList.remove('hidden');
+    $('metricsList').innerHTML = names.map(function (n) {
+      var checked = values && values[n] === true ? ' checked' : '';
+      return '<label><input type="checkbox" data-metric="' + escapeAttr(n) + '"' + checked + ' />' +
+             '<span>' + escapeHtml(n) + '</span></label>';
+    }).join('');
+  }
+
+  function readMetrics() {
+    var out = {};
+    var boxes = $('metricsList').querySelectorAll('[data-metric]');
+    for (var i = 0; i < boxes.length; i += 1) out[boxes[i].getAttribute('data-metric')] = boxes[i].checked;
+    return out;
+  }
+
+  $('fStrategy').addEventListener('change', function () { renderMetrics({}); });
+
+  /* ─────────────────────────── Segmentos ─────────────────────────── */
+
+  function segValue(id) {
+    var on = $(id).querySelector('button.on');
+    return on ? on.getAttribute('data-value') : '';
+  }
+  function segSet(id, value) {
+    var btns = $(id).querySelectorAll('button');
+    for (var i = 0; i < btns.length; i += 1) {
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-value') === value);
+    }
+  }
+  ['segDirection', 'segResult', 'segBeAfter', 'segPeriod'].forEach(function (id) {
+    $(id).addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      segSet(id, btn.getAttribute('data-value'));
+      if (id === 'segResult') $('beRow').classList.toggle('hidden', btn.getAttribute('data-value') !== 'BE');
+      if (id === 'segPeriod') renderStats();
+    });
+  });
+
+  /* ─────────────────────── PnL neto automático ─────────────────────── */
+
+  function syncNet() {
+    if (netTouched) return;
+    var pnl = Number($('fPnl').value) || 0;
+    var comm = Number($('fComm').value) || 0;
+    $('fNet').value = (pnl - comm).toFixed(2);
+  }
+  $('fPnl').addEventListener('input', syncNet);
+  $('fComm').addEventListener('input', syncNet);
+  $('fNet').addEventListener('input', function () { netTouched = true; });
+
+  /* ─────────────────────────── Imágenes ─────────────────────────── */
+
+  async function handleImage(inputId, previewId, slot) {
+    var file = $(inputId).files && $(inputId).files[0];
+    if (!file) return;
+    toast('Subiendo imagen…');
+    var ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    var path = USER.id + '/' + cryptoUuid() + '.' + ext;
+    var up = await db.storage.from(IMAGES_BUCKET).upload(path, file, {
+      contentType: file.type || 'image/jpeg',
+      upsert: true,
+    });
+    if (up.error) { toast('No se pudo subir la imagen', 'err'); return; }
+    // Misma referencia que usa el escritorio, para que la imagen se vea en los dos sitios.
+    IMAGES[slot] = 'storage:' + path;
+    var url = URL.createObjectURL(file);
+    var img = $(previewId);
+    img.src = url;
+    img.classList.remove('hidden');
+    toast('Imagen lista', 'ok');
+  }
+  $('fImgBefore').addEventListener('change', function () { handleImage('fImgBefore', 'imgBeforePreview', 'before'); });
+  $('fImgAfter').addEventListener('change', function () { handleImage('fImgAfter', 'imgAfterPreview', 'after'); });
+
+  function cryptoUuid() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+
+  async function showStoredImage(ref, previewId) {
+    var img = $(previewId);
+    img.classList.add('hidden');
+    if (!ref || String(ref).indexOf('storage:') !== 0) return;
+    var res = await db.storage.from(IMAGES_BUCKET).createSignedUrl(String(ref).slice(8), 3600);
+    if (res.data && res.data.signedUrl) {
+      img.src = res.data.signedUrl;
+      img.classList.remove('hidden');
+    }
+  }
+
+  /* ─────────────────────────── Guardar ─────────────────────────── */
+
+  function resetForm() {
+    EDITING = null;
+    IMAGES = { before: null, after: null };
+    netTouched = false;
+    $('viewTitle').textContent = 'Nuevo trade';
+    $('fDate').value = todayIso();
+    $('fAsset').value = localStorage.getItem('lastAsset') || '';
+    $('fEntry').value = '';
+    $('fExit').value = '';
+    $('fPnl').value = '';
+    $('fLot').value = '';
+    $('fComm').value = '';
+    $('fNet').value = '';
+    segSet('segDirection', 'LONG');
+    segSet('segResult', 'TP');
+    segSet('segBeAfter', '');
+    $('beRow').classList.add('hidden');
+    $('imgBeforePreview').classList.add('hidden');
+    $('imgAfterPreview').classList.add('hidden');
+    $('fImgBefore').value = '';
+    $('fImgAfter').value = '';
+    $('cancelEditBtn').classList.add('hidden');
+    $('deleteBtn').classList.add('hidden');
+    $('saveBtn').textContent = 'Guardar trade';
+    renderMetrics({});
+  }
+
+  function buildRow() {
+    var pnl = Number($('fPnl').value);
+    if (!isFinite(pnl)) return { error: 'Escribe el PnL de la operación.' };
+    var result = segValue('segResult');
+    if (!result) return { error: 'Marca si fue TP, SL o BE.' };
+    var comm = Number($('fComm').value) || 0;
+    var netRaw = $('fNet').value;
+    var net = netRaw === '' ? pnl - comm : Number(netRaw) || 0;
+
+    return {
+      row: {
+        date: $('fDate').value || todayIso(),
+        asset: ($('fAsset').value || '').trim(),
+        result: result,
+        be_after_result: result === 'BE' ? (segValue('segBeAfter') || null) : null,
+        pnl: pnl,
+        strategy: $('fStrategy').value || '',
+        account: $('fAccount').value || null,
+        lotaje: Number($('fLot').value) || 0,
+        commission: comm,
+        pnl_net: net,
+        image_before: IMAGES.before,
+        image_after: IMAGES.after,
+        entry_time: $('fEntry').value || null,
+        exit_time: $('fExit').value || null,
+        direction: segValue('segDirection') || 'LONG',
+        custom_metrics: readMetrics(),
+        is_composite_position: false,
+        position_legs: [],
+        updated_at: new Date().toISOString(),
+      },
+    };
+  }
+
+  $('saveBtn').addEventListener('click', async function () {
+    var built = buildRow();
+    if (built.error) { toast(built.error, 'err'); return; }
+    var btn = $('saveBtn');
+    btn.disabled = true;
+
+    var out;
+    if (EDITING) {
+      out = await db.from('trades').update(built.row).eq('id', EDITING.id).eq('user_id', USER.id);
+    } else {
+      // client_uuid: la aplicación de escritorio lo usa para no duplicar filas al sincronizar.
+      built.row.user_id = USER.id;
+      built.row.client_uuid = cryptoUuid();
+      out = await db.from('trades').insert(built.row);
+    }
+    btn.disabled = false;
+
+    if (out.error) { toast('No se pudo guardar: ' + out.error.message, 'err'); return; }
+
+    localStorage.setItem('lastAccount', $('fAccount').value || '');
+    localStorage.setItem('lastStrategy', $('fStrategy').value || '');
+    localStorage.setItem('lastAsset', ($('fAsset').value || '').trim());
+    toast(EDITING ? 'Trade actualizado' : 'Trade guardado', 'ok');
+    resetForm();
+    await loadTrades();
+  });
+
+  $('cancelEditBtn').addEventListener('click', function () { resetForm(); });
+
+  $('deleteBtn').addEventListener('click', async function () {
+    if (!EDITING) return;
+    if (!window.confirm('¿Eliminar este trade? No se puede deshacer.')) return;
+    var out = await db.from('trades').delete().eq('id', EDITING.id).eq('user_id', USER.id);
+    if (out.error) { toast('No se pudo eliminar: ' + out.error.message, 'err'); return; }
+    toast('Trade eliminado', 'ok');
+    resetForm();
+    await loadTrades();
+    showView('list');
+  });
+
+  /* ─────────────────────────── Lista ─────────────────────────── */
+
+  async function loadTrades() {
+    var res = await db.from('trades').select('*').order('date', { ascending: false }).limit(200);
+    if (res.error) { toast('No se pudieron cargar los trades', 'err'); return; }
+    TRADES = res.data || [];
+    renderList();
+    renderStats();
+    renderAssetSuggestions();
+  }
+
+  function renderAssetSuggestions() {
+    var seen = {};
+    var out = [];
+    TRADES.forEach(function (t) {
+      if (t.asset && !seen[t.asset]) { seen[t.asset] = true; out.push(t.asset); }
+    });
+    $('assetList').innerHTML = out.slice(0, 12).map(function (a) {
+      return '<option value="' + escapeAttr(a) + '"></option>';
+    }).join('');
+  }
+
+  function renderList() {
+    var host = $('tradeList');
+    if (!TRADES.length) {
+      host.innerHTML = '<p class="muted small">Aún no hay trades.</p>';
+      return;
+    }
+    host.innerHTML = TRADES.slice(0, 60).map(function (t) {
+      var r = String(t.result || '').toUpperCase();
+      var cls = r === 'TP' ? 'tp' : r === 'SL' ? 'sl' : 'be';
+      var pnl = Number(t.pnl) || 0;
+      return '<div class="trade" data-id="' + t.id + '">' +
+        '<div class="trade-main">' +
+          '<strong><span class="badge ' + cls + '">' + escapeHtml(r || '—') + '</span>' + escapeHtml(t.asset || '—') + '</strong>' +
+          '<small>' + displayDate(t.date) + (t.strategy ? ' · ' + escapeHtml(t.strategy) : '') +
+          (t.direction ? ' · ' + (t.direction === 'SHORT' ? 'Venta' : 'Compra') : '') + '</small>' +
+        '</div>' +
+        '<div class="trade-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + money(pnl) + '</div>' +
+      '</div>';
+    }).join('');
+
+    host.querySelectorAll('.trade').forEach(function (el) {
+      el.addEventListener('click', function () { editTrade(Number(el.getAttribute('data-id'))); });
+    });
+  }
+
+  async function editTrade(id) {
+    var t = TRADES.filter(function (x) { return Number(x.id) === id; })[0];
+    if (!t) return;
+    resetForm();
+    EDITING = t;
+    netTouched = true;
+    $('viewTitle').textContent = 'Editar trade';
+    $('saveBtn').textContent = 'Guardar cambios';
+    $('cancelEditBtn').classList.remove('hidden');
+    $('deleteBtn').classList.remove('hidden');
+
+    $('fDate').value = String(t.date || '').slice(0, 10);
+    $('fAsset').value = t.asset || '';
+    $('fEntry').value = (t.entry_time || '').slice(0, 5);
+    $('fExit').value = (t.exit_time || '').slice(0, 5);
+    if (t.account) $('fAccount').value = t.account;
+    if (t.strategy) $('fStrategy').value = t.strategy;
+    $('fPnl').value = t.pnl != null ? t.pnl : '';
+    $('fLot').value = t.lotaje != null ? t.lotaje : '';
+    $('fComm').value = t.commission != null ? t.commission : '';
+    $('fNet').value = t.pnl_net != null ? t.pnl_net : '';
+    segSet('segDirection', t.direction === 'SHORT' ? 'SHORT' : 'LONG');
+    segSet('segResult', String(t.result || 'TP').toUpperCase());
+    $('beRow').classList.toggle('hidden', String(t.result || '').toUpperCase() !== 'BE');
+    segSet('segBeAfter', t.be_after_result || '');
+    renderMetrics(t.custom_metrics || {});
+    IMAGES = { before: t.image_before || null, after: t.image_after || null };
+    showStoredImage(t.image_before, 'imgBeforePreview');
+    showStoredImage(t.image_after, 'imgAfterPreview');
+
+    showView('form');
+    window.scrollTo(0, 0);
+  }
+
+  /* ─────────────────────────── Resumen ─────────────────────────── */
+
+  function periodFilter() {
+    var mode = segValue('segPeriod');
+    if (mode === 'all') return function () { return true; };
+    if (mode === '90') {
+      var from = new Date();
+      from.setDate(from.getDate() - 90);
+      var iso = from.toISOString().slice(0, 10);
+      return function (t) { return String(t.date || '') >= iso; };
+    }
+    var now = new Date();
+    var prefix = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    return function (t) { return String(t.date || '').indexOf(prefix) === 0; };
+  }
+
+  function renderStats() {
+    var list = TRADES.filter(periodFilter());
+    var tp = 0, sl = 0, be = 0, pnl = 0;
+    list.forEach(function (t) {
+      var r = String(t.result || '').toUpperCase();
+      if (r === 'TP') tp += 1; else if (r === 'SL') sl += 1; else be += 1;
+      pnl += Number(t.pnl) || 0;
+    });
+    var decided = tp + sl;
+    var winrate = decided ? (tp / decided) * 100 : 0;
+
+    // Racha actual, en orden cronológico y sin que los BE la corten (mismo criterio que la app).
+    var ordered = list.slice().sort(function (a, b) {
+      return String(a.date).localeCompare(String(b.date)) ||
+             String(a.entry_time || '').localeCompare(String(b.entry_time || ''));
+    });
+    var runTp = 0, runSl = 0;
+    ordered.forEach(function (t) {
+      var r = String(t.result || '').toUpperCase();
+      if (r === 'TP') { runTp += 1; runSl = 0; }
+      else if (r === 'SL') { runSl += 1; runTp = 0; }
+    });
+    var streak = runTp > 0 ? runTp + ' TP' : runSl > 0 ? runSl + ' SL' : '—';
+
+    $('statsKpis').innerHTML =
+      '<div class="kpi"><span>PnL</span><strong class="' + (pnl >= 0 ? 'pos' : 'neg') + '">' + money(pnl) + '</strong></div>' +
+      '<div class="kpi"><span>Ratio de aciertos</span><strong>' + (decided ? winrate.toFixed(1) + '%' : '—') + '</strong></div>' +
+      '<div class="kpi"><span>Operaciones</span><strong>' + list.length + '</strong></div>' +
+      '<div class="kpi"><span>Racha actual</span><strong class="' + (runTp ? 'pos' : runSl ? 'neg' : '') + '">' + streak + '</strong></div>' +
+      '<div class="kpi"><span>TP / SL / BE</span><strong>' + tp + ' / ' + sl + ' / ' + be + '</strong></div>' +
+      '<div class="kpi"><span>Media por operación</span><strong class="' + (pnl >= 0 ? 'pos' : 'neg') + '">' +
+        (list.length ? money(pnl / list.length) : '—') + '</strong></div>';
+
+    var byStrategy = {};
+    list.forEach(function (t) {
+      var k = t.strategy || '—';
+      if (!byStrategy[k]) byStrategy[k] = { n: 0, pnl: 0, tp: 0, decided: 0 };
+      byStrategy[k].n += 1;
+      byStrategy[k].pnl += Number(t.pnl) || 0;
+      var r = String(t.result || '').toUpperCase();
+      if (r === 'TP') { byStrategy[k].tp += 1; byStrategy[k].decided += 1; }
+      else if (r === 'SL') { byStrategy[k].decided += 1; }
+    });
+    var keys = Object.keys(byStrategy).sort(function (a, b) { return byStrategy[b].pnl - byStrategy[a].pnl; });
+    $('statsByStrategy').innerHTML = keys.length
+      ? keys.map(function (k) {
+          var v = byStrategy[k];
+          var wr = v.decided ? ((v.tp / v.decided) * 100).toFixed(0) + '%' : '—';
+          return '<div class="trade"><div class="trade-main"><strong>' + escapeHtml(k) + '</strong>' +
+            '<small>' + v.n + ' ops · acierto ' + wr + '</small></div>' +
+            '<div class="trade-pnl ' + (v.pnl >= 0 ? 'pos' : 'neg') + '">' + money(v.pnl) + '</div></div>';
+        }).join('')
+      : '<p class="muted small">Sin datos en este período.</p>';
+  }
+
+  /* ─────────────────────────── Navegación ─────────────────────────── */
+
+  function showView(view) {
+    $('viewForm').classList.toggle('hidden', view !== 'form');
+    $('viewList').classList.toggle('hidden', view !== 'list');
+    $('viewStats').classList.toggle('hidden', view !== 'stats');
+    $('viewTitle').textContent =
+      view === 'list' ? 'Trades' : view === 'stats' ? 'Resumen' : (EDITING ? 'Editar trade' : 'Nuevo trade');
+    var btns = $('nav').querySelectorAll('button');
+    for (var i = 0; i < btns.length; i += 1) {
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-view') === view);
+    }
+  }
+
+  $('nav').addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    var view = btn.getAttribute('data-view');
+    if (view === 'form' && EDITING) resetForm();
+    if (view === 'list' || view === 'stats') loadTrades();
+    showView(view);
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,8 @@ personas con las que compartes resultados de backtesting.
 
 | Archivo | Para qué |
 |---|---|
-| `visor.html` | La página del visor. **Generada, no editar a mano.** |
+| `visor.html` | La página del visor de informes. **Generada, no editar a mano.** |
+| `movil.html` | Versión móvil del diario (privada, pide login). **Generada, no editar a mano.** |
 | `index.html` | Aviso para quien llegue a la raíz sin un enlace completo. |
 | `.nojekyll` | Evita que GitHub Pages procese la carpeta con Jekyll. |
 
@@ -31,6 +32,27 @@ git add docs/visor.html && git commit -m "Actualizar visor" && git push
 
 Se hace con un script y no a mano precisamente para que la página publicada no se quede atrás
 respecto al código.
+
+## La versión móvil (`movil.html`)
+
+Sirve para meter trades desde el teléfono y consultar el resumen sin abrir el ordenador.
+Se genera igual que el visor:
+
+```
+npm run build:mobile     # o npm run build:web para regenerar los dos
+```
+
+Dirección: `https://javilaox.github.io/trading-journal/movil.html`. En el iPhone conviene
+abrirla en Safari y usar *Compartir → Añadir a pantalla de inicio*: queda con icono propio y a
+pantalla completa.
+
+**No es un segundo sistema**: escribe directamente en la misma base de Supabase que la
+aplicación de escritorio, con el mismo usuario y las mismas columnas. Por eso no hay nada que
+sincronizar a mano — un trade metido en el móvil ya está en la base, y el escritorio lo baja en
+su siguiente arranque o refresco.
+
+Que la página sea pública no expone nada: sin iniciar sesión no se puede leer ni escribir, y las
+políticas RLS limitan cada consulta a las filas del propio usuario.
 
 ## Por qué no se aloja en Supabase
 

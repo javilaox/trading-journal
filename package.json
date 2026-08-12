@@ -16,7 +16,9 @@
     "make:production": "cross-env APP_BUILD_ENV=production electron-forge make",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
-    "build:viewer": "node scripts/build-share-viewer.js"
+    "build:viewer": "node scripts/build-share-viewer.js",
+    "build:mobile": "node scripts/build-mobile.js",
+    "build:web": "npm run build:viewer && npm run build:mobile"
   },
   "keywords": [],
   "author": {
