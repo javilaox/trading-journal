@@ -8783,11 +8783,13 @@
                       una cuenta cada vez, así que el ritmo diario es el mismo: lo único que cambia
                       es cuándo saltas de una cuenta a otra.
                     </p>
+                    <!-- No lleva la clase .input a proposito: esa clase es width:100% y estiraba
+                         el campo a lo ancho de la tarjeta. Aqui solo caben dos digitos. -->
                     <div class="challenge-count-picker">
                       <label for="btChallengeCount">Compro</label>
-                      <input type="number" class="input" id="btChallengeCount" data-challenge-count
-                             min="1" max="10" step="1" value="1" />
-                      <span class="muted small">challenges</span>
+                      <input type="number" class="challenge-count-input" id="btChallengeCount"
+                             data-challenge-count min="1" max="10" step="1" value="1" />
+                      <span>challenges</span>
                     </div>
                   </div>
                   <div id="btChallengeRotation"></div>

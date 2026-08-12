@@ -801,9 +801,12 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
 /* Cuantos challenges se compran: campo numerico, porque el usuario quiere escribir su numero
    y ver la lista completa hasta ahi, no elegir de un menu cerrado. */
-.challenge-count-picker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 16px}
-.challenge-count-picker label{color:var(--text-muted);font-size:.82rem}
-#btChallengeCount{width:88px;text-align:right;font-variant-numeric:tabular-nums}
+.challenge-count-picker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 18px}
+.challenge-count-picker label,.challenge-count-picker span{color:var(--text-muted);font-size:.85rem}
+.challenge-count-input{width:72px;flex:0 0 72px;text-align:center;font-variant-numeric:tabular-nums;
+  padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--card-bg);
+  color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:border-color .15s ease}
+.challenge-count-input:hover,.challenge-count-input:focus{border-color:rgba(139,92,246,.6)}
 .challenge-modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:12px}
 .challenge-mode-card{border:1px solid var(--border);border-radius:14px;padding:14px 16px;
   background:rgba(255,255,255,.02)}

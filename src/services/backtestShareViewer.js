@@ -108,7 +108,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
   .rot-title{margin:24px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
   .count-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
   .count-picker label{color:var(--muted);font-size:.82rem}
-  #challengeCount{width:88px;text-align:right;font-variant-numeric:tabular-nums;
+  #challengeCount{width:72px;flex:0 0 72px;text-align:center;font-variant-numeric:tabular-nums;
        background:rgba(255,255,255,.04);color:var(--text);border:1px solid var(--border);
        border-radius:10px;padding:8px 10px;font-size:.9rem;font-family:inherit}
   .modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:12px}
