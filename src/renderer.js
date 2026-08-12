@@ -798,6 +798,17 @@ body.light #backtestingView .bt-session-card.is-active-session{
   padding:3px 8px;border-radius:999px;color:#c4b5fd;background:rgba(139,92,246,.16);
   border:1px solid rgba(139,92,246,.38)}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
+.challenge-fields{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:12px}
+.challenge-fields .challenge-phases-field{margin-bottom:0}
+#btChallengeAccounts{width:90px;text-align:right}
+.challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
+.challenge-subtitle{margin:22px 0 4px;font-size:.95rem}
+.challenge-warning{margin:0 0 12px;padding:10px 12px;border-radius:10px;font-size:.85rem;
+  color:#fcd34d;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35)}
+.challenge-table--rotation th,.challenge-table--rotation td{text-align:center}
+.challenge-table--rotation tbody th,.challenge-table--rotation thead th:first-child{text-align:left}
+.challenge-table--rotation thead tr:first-child th+th{border-left:1px solid var(--border)}
+.challenge-table--rotation tbody tr.is-current{background:rgba(139,92,246,.10)}
 .challenge-config{margin:14px 0 18px}
 .challenge-phases-field{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .challenge-phases-field span{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
@@ -2928,6 +2939,7 @@ const {
 const { planBacktestRecalc } = require('./services/backtestRecalc');
 const {
   simulateChallenge,
+  compareChallengeAccounts,
   tradesPerTradingDay,
   defaultChallengeConfig,
   normalizeChallengeConfig,
@@ -13265,6 +13277,8 @@ function renderChallengePhaseInputs() {
 
   const cfg = getChallengeConfig();
   if (select) select.value = String(cfg.phases.length);
+  const accountsInput = document.getElementById('btChallengeAccounts');
+  if (accountsInput) accountsInput.value = String(cfg.accounts || 1);
 
   host.innerHTML = cfg.phases
     .map(
@@ -13274,6 +13288,7 @@ function renderChallengePhaseInputs() {
         <td><div class="challenge-input"><input type="number" class="input" data-challenge="target" data-index="${i}" value="${phase.target}" min="0" step="0.5" /><span>%</span></div></td>
         <td><div class="challenge-input"><input type="number" class="input" data-challenge="risk" data-index="${i}" value="${phase.risk}" min="0" step="0.1" /><span>%</span></div></td>
         <td><div class="challenge-input"><input type="number" class="input" data-challenge="maxDrawdown" data-index="${i}" value="${phase.maxDrawdown}" min="0" step="0.5" /><span>%</span></div></td>
+        <td><div class="challenge-input"><input type="number" class="input" data-challenge="consistency" data-index="${i}" value="${phase.consistency || 0}" min="0" max="100" step="5" /><span>%</span></div></td>
       </tr>`
     )
     .join('');
@@ -13285,8 +13300,13 @@ function readChallengeConfigFromDom() {
     target: Number(row.querySelector('[data-challenge="target"]')?.value) || 0,
     risk: Number(row.querySelector('[data-challenge="risk"]')?.value) || 0,
     maxDrawdown: Number(row.querySelector('[data-challenge="maxDrawdown"]')?.value) || 0,
+    consistency: Number(row.querySelector('[data-challenge="consistency"]')?.value) || 0,
   }));
-  return { phases: phases.length ? phases : defaultChallengeConfig().phases };
+  const accounts = Math.max(
+    1,
+    Math.min(6, Number(document.getElementById('btChallengeAccounts')?.value) || 1)
+  );
+  return { phases: phases.length ? phases : defaultChallengeConfig().phases, accounts };
 }
 
 function renderBacktestingChallenge(filtered) {
@@ -13308,26 +13328,43 @@ function renderBacktestingChallenge(filtered) {
       results.innerHTML =
         '<p class="muted small">Hacen falta al menos 5 operaciones registradas para simular un challenge con un mínimo de sentido.</p>';
     }
+    const rotationHost = document.getElementById('btChallengeRotation');
+    if (rotationHost) rotationHost.innerHTML = '';
     if (caveat) caveat.textContent = '';
     bindChallengeInputs();
     return;
   }
 
-  const sim = simulateChallenge(rValues, cfg.phases, { runs: 3000 });
+  const perDay = tradesPerTradingDay(trades);
+  const accounts = Math.max(1, Number(cfg.accounts) || 1);
+  const simOptions = {
+    runs: 3000,
+    tradesPerDay: perDay,
+    accounts,
+    // Con varias cuentas el modo de referencia es el que describe el usuario: rotar al primer SL.
+    rotateOnLoss: accounts > 1,
+  };
+  const sim = simulateChallenge(rValues, cfg.phases, simOptions);
   if (!sim) return;
 
-  const perDay = tradesPerTradingDay(trades);
   const toDays = (n) => (n == null || !perDay ? null : Math.ceil(n / perDay));
   const pct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
   const tone = (v) => (v == null ? '' : v >= 70 ? 'positive' : v >= 40 ? '' : 'negative');
 
-  const days = toDays(sim.medianTradesTotal);
-  const daysP90 = toDays(sim.p90TradesTotal);
+  // Con el modelo de días activo los días salen de la propia simulación (la consistencia obliga
+  // a parar antes de tiempo, así que dividir operaciones entre ritmo daría de menos).
+  const days = sim.medianDaysTotal ?? toDays(sim.medianTradesTotal);
+  const daysP90 = sim.p90DaysTotal ?? toDays(sim.p90TradesTotal);
+  const hasConsistency = cfg.phases.some((p) => Number(p.consistency) > 0);
 
   if (results) {
     results.innerHTML = `
       <div class="challenge-headline ${tone(sim.overallPassRate)}">
-        Probabilidad de superar el challenge completo: <strong>${pct(sim.overallPassRate)}</strong>
+        ${
+          accounts > 1
+            ? `Probabilidad de pasar <strong>al menos uno</strong> de los ${accounts} challenges: <strong>${pct(sim.overallPassRate)}</strong>`
+            : `Probabilidad de superar el challenge completo: <strong>${pct(sim.overallPassRate)}</strong>`
+        }
       </div>
       <div class="stats-grid challenge-kpis">
         <div class="advanced-item">
@@ -13342,6 +13379,22 @@ function renderBacktestingChallenge(filtered) {
           <span>Días · si va mal</span>
           <h2>${daysP90 ?? '—'}</h2>
         </div>
+        ${
+          accounts > 1
+            ? `<div class="advanced-item">
+          <span>Challenges pasados · media</span>
+          <h2>${sim.avgAccountsPassed.toFixed(2)}</h2>
+        </div>`
+            : ''
+        }
+        ${
+          hasConsistency
+            ? `<div class="advanced-item">
+          <span>Días que paras por consistencia</span>
+          <h2>${sim.avgConsistencyStops.toFixed(1)}</h2>
+        </div>`
+            : ''
+        }
         <div class="advanced-item">
           <span>Ritmo del backtest</span>
           <h2>${perDay ? `${perDay.toFixed(1)}/día` : '—'}</h2>
@@ -13368,6 +13421,24 @@ function renderBacktestingChallenge(filtered) {
       </div>`;
   }
 
+  if (results && sim.consistencyIssues && sim.consistencyIssues.length) {
+    results.insertAdjacentHTML(
+      'afterbegin',
+      `<div class="challenge-warning">
+        ${sim.consistencyIssues
+          .map(
+            (w) =>
+              `Fase ${w.index}: con este riesgo, una sola operación ganadora (${w.maxWin.toFixed(2)}% de la cuenta)
+               ya supera el tope diario de consistencia (${w.cap.toFixed(2)}%). Tal y como está, la prop no te
+               validaría el challenge: tendrías que bajar el riesgo a ${w.suggestedRisk.toFixed(2)}% o menos.`
+          )
+          .join('<br>')}
+      </div>`
+    );
+  }
+
+  renderChallengeRotation(rValues, cfg, perDay, { pct, tone });
+
   if (caveat) {
     // El usuario tiene que poder juzgar cuánto fiarse: se dice el tamaño de la muestra y los
     // supuestos, en vez de dar un porcentaje a secas que parezca una certeza.
@@ -13375,12 +13446,96 @@ function renderBacktestingChallenge(filtered) {
       '<strong>Caso normal</strong> = la mitad de las veces necesitarías menos de esa cifra, y la otra mitad más. ' +
       'No se usa la media porque unas pocas rachas malas muy largas la disparan y dejaría de representar lo habitual. ' +
       '<strong>Si va mal</strong> = el 10% de los casos peores.<br>' +
-      `Calculado repartiendo al azar 3.000 veces las ${sim.sampleSize} operaciones de este backtest. ` +
+      (hasConsistency
+        ? 'La <strong>consistencia</strong> se aplica como tope de beneficio del día: si el objetivo es 3.000 € ' +
+          'y pones 50%, ningún día puede pasar de 1.500 €, así que dejas de operar aunque el sistema siga dando señales.<br>'
+        : '') +
+      `Calculado repartiendo al azar 3.000 veces las ${sim.sampleSize} operaciones de este backtest, ` +
+      `al ritmo real de ${perDay ? perDay.toFixed(1) : '—'} operaciones por día operado. ` +
       'Da por hecho que tus próximas operaciones se parecerán a estas y son independientes entre sí. ' +
       'No tiene en cuenta el límite de pérdida diaria ni el mínimo de días operados que exija tu prop.';
   }
 
   bindChallengeInputs();
+}
+
+/**
+ * "¿Compensa comprar más challenges y rotarlos?" — una fila por número de cuentas compradas y,
+ * en cada una, las dos formas de gestionarlas: rotando al primer SL o quemando una antes de
+ * empezar la siguiente. Se calcula con menos repeticiones que el bloque principal porque son
+ * ocho simulaciones seguidas y esto se redibuja en cada tecla.
+ */
+function renderChallengeRotation(rValues, cfg, perDay, fmt) {
+  const host = document.getElementById('btChallengeRotation');
+  if (!host) return;
+
+  const top = Math.max(4, Math.min(6, Number(cfg.accounts) || 1));
+  const rows = compareChallengeAccounts(
+    rValues,
+    cfg.phases,
+    { runs: 1200, tradesPerDay: perDay },
+    top
+  );
+  if (!rows.length) {
+    host.innerHTML = '';
+    return;
+  }
+
+  const best = rows.reduce((a, b) => (b.rotating.anyPassRate > a.rotating.anyPassRate ? b : a));
+  const rotHelps = rows
+    .filter((r) => r.accounts > 1)
+    .filter((r) => r.rotating.avgAccountsPassed > r.sequential.avgAccountsPassed).length;
+  const totalMulti = rows.filter((r) => r.accounts > 1).length;
+
+  host.innerHTML = `
+    <h4 class="challenge-subtitle">Comprar varios challenges y rotarlos</h4>
+    <p class="muted small">
+      Rotar = operas una cuenta y saltas a la siguiente en cuanto tienes un SL. Seguidas = operas
+      una hasta que la pasas o la quemas, y entonces empiezas la siguiente. En ambos casos operas
+      una sola cuenta a la vez, así que el ritmo diario no cambia.
+    </p>
+    <div class="table-wrap">
+      <table class="challenge-table challenge-table--rotation">
+        <thead>
+          <tr>
+            <th rowspan="2">Challenges</th>
+            <th colspan="3">Rotando al primer SL</th>
+            <th colspan="3">Una detrás de otra</th>
+          </tr>
+          <tr>
+            <th>Pasas ≥1</th><th>Pasados · media</th><th>Días</th>
+            <th>Pasas ≥1</th><th>Pasados · media</th><th>Días</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (r) => `<tr class="${r.accounts === Number(cfg.accounts) ? 'is-current' : ''}">
+                <th>${r.accounts}</th>
+                <td class="${fmt.tone(r.rotating.anyPassRate)}">${fmt.pct(r.rotating.anyPassRate)}</td>
+                <td>${r.rotating.avgAccountsPassed.toFixed(2)}</td>
+                <td>${r.rotating.medianDays ?? '—'}</td>
+                <td class="${fmt.tone(r.sequential.anyPassRate)}">${fmt.pct(r.sequential.anyPassRate)}</td>
+                <td>${r.sequential.avgAccountsPassed.toFixed(2)}</td>
+                <td>${r.sequential.medianDays ?? '—'}</td>
+              </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">
+      Con ${best.accounts} ${best.accounts === 1 ? 'challenge' : 'challenges'} rotando llegas al
+      ${fmt.pct(best.rotating.anyPassRate)} de pasar al menos uno.
+      ${
+        totalMulti && rotHelps === totalMulti
+          ? 'Rotar sale mejor en todos los casos: al repartir los SL entre varias cuentas, ninguna se acerca tanto a su pérdida máxima.'
+          : totalMulti && rotHelps === 0
+            ? 'Aquí rotar no aporta: con tu distribución de resultados sale igual o mejor exprimir una cuenta antes de pasar a la siguiente.'
+            : 'Fíjate en la columna "Pasados · media": es la que dice si rotar aprovecha mejor las cuentas, más que el "pasas ≥1".'
+      }
+      Ojo: pasar al menos uno mejora sobre todo porque compras más intentos, no porque el sistema mejore.
+    </p>`;
 }
 
 function bindChallengeInputs() {
@@ -13405,12 +13560,22 @@ function bindChallengeInputs() {
 
   document.getElementById('btChallengePhases')?.addEventListener('change', (event) => {
     const wanted = Math.max(1, Math.min(3, Number(event.target.value) || 1));
-    const current = readChallengeConfigFromDom().phases;
+    const currentCfg = readChallengeConfigFromDom();
+    const current = currentCfg.phases;
     const next = [];
     for (let i = 0; i < wanted; i += 1) {
-      next.push(current[i] || { target: 5, risk: 1, maxDrawdown: 10 });
+      // Al añadir una fase se hereda la consistencia de la anterior: las props suelen aplicar la
+      // misma regla en todas, y así el usuario no tiene que reescribirla.
+      next.push(
+        current[i] || {
+          target: 5,
+          risk: 1,
+          maxDrawdown: 10,
+          consistency: current[current.length - 1]?.consistency || 0,
+        }
+      );
     }
-    backtestingSettings.challenge_config = { phases: next };
+    backtestingSettings.challenge_config = { phases: next, accounts: currentCfg.accounts };
     renderChallengePhaseInputs();
     renderBacktestingChallenge(getBacktestingTradesForMetrics());
     void persistBacktestingSettings();

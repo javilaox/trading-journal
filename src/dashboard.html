@@ -8738,14 +8738,20 @@
 
                 <div id="btChallengeSection">
                   <div class="challenge-config">
-                    <label class="challenge-phases-field">
-                      <span>Fases</span>
-                      <select id="btChallengePhases" class="input">
-                        <option value="1">1 fase</option>
-                        <option value="2" selected>2 fases</option>
-                        <option value="3">3 fases</option>
-                      </select>
-                    </label>
+                    <div class="challenge-fields">
+                      <label class="challenge-phases-field">
+                        <span>Fases</span>
+                        <select id="btChallengePhases" class="input">
+                          <option value="1">1 fase</option>
+                          <option value="2" selected>2 fases</option>
+                          <option value="3">3 fases</option>
+                        </select>
+                      </label>
+                      <label class="challenge-phases-field">
+                        <span>Challenges comprados</span>
+                        <input type="number" class="input" id="btChallengeAccounts" data-challenge="accounts" min="1" max="6" step="1" value="1" />
+                      </label>
+                    </div>
                     <div class="table-wrap">
                       <table class="challenge-table">
                         <thead>
@@ -8754,6 +8760,7 @@
                             <th>Objetivo</th>
                             <th>Riesgo por operación</th>
                             <th>Pérdida máxima</th>
+                            <th>Consistencia <small class="muted">(% del objetivo · 0 = sin regla)</small></th>
                           </tr>
                         </thead>
                         <tbody id="btChallengePhaseRows"></tbody>
@@ -8762,6 +8769,7 @@
                   </div>
 
                   <div id="btChallengeResults"></div>
+                  <div id="btChallengeRotation"></div>
                   <p class="muted small" id="btChallengeCaveat"></p>
                 </div>
               </div>

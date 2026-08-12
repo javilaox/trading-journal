@@ -16,7 +16,11 @@
  * navegador de quien la abre a partir del JSON recibido.
  */
 
-const { simulateChallenge, tradesPerTradingDay } = require('./challengeSimulator');
+const {
+  simulateChallenge,
+  compareChallengeAccounts,
+  tradesPerTradingDay,
+} = require('./challengeSimulator');
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -98,6 +102,8 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
   #refresh:hover:not(:disabled){border-color:var(--accent)}
   #refresh:disabled{opacity:.6;cursor:default}
   .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px}
+  .warn{margin:0 0 12px;padding:10px 12px;border-radius:10px;font-size:.85rem;color:#fcd34d;
+       background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35)}
   .shots figure{margin:0}
   .shots figcaption{color:var(--muted);font-size:.7rem;margin-bottom:4px}
   .shots img{width:100%;border:1px solid var(--border);border-radius:10px;display:block}
@@ -311,6 +317,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
    * enlace compartido y la aplicacion no puedan dar numeros distintos.
    */
   ${simulateChallenge.toString()}
+  ${compareChallengeAccounts.toString()}
   ${tradesPerTradingDay.toString()}
 
   function renderChallenge(payload) {
@@ -321,26 +328,48 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     var rs = TRADES.map(function (t) { return Number(t.rr_result); }).filter(function (v) { return isFinite(v); });
     if (rs.length < 5) return;
 
-    var sim = simulateChallenge(rs, cfg, { runs: 3000 });
+    var accounts = Math.max(1, Math.min(6, Number(payload.challenge.accounts) || 1));
+    var perDay = tradesPerTradingDay(TRADES);
+    var sim = simulateChallenge(rs, cfg, {
+      runs: 3000, tradesPerDay: perDay, accounts: accounts, rotateOnLoss: accounts > 1
+    });
     if (!sim) return;
 
-    var perDay = tradesPerTradingDay(TRADES);
     var toDays = function (n) { return (n == null || !perDay) ? null : Math.ceil(n / perDay); };
     var pct = function (v) { return v == null ? '—' : v.toFixed(1) + '%'; };
     var tone = function (v) { return v == null ? '' : v >= 70 ? 'pos' : v >= 40 ? '' : 'neg'; };
+    var days = sim.medianDaysTotal == null ? toDays(sim.medianTradesTotal) : sim.medianDaysTotal;
+    var daysBad = sim.p90DaysTotal == null ? toDays(sim.p90TradesTotal) : sim.p90DaysTotal;
+    var consistency = 0;
+    for (var ci = 0; ci < cfg.length; ci += 1) {
+      if (Number(cfg[ci].consistency) > consistency) consistency = Number(cfg[ci].consistency);
+    }
 
     document.getElementById('challengeIntro').textContent =
       'Con estos resultados, probabilidad de superar un challenge de ' + cfg.length +
       (cfg.length === 1 ? ' fase' : ' fases') + ' (' +
       cfg.map(function (p) { return p.target + '%'; }).join(' + ') + ', riesgo ' +
-      cfg.map(function (p) { return p.risk + '%'; }).join('/') + ' por operación).';
+      cfg.map(function (p) { return p.risk + '%'; }).join('/') + ' por operación' +
+      (consistency > 0 ? ', consistencia ' + consistency + '%' : '') + ')' +
+      (accounts > 1 ? ', comprando ' + accounts + ' cuentas y rotando al primer SL.' : '.');
 
-    document.getElementById('challengeBody').innerHTML =
+    var warn = '';
+    if (sim.consistencyIssues && sim.consistencyIssues.length) {
+      warn = '<div class="warn">' + sim.consistencyIssues.map(function (w) {
+        return 'Fase ' + w.index + ': una sola operación ganadora (' + w.maxWin.toFixed(2) +
+          '% de la cuenta) ya supera el tope diario de consistencia (' + w.cap.toFixed(2) +
+          '%). Con este riesgo la prop no validaría el challenge.';
+      }).join('<br>') + '</div>';
+    }
+
+    document.getElementById('challengeBody').innerHTML = warn +
       '<div class="kpis" style="margin-bottom:14px">' +
-        '<div class="kpi"><span>Probabilidad total</span><strong class="' + tone(sim.overallPassRate) + '">' + pct(sim.overallPassRate) + '</strong></div>' +
+        '<div class="kpi"><span>' + (accounts > 1 ? 'Pasar al menos uno' : 'Probabilidad total') + '</span><strong class="' + tone(sim.overallPassRate) + '">' + pct(sim.overallPassRate) + '</strong></div>' +
         '<div class="kpi"><span>Operaciones · caso normal</span><strong>' + (sim.medianTradesTotal == null ? '—' : sim.medianTradesTotal) + '</strong></div>' +
-        '<div class="kpi"><span>Días · caso normal</span><strong>' + (toDays(sim.medianTradesTotal) == null ? '—' : toDays(sim.medianTradesTotal)) + '</strong></div>' +
-        '<div class="kpi"><span>Días · si va mal</span><strong>' + (toDays(sim.p90TradesTotal) == null ? '—' : toDays(sim.p90TradesTotal)) + '</strong></div>' +
+        '<div class="kpi"><span>Días · caso normal</span><strong>' + (days == null ? '—' : days) + '</strong></div>' +
+        '<div class="kpi"><span>Días · si va mal</span><strong>' + (daysBad == null ? '—' : daysBad) + '</strong></div>' +
+        (accounts > 1 ? '<div class="kpi"><span>Pasados · media</span><strong>' + sim.avgAccountsPassed.toFixed(2) + '</strong></div>' : '') +
+        (consistency > 0 ? '<div class="kpi"><span>Días que paras por consistencia</span><strong>' + sim.avgConsistencyStops.toFixed(1) + '</strong></div>' : '') +
       '</div>' +
       '<div class="table-scroll"><table><thead><tr><th class="no-sort">Fase</th><th class="no-sort">Objetivo</th>' +
       '<th class="num no-sort">Probabilidad</th><th class="num no-sort">Ops · normal</th><th class="num no-sort">Días</th></tr></thead><tbody>' +
@@ -350,16 +379,46 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
           '<td class="num">' + (p.medianTrades == null ? '—' : p.medianTrades) + '</td>' +
           '<td class="num">' + (toDays(p.medianTrades) == null ? '—' : toDays(p.medianTrades)) + '</td></tr>';
       }).join('') +
-      '</tbody></table></div>';
+      '</tbody></table></div>' +
+      rotationTable(rs, cfg, perDay, accounts, pct, tone);
 
     document.getElementById('challengeCaveat').innerHTML =
       '<strong>Caso normal</strong> = la mitad de las veces harían falta menos operaciones, y la otra mitad más. ' +
       '<strong>Si va mal</strong> = el 10% de los casos peores.<br>' +
+      (consistency > 0
+        ? 'La <strong>consistencia</strong> actúa como tope de beneficio del día: con un ' + consistency +
+          '% ningún día puede aportar más de esa parte del objetivo, así que hay que parar aunque el sistema siga dando señales.<br>'
+        : '') +
       'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest. ' +
       'Da por hecho que las próximas se parecerán a estas. No incluye el límite de pérdida diaria ' +
       'ni el mínimo de días operados que exija cada prop.';
 
     card.style.display = 'block';
+  }
+
+  /* Comparativa de comprar 1..N challenges, rotando al primer SL o una detrás de otra. */
+  function rotationTable(rs, cfg, perDay, accounts, pct, tone) {
+    var top = Math.max(4, Math.min(6, accounts));
+    var rows = compareChallengeAccounts(rs, cfg, { runs: 1200, tradesPerDay: perDay }, top);
+    if (!rows.length) return '';
+    return '<h3 style="margin:22px 0 4px;font-size:1rem">Comprar varios challenges y rotarlos</h3>' +
+      '<p class="muted small">Rotar = saltas a la siguiente cuenta en cuanto tienes un SL. ' +
+      'Seguidas = agotas una antes de empezar la siguiente. En los dos casos operas una sola a la vez.</p>' +
+      '<div class="table-scroll"><table><thead><tr>' +
+      '<th class="no-sort">Challenges</th>' +
+      '<th class="num no-sort">Rotando · pasas ≥1</th><th class="num no-sort">Rotando · media</th><th class="num no-sort">Rotando · días</th>' +
+      '<th class="num no-sort">Seguidas · pasas ≥1</th><th class="num no-sort">Seguidas · media</th><th class="num no-sort">Seguidas · días</th>' +
+      '</tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td>' + r.accounts + '</td>' +
+          '<td class="num ' + tone(r.rotating.anyPassRate) + '">' + pct(r.rotating.anyPassRate) + '</td>' +
+          '<td class="num">' + r.rotating.avgAccountsPassed.toFixed(2) + '</td>' +
+          '<td class="num">' + (r.rotating.medianDays == null ? '—' : r.rotating.medianDays) + '</td>' +
+          '<td class="num ' + tone(r.sequential.anyPassRate) + '">' + pct(r.sequential.anyPassRate) + '</td>' +
+          '<td class="num">' + r.sequential.avgAccountsPassed.toFixed(2) + '</td>' +
+          '<td class="num">' + (r.sequential.medianDays == null ? '—' : r.sequential.medianDays) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
   }
 
   /* ------------------------------ Render ------------------------------ */
