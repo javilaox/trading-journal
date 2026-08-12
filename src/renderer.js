@@ -796,6 +796,17 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .bt-challenge-badge{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;
   padding:3px 8px;border-radius:999px;color:#c4b5fd;background:rgba(139,92,246,.16);
   border:1px solid rgba(139,92,246,.38)}
+/* Filtro de sesion integrado al pie de la tarjeta de Sesiones: separado por una linea, con el
+   texto a la izquierda y el control (mas los botones de exportar) a la derecha. */
+#backtestingView .bt-sessions-filter{display:flex;align-items:flex-end;justify-content:space-between;
+  gap:18px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+#backtestingView .bt-sessions-filter-text{min-width:0}
+#backtestingView .bt-sessions-filter-text h4{margin:0;font-size:.95rem}
+#backtestingView .bt-sessions-filter-text p{margin:2px 0 0;color:var(--text-muted);font-size:.82rem}
+#backtestingView .bt-sessions-filter .backtesting-filter-bar{display:flex;align-items:flex-end;
+  gap:14px;flex-wrap:wrap;margin:0}
+#backtestingView .bt-sessions-filter .export-group{width:auto;margin-top:0;padding-top:0;
+  border-top:none;margin-left:0}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
@@ -12676,16 +12687,6 @@ function calculateBacktestingRFromPnl(pnlValue, strategyNameOpt) {
   return pnl / riskEuro;
 }
 
-function prepareBacktestingSimulationHooks(filteredTrades) {
-  const el = document.getElementById('btRrCompare');
-  if (!el) return;
-  const n = Array.isArray(filteredTrades) ? filteredTrades.length : 0;
-  el.textContent =
-    n === 0
-      ? 'Sin datos filtrados'
-      : `Preparado (${n} ops). Comparativa 2R vs 3R y rangos temporales en próxima iteración.`;
-}
-
 function computeBacktestingMetrics(trades) {
   const arr = Array.isArray(trades) ? trades : [];
   const n = arr.length;
@@ -12898,7 +12899,6 @@ function renderBacktestingMetrics(filtered) {
       pnl: getBacktestingTradePnlEuros(tr)
     }))
   });
-  prepareBacktestingSimulationHooks(filtered);
 }
 
 function renderBacktestingPairTable(filtered) {
