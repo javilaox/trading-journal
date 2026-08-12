@@ -6482,6 +6482,23 @@ function updateTradeScheduleHints({ strategyId = 'strategy', entryId = 'entryTim
   }
 }
 
+/**
+ * Garantiza que un valor concreto exista como opción del desplegable, aunque ya no esté en la
+ * lista actual. Se usa al editar registros antiguos: la opción se añade marcada, para que se vea
+ * que es algo que ya no se ofrece pero se conserva.
+ */
+function ensureSelectHasValue(selectId, value, suffix = '') {
+  const select = document.getElementById(selectId);
+  const wanted = String(value || '').trim();
+  if (!select || !wanted) return;
+  const exists = [...select.options].some((opt) => opt.value === wanted);
+  if (exists) return;
+  const option = document.createElement('option');
+  option.value = wanted;
+  option.textContent = wanted + suffix;
+  select.appendChild(option);
+}
+
 function fillSelect(selectId, values, placeholderKey) {
   const select = document.getElementById(selectId);
   if (!select) return;
@@ -8962,11 +8979,22 @@ function getStrategyTradeStats(record) {
   return { count: trades.length, pnl, winrate };
 }
 
+/** Una cuenta deshabilitada (quemada por máximo DD) ya no se puede operar. */
+function isAccountDisabled(account) {
+  return Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd);
+}
+
 async function loadAccounts() {
   await syncRealListsFromStorage();
-  const accountNames = getAccounts().map((account) => account.name);
-  fillSelect('account', accountNames, 'placeholder_select_account');
-  fillSelect('editAccount', accountNames, 'placeholder_select_account');
+  const accounts = getAccounts();
+  const accountNames = accounts.map((account) => account.name);
+  // En los formularios de trade solo se ofrecen las cuentas vivas: si una cuenta se marcó como
+  // deshabilitada, seguir pudiendo registrar operaciones en ella no tiene sentido y ensucia las
+  // estadísticas. En los demás selectores (reiniciar cuenta, retiros) siguen apareciendo todas,
+  // porque ahí sí hace falta poder tocar una cuenta ya quemada.
+  const activeAccountNames = accounts.filter((account) => !isAccountDisabled(account)).map((a) => a.name);
+  fillSelect('account', activeAccountNames, 'placeholder_select_account');
+  fillSelect('editAccount', activeAccountNames, 'placeholder_select_account');
   fillSelect('resetAccountSelect', accountNames, 'placeholder_select_account');
   fillWithdrawalAccountSelects();
   refreshPnlPresetButtons();
@@ -17842,6 +17870,10 @@ async function openTradeForEdit(tradeId) {
   setValue('editStrategy', trade.strategy || '');
   setValue('editResult', trade.result || '');
   setValue('editBeAfterResult', sanitizeBeAfterResult(trade.be_after_result) || '');
+  // Si el trade es de una cuenta que después se deshabilitó, su nombre ya no está en la lista.
+  // Se añade solo para este trade: sin esto, al abrir la edición el campo saldría vacío y al
+  // guardar el trade perdería la cuenta a la que pertenece.
+  ensureSelectHasValue('editAccount', trade.account || '', ' (deshabilitada)');
   setValue('editAccount', trade.account || '');
 
   const lotValue = Number(trade.lotSize ?? trade.lotaje ?? 0) || 0;

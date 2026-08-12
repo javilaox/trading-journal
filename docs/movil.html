@@ -83,6 +83,8 @@
   .sheet-item{width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);
        color:var(--text);font-size:.95rem;font-family:inherit;padding:13px 4px}
   .sheet-item.on{color:var(--accent);font-weight:700}
+  .filters-card{padding:10px 14px}
+  .filters-card label{margin-bottom:4px}
   /* ── Calendario del mes ── */
   .cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
   .cal-head strong{font-size:1rem;text-transform:capitalize}
@@ -238,6 +240,12 @@
 
   <!-- ───────── Lista de trades ───────── -->
   <section id="viewList" class="hidden">
+    <div class="card filters-card">
+      <div class="row">
+        <div><label for="filterAccount">Cuenta</label><select id="filterAccount"></select></div>
+        <div><label for="filterStrategy">Estrategia</label><select id="filterStrategy"></select></div>
+      </div>
+    </div>
     <div class="card">
       <div class="cal-head">
         <strong id="calMonth">—</strong>
@@ -267,6 +275,12 @@
 
   <!-- ───────── Resumen ───────── -->
   <section id="viewStats" class="hidden">
+    <div class="card filters-card">
+      <div class="row">
+        <div><label for="filterAccount2">Cuenta</label><select id="filterAccount2"></select></div>
+        <div><label for="filterStrategy2">Estrategia</label><select id="filterStrategy2"></select></div>
+      </div>
+    </div>
     <div class="card">
       <div class="seg" id="segPeriod" style="margin-bottom:14px">
         <button type="button" data-value="month" class="on">Este mes</button>
@@ -280,6 +294,59 @@
       <div id="statsByStrategy"></div>
     </div>
   </section>
+</div>
+
+  <!-- ───────── Gestión: retiros y gastos ───────── -->
+  <section id="viewManage" class="hidden">
+    <div class="card">
+      <div class="seg" id="segManage" style="margin-bottom:14px">
+        <button type="button" data-value="withdrawals" class="on">Retiros</button>
+        <button type="button" data-value="expenses">Gastos</button>
+      </div>
+      <div class="kpis" id="manageKpis"></div>
+    </div>
+
+    <div class="card">
+      <div class="day-title">
+        <h2 id="manageFormTitle">Nuevo retiro</h2>
+      </div>
+      <div class="field">
+        <label for="mgPropBtn">Prop</label>
+        <button type="button" class="picker" id="mgPropBtn"><span id="mgPropLabel">Elegir prop</span><em>▾</em></button>
+      </div>
+      <div class="row">
+        <div class="field"><label for="mgAmount">Importe (€)</label><input id="mgAmount" type="number" inputmode="decimal" step="0.01" /></div>
+        <div class="field"><label for="mgDate">Fecha</label><input id="mgDate" type="date" /></div>
+      </div>
+      <div class="field expense-only hidden">
+        <label for="mgCategory">Categoría</label>
+        <input id="mgCategory" list="mgCategoryList" placeholder="Suscripción, challenge…" />
+        <datalist id="mgCategoryList"></datalist>
+      </div>
+      <div class="field expense-only hidden">
+        <label for="mgSize">Tamaño de cuenta</label>
+        <input id="mgSize" placeholder="50k, 100k…" />
+      </div>
+      <div class="field"><label for="mgNote">Nota (opcional)</label><input id="mgNote" /></div>
+      <button class="btn" id="mgSaveBtn">Guardar</button>
+    </div>
+
+    <div class="card">
+      <h2 id="manageListTitle">Últimos retiros</h2>
+      <div id="manageList"><p class="muted small">Cargando…</p></div>
+    </div>
+  </section>
+
+<!-- Selector de prop: misma hoja inferior que la de activos. -->
+<div class="sheet hidden" id="propSheet">
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <strong>Elegir prop</strong>
+      <button type="button" class="link" id="propClose">Cerrar</button>
+    </div>
+    <input type="search" id="propSearch" placeholder="Buscar prop…" autocomplete="off" />
+    <div class="sheet-list" id="propOptions"></div>
+  </div>
 </div>
 
 <!-- Selector de activo: hoja inferior con buscador. La lista es cerrada a proposito (ver
@@ -299,6 +366,7 @@
   <button data-view="form" class="on"><i>＋</i>Nuevo</button>
   <button data-view="list"><i>≡</i>Trades</button>
   <button data-view="stats"><i>◔</i>Resumen</button>
+  <button data-view="manage"><i>€</i>Gestión</button>
 </nav>
 
 <div class="toast" id="toast"></div>
@@ -322,6 +390,9 @@
   var MONTH = null;            // { y, m } del mes que muestra el calendario
   var MONTH_TRADES = [];       // trades de ese mes (consulta propia, no depende del limite)
   var SELECTED_DAY = null;     // 'AAAA-MM-DD' del dia abierto bajo el calendario
+  var PROPS = [];              // props guardadas (expense_props), para retiros y gastos
+  var MOVEMENTS = { withdrawals: [], expenses: [] };
+  var FILTERS = { account: '', strategy: '' };
   var EDITING = null;          // trade que se está editando, o null si es uno nuevo
   var IMAGES = { before: null, after: null };  // referencias "storage:..." ya subidas
   var netTouched = false;      // si el usuario escribe el neto a mano, se deja de calcular
@@ -397,20 +468,67 @@
     $('nav').classList.remove('hidden');
     resetForm();
     SELECTED_DAY = todayIso();
+    $('mgDate').value = todayIso();
+    syncManageForm();
     await Promise.all([loadCatalogs(), loadTrades(), loadMonth()]);
   }
 
   /* ─────────────────────── Cuentas y estrategias ─────────────────────── */
 
   async function loadCatalogs() {
-    var accRes = await db.from('real_accounts').select('id,name').order('name');
+    var accRes = await db.from('real_accounts').select('id,name,disabled_by_max_dd').order('name');
     var strRes = await db.from('real_strategies').select('id,name,custom_metrics,is_active').order('name');
+    var propRes = await db.from('expense_props').select('id,name').is('deleted_at', null).order('name');
+
     ACCOUNTS = (accRes.data || []).filter(function (a) { return a.name; });
     STRATEGIES = (strRes.data || []).filter(function (s) { return s.name && s.is_active !== false; });
+    PROPS = (propRes.data || []).filter(function (p) { return p.name; });
 
-    fillSelect($('fAccount'), ACCOUNTS.map(function (a) { return a.name; }), localStorage.getItem('lastAccount'));
+    // Una cuenta marcada como deshabilitada (quemada por máximo DD) no se puede seguir
+    // operando, así que no aparece al registrar un trade. En los filtros sí sale, porque sus
+    // operaciones antiguas siguen existiendo y hay que poder verlas.
+    var operable = ACCOUNTS.filter(function (a) { return !a.disabled_by_max_dd; }).map(function (a) { return a.name; });
+    fillSelect($('fAccount'), operable, localStorage.getItem('lastAccount'));
     fillSelect($('fStrategy'), STRATEGIES.map(function (s) { return s.name; }), localStorage.getItem('lastStrategy'));
+    renderFilters();
     renderMetrics({});
+  }
+
+  /* ───────── Filtros de cuenta y estrategia (Trades y Resumen) ───────── */
+
+  function renderFilters() {
+    var accounts = ACCOUNTS.map(function (a) { return a.name; });
+    var strategies = STRATEGIES.map(function (s) { return s.name; });
+    var opts = function (list, selected, allLabel) {
+      return '<option value="">' + allLabel + '</option>' + list.map(function (n) {
+        return '<option value="' + escapeAttr(n) + '"' + (n === selected ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+      }).join('');
+    };
+    ['filterAccount', 'filterAccount2'].forEach(function (id) {
+      if ($(id)) $(id).innerHTML = opts(accounts, FILTERS.account, 'Todas las cuentas');
+    });
+    ['filterStrategy', 'filterStrategy2'].forEach(function (id) {
+      if ($(id)) $(id).innerHTML = opts(strategies, FILTERS.strategy, 'Todas las estrategias');
+    });
+  }
+
+  ['filterAccount', 'filterAccount2', 'filterStrategy', 'filterStrategy2'].forEach(function (id) {
+    $(id).addEventListener('change', function (e) {
+      // Los dos pares de desplegables son el mismo filtro: se comparte para que al cambiarlo en
+      // una pestaña la otra ya esté igual y no haya dos verdades.
+      if (id.indexOf('filterAccount') === 0) FILTERS.account = e.target.value;
+      else FILTERS.strategy = e.target.value;
+      renderFilters();
+      renderCalendar();
+      renderStats();
+    });
+  });
+
+  /** Filtro común: un trade cuenta si encaja con la cuenta y la estrategia elegidas. */
+  function matchesFilters(t) {
+    if (FILTERS.account && String(t.account || '') !== FILTERS.account) return false;
+    if (FILTERS.strategy && String(t.strategy || '') !== FILTERS.strategy) return false;
+    return true;
   }
 
   function fillSelect(sel, names, preferred) {
@@ -469,7 +587,7 @@
       btns[i].classList.toggle('on', btns[i].getAttribute('data-value') === value);
     }
   }
-  ['segDirection', 'segResult', 'segBeAfter', 'segPeriod'].forEach(function (id) {
+  ['segDirection', 'segResult', 'segBeAfter', 'segPeriod', 'segManage'].forEach(function (id) {
     $(id).addEventListener('click', function (e) {
       var btn = e.target.closest('button');
       if (!btn) return;
@@ -752,7 +870,7 @@
 
   function byDay() {
     var map = {};
-    MONTH_TRADES.forEach(function (t) {
+    MONTH_TRADES.filter(matchesFilters).forEach(function (t) {
       var key = String(t.date || '').slice(0, 10);
       if (!map[key]) map[key] = { pnl: 0, n: 0, trades: [] };
       map[key].pnl += Number(t.pnl) || 0;
@@ -799,9 +917,10 @@
     }
     $('calGrid').innerHTML = cells.join('');
 
+    var visible = MONTH_TRADES.filter(matchesFilters);
     var monthPnl = 0;
-    MONTH_TRADES.forEach(function (t) { monthPnl += Number(t.pnl) || 0; });
-    $('calMonthOps').textContent = MONTH_TRADES.length;
+    visible.forEach(function (t) { monthPnl += Number(t.pnl) || 0; });
+    $('calMonthOps').textContent = visible.length;
     var pnlEl = $('calMonthPnl');
     pnlEl.textContent = money(monthPnl);
     pnlEl.className = monthPnl >= 0 ? 'pos' : 'neg';
@@ -838,7 +957,9 @@
     var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     title.textContent = DAY_NAMES[date.getDay()] + ' ' + Number(parts[2]) + ' de ' + MONTH_NAMES[date.getMonth()];
 
-    var list = MONTH_TRADES.filter(function (t) { return String(t.date || '').slice(0, 10) === SELECTED_DAY; });
+    var list = MONTH_TRADES.filter(matchesFilters).filter(function (t) {
+      return String(t.date || '').slice(0, 10) === SELECTED_DAY;
+    });
     list.sort(function (a, b) {
       return String(a.entry_time || '').localeCompare(String(b.entry_time || ''));
     });
@@ -949,7 +1070,7 @@
   }
 
   function renderStats() {
-    var list = TRADES.filter(periodFilter());
+    var list = TRADES.filter(periodFilter()).filter(matchesFilters);
     var tp = 0, sl = 0, be = 0, pnl = 0;
     list.forEach(function (t) {
       var r = String(t.result || '').toUpperCase();
@@ -1003,14 +1124,197 @@
       : '<p class="muted small">Sin datos en este período.</p>';
   }
 
+  /* ───────── Gestión: retiros y gastos ─────────
+   * Escribe en las mismas tablas que el ordenador (real_account_withdrawals /
+   * real_account_expenses) y con la misma forma de fila. Un detalle que no es opcional: aquí
+   * NO se borra de verdad, se marca deleted_at. La app de escritorio hace lo mismo y sus
+   * consultas filtran por "deleted_at is null"; si el móvil borrase la fila, la copia local del
+   * ordenador la conservaría para siempre porque su sincronización no vería ninguna diferencia.
+   */
+
+  var MANAGE_PROP = '';
+
+  function manageMode() { return segValue('segManage') || 'withdrawals'; }
+  function isExpenses() { return manageMode() === 'expenses'; }
+
+  function setProp(value) {
+    MANAGE_PROP = value || '';
+    $('mgPropLabel').textContent = MANAGE_PROP || 'Elegir prop';
+    $('mgPropBtn').classList.toggle('empty', !MANAGE_PROP);
+  }
+
+  function renderPropOptions() {
+    var q = ($('propSearch').value || '').trim().toUpperCase();
+    var list = PROPS.map(function (p) { return p.name; }).filter(function (n) {
+      return !q || n.toUpperCase().indexOf(q) >= 0;
+    });
+    $('propOptions').innerHTML = list.length
+      ? list.map(function (n) {
+          return '<button type="button" class="sheet-item' + (n === MANAGE_PROP ? ' on' : '') +
+                 '" data-prop="' + escapeAttr(n) + '">' + escapeHtml(n) + '</button>';
+        }).join('')
+      : '<p class="muted small">No hay props guardadas. Se crean en el ordenador, en Configuración.</p>';
+    $('propOptions').querySelectorAll('[data-prop]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        setProp(el.getAttribute('data-prop'));
+        $('propSheet').classList.add('hidden');
+      });
+    });
+  }
+
+  $('mgPropBtn').addEventListener('click', function () {
+    $('propSheet').classList.remove('hidden');
+    $('propSearch').value = '';
+    renderPropOptions();
+  });
+  $('propClose').addEventListener('click', function () { $('propSheet').classList.add('hidden'); });
+  $('propSearch').addEventListener('input', renderPropOptions);
+  $('propSheet').addEventListener('click', function (e) {
+    if (e.target === $('propSheet')) $('propSheet').classList.add('hidden');
+  });
+
+  $('segManage').addEventListener('click', function () {
+    syncManageForm();
+    renderManage();
+  });
+
+  function syncManageForm() {
+    var expenses = isExpenses();
+    $('manageFormTitle').textContent = expenses ? 'Nuevo gasto' : 'Nuevo retiro';
+    $('manageListTitle').textContent = expenses ? 'Últimos gastos' : 'Últimos retiros';
+    document.querySelectorAll('.expense-only').forEach(function (el) {
+      el.classList.toggle('hidden', !expenses);
+    });
+  }
+
+  async function loadManage() {
+    var wRes = await db.from('real_account_withdrawals').select('*')
+      .is('deleted_at', null).order('date', { ascending: false }).limit(100);
+    var eRes = await db.from('real_account_expenses').select('*')
+      .is('deleted_at', null).order('date', { ascending: false }).limit(100);
+    if (wRes.error || eRes.error) { toast('No se pudo cargar Gestión', 'err'); return; }
+    MOVEMENTS.withdrawals = wRes.data || [];
+    MOVEMENTS.expenses = eRes.data || [];
+
+    // Las categorías no viven en ninguna tabla (en el ordenador son sugerencias locales), así
+    // que aquí se ofrecen las que ya se han usado en gastos anteriores.
+    var seen = {};
+    var cats = [];
+    MOVEMENTS.expenses.forEach(function (e) {
+      if (e.category && !seen[e.category]) { seen[e.category] = true; cats.push(e.category); }
+    });
+    $('mgCategoryList').innerHTML = cats.map(function (c) {
+      return '<option value="' + escapeAttr(c) + '"></option>';
+    }).join('');
+
+    renderManage();
+  }
+
+  function renderManage() {
+    var expenses = isExpenses();
+    var list = expenses ? MOVEMENTS.expenses : MOVEMENTS.withdrawals;
+
+    var now = new Date();
+    var monthPrefix = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+    var total = 0;
+    var monthTotal = 0;
+    list.forEach(function (m) {
+      var amount = Number(m.amount) || 0;
+      total += amount;
+      if (String(m.date || '').indexOf(monthPrefix) === 0) monthTotal += amount;
+    });
+
+    var tone = expenses ? 'neg' : 'pos';
+    var sign = expenses ? '-' : '+';
+    $('manageKpis').innerHTML =
+      '<div class="kpi"><span>' + (expenses ? 'Gastado este mes' : 'Retirado este mes') + '</span>' +
+        '<strong class="' + tone + '">' + sign + monthTotal.toFixed(2) + '€</strong></div>' +
+      '<div class="kpi"><span>Total registrado</span>' +
+        '<strong class="' + tone + '">' + sign + total.toFixed(2) + '€</strong></div>';
+
+    var host = $('manageList');
+    if (!list.length) {
+      host.innerHTML = '<p class="muted small">Todavía no hay ' + (expenses ? 'gastos' : 'retiros') + '.</p>';
+      return;
+    }
+    host.innerHTML = list.map(function (m) {
+      var meta = [displayDate(m.date)];
+      if (expenses && m.category) meta.push(escapeHtml(m.category));
+      if (expenses && m.account_size) meta.push(escapeHtml(m.account_size));
+      if (m.note) meta.push(escapeHtml(m.note));
+      return '<div class="trade">' +
+        '<div class="trade-main"><strong>' + escapeHtml(m.account_name || '—') + '</strong>' +
+        '<small>' + meta.join(' · ') + '</small></div>' +
+        '<div class="trade-pnl ' + tone + '">' + sign + (Number(m.amount) || 0).toFixed(2) + '€</div>' +
+        '<button type="button" class="link mg-del" data-id="' + m.id + '" style="color:var(--red);padding:6px 4px">Borrar</button>' +
+      '</div>';
+    }).join('');
+
+    host.querySelectorAll('.mg-del').forEach(function (btn) {
+      btn.addEventListener('click', function () { deleteMovement(Number(btn.getAttribute('data-id'))); });
+    });
+  }
+
+  async function deleteMovement(id) {
+    var expenses = isExpenses();
+    if (!window.confirm('¿Borrar este ' + (expenses ? 'gasto' : 'retiro') + '?')) return;
+    var table = expenses ? 'real_account_expenses' : 'real_account_withdrawals';
+    var now = new Date().toISOString();
+    // Borrado suave, igual que en el ordenador: así su sincronización ve el cambio y lo aplica.
+    var out = await db.from(table).update({ deleted_at: now, updated_at: now })
+      .eq('id', id).eq('user_id', USER.id);
+    if (out.error) { toast('No se pudo borrar: ' + out.error.message, 'err'); return; }
+    toast('Eliminado', 'ok');
+    await loadManage();
+  }
+
+  $('mgSaveBtn').addEventListener('click', async function () {
+    var expenses = isExpenses();
+    var amount = Number($('mgAmount').value);
+    if (!MANAGE_PROP) { toast('Elige la prop.', 'err'); return; }
+    if (!isFinite(amount) || amount <= 0) { toast('El importe tiene que ser mayor que 0.', 'err'); return; }
+
+    var row = {
+      user_id: USER.id,
+      client_uuid: cryptoUuid(),
+      account_id: null,
+      account_name: MANAGE_PROP,
+      amount: amount,
+      date: $('mgDate').value || todayIso(),
+      note: ($('mgNote').value || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (expenses) {
+      row.category = ($('mgCategory').value || '').trim() || null;
+      row.account_size = ($('mgSize').value || '').trim() || null;
+    }
+
+    var btn = $('mgSaveBtn');
+    btn.disabled = true;
+    var out = await db.from(expenses ? 'real_account_expenses' : 'real_account_withdrawals').insert(row);
+    btn.disabled = false;
+    if (out.error) { toast('No se pudo guardar: ' + out.error.message, 'err'); return; }
+
+    toast(expenses ? 'Gasto guardado' : 'Retiro guardado', 'ok');
+    $('mgAmount').value = '';
+    $('mgNote').value = '';
+    $('mgCategory').value = '';
+    $('mgSize').value = '';
+    await loadManage();
+  });
+
   /* ─────────────────────────── Navegación ─────────────────────────── */
 
   function showView(view) {
     $('viewForm').classList.toggle('hidden', view !== 'form');
     $('viewList').classList.toggle('hidden', view !== 'list');
     $('viewStats').classList.toggle('hidden', view !== 'stats');
+    $('viewManage').classList.toggle('hidden', view !== 'manage');
     $('viewTitle').textContent =
-      view === 'list' ? 'Trades' : view === 'stats' ? 'Resumen' : (EDITING ? 'Editar trade' : 'Nuevo trade');
+      view === 'list' ? 'Trades'
+        : view === 'stats' ? 'Resumen'
+          : view === 'manage' ? 'Gestión'
+            : (EDITING ? 'Editar trade' : 'Nuevo trade');
     var btns = $('nav').querySelectorAll('button');
     for (var i = 0; i < btns.length; i += 1) {
       btns[i].classList.toggle('on', btns[i].getAttribute('data-view') === view);
@@ -1024,6 +1328,7 @@
     if (view === 'form' && EDITING) resetForm();
     if (view === 'list') loadMonth();
     if (view === 'stats') loadTrades();
+    if (view === 'manage') loadManage();
     showView(view);
   });
 
