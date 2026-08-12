@@ -6034,7 +6034,15 @@ function getStrategyMetricsByName(strategyName) {
 function renderStrategyMetricsList(metrics) {
   const host = document.getElementById('strategyModalMetricsList');
   if (!host) return;
-  const list = parseStrategyMetrics(metrics);
+  // Aquí NO se puede usar parseStrategyMetrics: ese descarta los nombres vacíos, que es lo
+  // correcto al leer de la base pero no al pintar el formulario. "Añadir métrica" añade
+  // justamente una fila vacía para que el usuario escriba, y el filtro la borraba antes de
+  // dibujarla: el botón parecía no hacer nada. Vaciar se sigue filtrando al guardar
+  // (collectStrategyMetricsFromDom).
+  const raw = typeof metrics === 'string' ? safeJsonParse(metrics, []) : metrics;
+  const list = Array.isArray(raw)
+    ? raw.map((m) => (typeof m === 'string' ? m : String(m?.name || '')).trim())
+    : [];
   host.innerHTML = '';
   if (!list.length) {
     host.innerHTML = `<p class="muted" style="margin:0;font-size:0.84rem;">${escapeHtmlChipText(
@@ -6052,23 +6060,34 @@ function renderStrategyMetricsList(metrics) {
   });
   host.querySelectorAll('.strategy-metric-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const next = collectStrategyMetricsFromDom();
+      const next = collectStrategyMetricsFromDom({ keepEmpty: true });
       next.splice(Number(btn.dataset.index), 1);
       renderStrategyMetricsList(next);
     });
   });
 }
 
-function collectStrategyMetricsFromDom() {
+/**
+ * Lee las métricas escritas en el formulario.
+ *
+ * `keepEmpty` existe porque hay dos lecturas distintas: al guardar hay que descartar las filas
+ * en blanco (no son una métrica), pero al redibujar el formulario -añadir o quitar una fila- hay
+ * que conservarlas o se le borraría al usuario la fila que acaba de crear y aún no ha escrito.
+ */
+function collectStrategyMetricsFromDom({ keepEmpty = false } = {}) {
   const host = document.getElementById('strategyModalMetricsList');
   if (!host) return [];
   const seen = new Set();
   const out = [];
   host.querySelectorAll('.strategy-metric-name').forEach((input) => {
     const name = String(input.value || '').trim();
+    if (!name) {
+      if (keepEmpty) out.push('');
+      return;
+    }
     // Los nombres son la clave en custom_metrics del trade: no puede haber duplicados.
     const key = name.toLowerCase();
-    if (!name || seen.has(key)) return;
+    if (seen.has(key)) return;
     seen.add(key);
     out.push(name);
   });
@@ -9693,7 +9712,7 @@ function initAccountStrategyModals() {
     renderStrategyHoursList(next, 'strategyModalHoursList');
   });
   document.getElementById('strategyModalAddMetricBtn')?.addEventListener('click', () => {
-    const next = collectStrategyMetricsFromDom();
+    const next = collectStrategyMetricsFromDom({ keepEmpty: true });
     next.push('');
     renderStrategyMetricsList(next);
     // Foco en la métrica recién añadida para poder escribir directamente.
