@@ -817,6 +817,16 @@ body.light #backtestingView .bt-session-card.is-active-session{
    <strong> de la pastilla, asi que se le da color explicitamente. */
 #backtestingView .bt-streak-row strong.positive{color:var(--green,#22c55e)}
 #backtestingView .bt-streak-row strong.negative{color:#ef4444}
+/* Curva de capital. La altura es fija: Chart.js con maintainAspectRatio:false necesita que el
+   contenedor la defina, si no crece indefinidamente en cada redibujado. */
+#backtestingView .bt-equity-chart-wrap{position:relative;height:300px;margin-top:14px}
+#backtestingView .bt-equity-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+#backtestingView .bt-equity-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);
+  border-radius:10px;padding:10px 12px;min-width:0}
+#backtestingView .bt-equity-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--text-muted)}
+#backtestingView .bt-equity-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
+@media(max-width:760px){#backtestingView .bt-equity-chart-wrap{height:230px}}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
@@ -2987,6 +2997,7 @@ const {
 } = require('./services/scheduleUtils');
 const { planBacktestRecalc } = require('./services/backtestRecalc');
 const { computeResultStreaks } = require('./services/backtestStreaks');
+const { buildEquityCurve } = require('./services/backtestEquityCurve');
 const {
   simulateChallenge,
   compareChallengeAccounts,
@@ -8535,6 +8546,8 @@ function switchBacktestingViewTab(tab) {
   // mientras la pestaña está oculta, así que se refresca al entrar.
   if (backtestingViewActiveTab === 'challenges') {
     renderBacktestingChallenge(getBacktestingTradesForMetrics());
+  } else if (backtestingViewActiveTab === 'stats') {
+    renderBacktestingEquityCurve(getBacktestingTradesForMetrics());
   }
 }
 
@@ -13332,6 +13345,140 @@ function analyzeCheckboxMetric(trades, metricName) {
   };
 }
 
+/* ============================== Curva de capital ==============================
+ * La lectura rapida de "como ha ido esto": el capital operacion a operacion. El calculo esta
+ * en services/backtestEquityCurve.js; aqui solo se dibuja.
+ */
+
+let backtestingEquityChart = null;
+
+function renderBacktestingEquityCurve(filtered) {
+  const canvas = document.getElementById('btEquityChart');
+  if (!canvas || !window.Chart) return;
+
+  const trades = Array.isArray(filtered) ? filtered : [];
+  const empty = document.getElementById('btEquityEmpty');
+  const subtitle = document.getElementById('btEquitySubtitle');
+  const wrap = canvas.parentElement;
+
+  // El capital de partida solo se conoce si hay UNA sesion seleccionada; con varias, sus
+  // capitales pueden ser distintos y sumarlos seria inventarse una cuenta que no existe.
+  const session = getBacktestingKpiSessionForMetrics();
+  const capital = Number(session?.account_capital || 0);
+  const curve = buildEquityCurve(
+    trades.map((tr) => ({
+      date: tr.date,
+      entry_time: tr.entry_time,
+      id: tr.id,
+      pnl: getBacktestingTradePnlEuros(tr),
+    })),
+    { startingCapital: capital }
+  );
+
+  const money = (v) => `${v >= 0 ? '' : '-'}${Math.abs(v).toFixed(2)}€`;
+  const signed = (v) => `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(2)}€`;
+  const set = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  };
+
+  if (subtitle) {
+    subtitle.textContent = capital
+      ? `Desde el capital de la sesión (${money(capital)}), operación a operación y en orden cronológico.`
+      : 'PnL acumulado operación a operación. Selecciona una sola sesión para verlo como capital.';
+  }
+
+  if (!curve.trades) {
+    if (empty) empty.hidden = false;
+    if (wrap) wrap.hidden = true;
+    set('btEquityFinal', '—');
+    set('btEquityMaxDd', '—');
+    set('btEquityPeak', '—');
+    if (backtestingEquityChart) {
+      backtestingEquityChart.destroy();
+      backtestingEquityChart = null;
+    }
+    return;
+  }
+
+  if (empty) empty.hidden = true;
+  if (wrap) wrap.hidden = false;
+
+  set('btEquityFinal', capital ? money(curve.finalEquity) : signed(curve.totalPnl));
+  set(
+    'btEquityMaxDd',
+    curve.maxDrawdown > 0
+      ? `-${curve.maxDrawdown.toFixed(2)}€${curve.maxDrawdownPct > 0 ? ` (${curve.maxDrawdownPct.toFixed(1)}%)` : ''}`
+      : '0.00€'
+  );
+  set('btEquityPeak', capital ? money(curve.peakEquity) : signed(curve.peakEquity));
+
+  const positive = curve.totalPnl >= 0;
+  const color = positive ? '#22c55e' : '#ef4444';
+  const labels = curve.points.map((p, i) => (i === 0 ? 'Inicio' : formatDateToDisplay(p.date)));
+  const values = curve.points.map((p) => Number(p.equity.toFixed(2)));
+
+  if (backtestingEquityChart) {
+    backtestingEquityChart.destroy();
+    backtestingEquityChart = null;
+  }
+
+  backtestingEquityChart = new window.Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: capital ? 'Capital' : 'PnL acumulado',
+          data: values,
+          borderColor: color,
+          backgroundColor: `${color}22`,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.2,
+          // Con decenas de operaciones los puntos ensucian; se ven al pasar el raton.
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHitRadius: 12,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => {
+              const i = ctx?.[0]?.dataIndex ?? 0;
+              return i === 0 ? 'Punto de partida' : `Operación ${i} · ${labels[i]}`;
+            },
+            label: (ctx) => {
+              const i = ctx.dataIndex;
+              const point = curve.points[i];
+              const lines = [`${capital ? 'Capital' : 'Acumulado'}: ${money(point.equity)}`];
+              if (i > 0) lines.push(`Esta operación: ${signed(point.pnl)}`);
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#94a3b8', maxTicksLimit: 10, autoSkip: true },
+          grid: { color: getChartGridColor() },
+        },
+        y: {
+          ticks: { color: '#94a3b8', callback: (v) => `${Number(v).toFixed(0)}€` },
+          grid: { color: getChartGridColor() },
+        },
+      },
+    },
+  });
+}
+
 /* ================================ Challenges ================================
  * Traduce los resultados del backtest a la pregunta que de verdad importa cuando compras un
  * challenge: cuánto tardaré y qué probabilidad tengo. El cálculo vive en
@@ -17027,6 +17174,9 @@ function rerenderBacktestingLocal() {
   renderBacktestingPairTable(filteredForMetrics);
   renderBacktestingMetricAnalysis(filteredForMetrics);
   renderBacktestingMetricExplorer(filteredForMetrics);
+  // Un grafico dibujado dentro de un panel oculto se queda con tamano 0, asi que solo se pinta
+  // con su pestana a la vista; al entrar en ella se vuelve a pintar.
+  if (backtestingViewActiveTab === 'stats') renderBacktestingEquityCurve(filteredForMetrics);
   // Solo si su pestaña está a la vista: son ~9 simulaciones de Monte Carlo y no tiene sentido
   // pagarlas en cada refresco del calendario. Al abrir la pestaña se recalcula.
   if (backtestingViewActiveTab === 'challenges') renderBacktestingChallenge(filteredForMetrics);

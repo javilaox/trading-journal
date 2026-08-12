@@ -8446,6 +8446,32 @@
               </section>
             </div>
 
+            <!-- Curva de capital: va justo despues de los KPIs porque es la lectura rapida de
+                 "como ha ido esto", antes de entrar en analisis por horario o por metricas. -->
+            <div class="bt-tab-panel bt-tab-panel-stats" id="btEquityPanel">
+            <div class="bt-section pro-section">
+              <div class="pro-card">
+                <div class="bt-section-title">
+                  <div>
+                    <h3>Curva de capital</h3>
+                    <p id="btEquitySubtitle">Evolución operación a operación, en orden cronológico.</p>
+                  </div>
+                </div>
+                <div class="bt-equity-kpis stats-grid">
+                  <div class="advanced-item"><span>Capital final</span><h2 id="btEquityFinal">—</h2></div>
+                  <div class="advanced-item"><span>Máxima caída desde un pico</span><h2 id="btEquityMaxDd">—</h2></div>
+                  <div class="advanced-item"><span>Pico más alto</span><h2 id="btEquityPeak">—</h2></div>
+                </div>
+                <div class="bt-equity-chart-wrap">
+                  <canvas id="btEquityChart"></canvas>
+                </div>
+                <p class="muted small" id="btEquityEmpty" hidden>
+                  Aún no hay operaciones registradas en esta selección.
+                </p>
+              </div>
+            </div>
+            </div>
+
             <section id="btScheduleStatsSection" class="schedule-discipline-card card bt-section pro-section">
               <h2 class="section-title title-with-icon schedule-discipline-title">
                 <i data-lucide="clock"></i>
