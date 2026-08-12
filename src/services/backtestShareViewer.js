@@ -21,6 +21,7 @@ const {
   compareChallengeAccounts,
   tradesPerTradingDay,
 } = require('./challengeSimulator');
+const { computeResultStreaks } = require('./backtestStreaks');
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -339,6 +340,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
    * Se inserta el codigo fuente de la MISMA funcion que usa la app (toString), para que el
    * enlace compartido y la aplicacion no puedan dar numeros distintos.
    */
+  ${computeResultStreaks.toString()}
   ${simulateChallenge.toString()}
   ${compareChallengeAccounts.toString()}
   ${tradesPerTradingDay.toString()}
@@ -650,6 +652,8 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
 
   function renderKpis(list, p) {
     var s = summarize(list);
+    // Rachas en orden cronologico; los BE no cortan (misma funcion que usa la aplicacion).
+    var streaks = computeResultStreaks(list);
     var items = [
       ['Operaciones', String(s.n), ''],
       ['Ratio de aciertos', s.n ? s.winrate.toFixed(1) + '%' : '—', ''],
@@ -657,6 +661,8 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       ['R acumulada', (s.rSum >= 0 ? '+' : '') + s.rSum.toFixed(2), tone(s.rSum)],
       ['Factor de beneficio', s.pf == null ? '—' : s.pf.toFixed(2), ''],
       ['TP / SL / BE', s.wins + ' / ' + s.losses + ' / ' + s.be, ''],
+      ['TP seguidos · máximo', String(streaks.maxTp), 'pos'],
+      ['SL seguidos · máximo', String(streaks.maxSl), 'neg'],
       ['Max drawdown', money(maxDrawdown(list)), 'neg']
     ];
     if (p.capital) {

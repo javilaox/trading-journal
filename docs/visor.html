@@ -304,6 +304,60 @@
    * Se inserta el codigo fuente de la MISMA funcion que usa la app (toString), para que el
    * enlace compartido y la aplicacion no puedan dar numeros distintos.
    */
+  function computeResultStreaks(trades) {
+  // Las dos ayudantes van dentro a proposito: el visor compartido inserta esta funcion con
+  // toString(), asi que todo lo que necesite tiene que viajar con ella.
+  function normalizeResult(trade) {
+    return String((trade && trade.result) || '').toUpperCase();
+  }
+
+  // Clave de orden: fecha + hora de entrada. Las que no tienen hora van al final de su dia.
+  function chronologicalKey(trade) {
+    const date = String((trade && trade.date) || '').slice(0, 10);
+    const time = String((trade && trade.entry_time) || '99:99').slice(0, 5);
+    return date + ' ' + time;
+  }
+
+  const list = (Array.isArray(trades) ? trades : []).filter(Boolean);
+  const sorted = list.slice().sort(function (a, b) {
+    const ka = chronologicalKey(a);
+    const kb = chronologicalKey(b);
+    if (ka < kb) return -1;
+    if (ka > kb) return 1;
+    // Desempate estable por id para que dos ejecuciones den siempre lo mismo.
+    return String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+  });
+
+  let maxTp = 0;
+  let maxSl = 0;
+  let runTp = 0;
+  let runSl = 0;
+
+  sorted.forEach(function (trade) {
+    const res = normalizeResult(trade);
+    if (res === 'TP') {
+      runTp += 1;
+      runSl = 0;
+      if (runTp > maxTp) maxTp = runTp;
+    } else if (res === 'SL') {
+      runSl += 1;
+      runTp = 0;
+      if (runSl > maxSl) maxSl = runSl;
+    }
+    // BE: no toca ninguna de las dos rachas.
+  });
+
+  return {
+    maxTp: maxTp,
+    maxSl: maxSl,
+    currentTp: runTp,
+    currentSl: runSl,
+    evaluated: sorted.filter(function (t) {
+      const r = normalizeResult(t);
+      return r === 'TP' || r === 'SL';
+    }).length,
+  };
+}
   function simulateChallenge(rValues, phases, options) {
   var opts = options || {};
   var runs = opts.runs || 2000;
@@ -909,6 +963,8 @@
 
   function renderKpis(list, p) {
     var s = summarize(list);
+    // Rachas en orden cronologico; los BE no cortan (misma funcion que usa la aplicacion).
+    var streaks = computeResultStreaks(list);
     var items = [
       ['Operaciones', String(s.n), ''],
       ['Ratio de aciertos', s.n ? s.winrate.toFixed(1) + '%' : '—', ''],
@@ -916,6 +972,8 @@
       ['R acumulada', (s.rSum >= 0 ? '+' : '') + s.rSum.toFixed(2), tone(s.rSum)],
       ['Factor de beneficio', s.pf == null ? '—' : s.pf.toFixed(2), ''],
       ['TP / SL / BE', s.wins + ' / ' + s.losses + ' / ' + s.be, ''],
+      ['TP seguidos · máximo', String(streaks.maxTp), 'pos'],
+      ['SL seguidos · máximo', String(streaks.maxSl), 'neg'],
       ['Max drawdown', money(maxDrawdown(list)), 'neg']
     ];
     if (p.capital) {

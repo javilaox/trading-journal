@@ -807,6 +807,12 @@ body.light #backtestingView .bt-session-card.is-active-session{
   gap:14px;flex-wrap:wrap;margin:0}
 #backtestingView .bt-sessions-filter .export-group{width:auto;margin-top:0;padding-top:0;
   border-top:none;margin-left:0}
+/* Rachas de TP/SL: mismas pastillas que la distribucion de resultados, con el color del
+   resultado al que se refieren para poder leerlas de un vistazo. */
+#backtestingView .bt-streak-row{margin-top:10px}
+#backtestingView .bt-streak-row .streak-tp strong{color:var(--green,#22c55e)}
+#backtestingView .bt-streak-row .streak-sl strong{color:#ef4444}
+#backtestingView .bt-streak-note{margin:8px 0 0}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
@@ -2972,6 +2978,7 @@ const {
   simulateScheduleRanges,
 } = require('./services/scheduleUtils');
 const { planBacktestRecalc } = require('./services/backtestRecalc');
+const { computeResultStreaks } = require('./services/backtestStreaks');
 const {
   simulateChallenge,
   compareChallengeAccounts,
@@ -12764,6 +12771,8 @@ function computeBacktestingMetrics(trades) {
     }
   });
 
+  const streaks = computeResultStreaks(arr);
+
   const beTrades = arr.filter((tr) => String(tr.result || '').toUpperCase() === 'BE');
   const beTP = beTrades.filter((tr) => sanitizeBeAfterResult(tr.be_after_result) === 'TP').length;
   const beSL = beTrades.filter((tr) => sanitizeBeAfterResult(tr.be_after_result) === 'SL').length;
@@ -12782,6 +12791,7 @@ function computeBacktestingMetrics(trades) {
     tp,
     sl,
     be,
+    streaks,
     winrate,
     avgR,
     pf,
@@ -12890,6 +12900,20 @@ function renderBacktestingMetrics(filtered) {
   set('btDistTp', String(m.tp));
   set('btDistSl', String(m.sl));
   set('btDistBe', String(m.be));
+
+  const streaks = m.streaks || { maxTp: 0, maxSl: 0, currentTp: 0, currentSl: 0 };
+  set('btStreakTp', String(streaks.maxTp));
+  set('btStreakSl', String(streaks.maxSl));
+  // La racha en curso es una sola cosa: o vas encadenando TP, o SL, o vienes de un BE.
+  set(
+    'btStreakCurrent',
+    streaks.currentTp > 0
+      ? `${streaks.currentTp} TP`
+      : streaks.currentSl > 0
+        ? `${streaks.currentSl} SL`
+        : '—'
+  );
+  toneKpiValue('btStreakCurrent', streaks.currentTp > 0 ? 'pos' : streaks.currentSl > 0 ? 'neg' : null);
   renderBeAdvancedStatsCard({
     hostId: 'backtestingView',
     blockId: 'beAdvancedStatsBacktesting',
