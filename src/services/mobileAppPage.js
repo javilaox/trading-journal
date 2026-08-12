@@ -23,6 +23,7 @@
  */
 
 const { ASSET_CATALOG } = require('./assetCatalog');
+const { ACCOUNT_SIZES, CATEGORY_SUGGESTIONS } = require('./expenseOptions');
 
 function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   return `<!doctype html>
@@ -35,6 +36,10 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Trading Journal" />
 <meta name="theme-color" content="#0f172a" />
+<!-- Icono del acceso directo en la pantalla de inicio. Se genera desde el icono de la
+     aplicacion de escritorio, asi que los dos son el mismo. -->
+<link rel="apple-touch-icon" href="icono.png" />
+<link rel="icon" type="image/png" href="icono.png" />
 <title>Trading Journal · Móvil</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
@@ -80,6 +85,8 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   .kpi{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:12px}
   .kpi span{display:block;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em}
   .kpi strong{display:block;font-size:1.2rem;margin-top:4px;font-variant-numeric:tabular-nums}
+  .kpi small{display:block;font-size:.7rem;margin-top:2px}
+  .kpi-wide{grid-column:1 / -1}
   .trade{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
   .trade:last-child{border-bottom:none}
   .trade-main{flex:1;min-width:0}
@@ -352,7 +359,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       </div>
       <div class="field expense-only hidden">
         <label for="mgSize">Tamaño de cuenta</label>
-        <input id="mgSize" placeholder="50k, 100k…" />
+        <select id="mgSize"></select>
       </div>
       <div class="field"><label for="mgNote">Nota (opcional)</label><input id="mgNote" /></div>
       <button class="btn" id="mgSaveBtn">Guardar</button>
@@ -1160,6 +1167,8 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
    */
 
   var MANAGE_PROP = '';
+  var ACCOUNT_SIZES = ${JSON.stringify(ACCOUNT_SIZES)};
+  var CATEGORY_SUGGESTIONS = ${JSON.stringify(CATEGORY_SUGGESTIONS)};
 
   function manageMode() { return segValue('segManage') || 'withdrawals'; }
   function isExpenses() { return manageMode() === 'expenses'; }
@@ -1207,6 +1216,12 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
 
   function syncManageForm() {
     var expenses = isExpenses();
+    if (!$('mgSize').options.length) {
+      // Los mismos tamaños que ofrece el ordenador, para que la columna no acabe con "50k",
+      // "50K" y "50.000" conviviendo.
+      $('mgSize').innerHTML = '<option value="">Sin especificar</option>' +
+        ACCOUNT_SIZES.map(function (v) { return '<option value="' + v + '">' + v + '</option>'; }).join('');
+    }
     $('manageFormTitle').textContent = expenses ? 'Nuevo gasto' : 'Nuevo retiro';
     $('manageListTitle').textContent = expenses ? 'Últimos gastos' : 'Últimos retiros';
     document.querySelectorAll('.expense-only').forEach(function (el) {
@@ -1223,13 +1238,17 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     MOVEMENTS.withdrawals = wRes.data || [];
     MOVEMENTS.expenses = eRes.data || [];
 
-    // Las categorías no viven en ninguna tabla (en el ordenador son sugerencias locales), así
-    // que aquí se ofrecen las que ya se han usado en gastos anteriores.
+    // Categorías: las sugeridas por defecto (las mismas del ordenador) más las que ya se hayan
+    // usado. No viven en ninguna tabla, así que esto es todo lo que se puede saber desde aquí.
     var seen = {};
     var cats = [];
-    MOVEMENTS.expenses.forEach(function (e) {
-      if (e.category && !seen[e.category]) { seen[e.category] = true; cats.push(e.category); }
-    });
+    CATEGORY_SUGGESTIONS.concat(MOVEMENTS.expenses.map(function (e) { return e.category; }))
+      .forEach(function (c) {
+        var name = String(c || '').trim();
+        if (!name || seen[name.toLowerCase()]) return;
+        seen[name.toLowerCase()] = true;
+        cats.push(name);
+      });
     $('mgCategoryList').innerHTML = cats.map(function (c) {
       return '<option value="' + escapeAttr(c) + '"></option>';
     }).join('');
@@ -1251,13 +1270,25 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       if (String(m.date || '').indexOf(monthPrefix) === 0) monthTotal += amount;
     });
 
+    // El balance es la cifra que de verdad importa y no depende de la pestaña abierta: lo
+    // retirado menos lo gastado, con TODO lo registrado, no solo con la lista que se está viendo.
+    var allWithdrawn = 0;
+    var allSpent = 0;
+    MOVEMENTS.withdrawals.forEach(function (m) { allWithdrawn += Number(m.amount) || 0; });
+    MOVEMENTS.expenses.forEach(function (m) { allSpent += Number(m.amount) || 0; });
+    var balance = allWithdrawn - allSpent;
+
     var tone = expenses ? 'neg' : 'pos';
     var sign = expenses ? '-' : '+';
     $('manageKpis').innerHTML =
       '<div class="kpi"><span>' + (expenses ? 'Gastado este mes' : 'Retirado este mes') + '</span>' +
         '<strong class="' + tone + '">' + sign + monthTotal.toFixed(2) + '€</strong></div>' +
-      '<div class="kpi"><span>Total registrado</span>' +
-        '<strong class="' + tone + '">' + sign + total.toFixed(2) + '€</strong></div>';
+      '<div class="kpi"><span>' + (expenses ? 'Gastado en total' : 'Retirado en total') + '</span>' +
+        '<strong class="' + tone + '">' + sign + total.toFixed(2) + '€</strong></div>' +
+      '<div class="kpi kpi-wide"><span>Balance · retirado menos gastado</span>' +
+        '<strong class="' + (balance >= 0 ? 'pos' : 'neg') + '">' + money(balance) + '</strong>' +
+        '<small class="muted">' + allWithdrawn.toFixed(2) + '€ retirados − ' + allSpent.toFixed(2) + '€ gastados</small>' +
+      '</div>';
 
     var host = $('manageList');
     if (!list.length) {
@@ -1327,6 +1358,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     $('mgNote').value = '';
     $('mgCategory').value = '';
     $('mgSize').value = '';
+    $('mgPropBtn').focus();
     await loadManage();
   });
 

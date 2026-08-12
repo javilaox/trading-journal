@@ -9,6 +9,7 @@ personas con las que compartes resultados de backtesting.
 |---|---|
 | `visor.html` | La página del visor de informes. **Generada, no editar a mano.** |
 | `movil.html` | Versión móvil del diario (privada, pide login). **Generada, no editar a mano.** |
+| `icono.png` | Icono del acceso directo del móvil. **Generado** desde el .ico de la app. |
 | `index.html` | Aviso para quien llegue a la raíz sin un enlace completo. |
 | `.nojekyll` | Evita que GitHub Pages procese la carpeta con Jekyll. |
 
