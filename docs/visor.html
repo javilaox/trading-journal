@@ -72,11 +72,10 @@
   /* Comparativa de comprar varios challenges: selector de cantidad y dos tarjetas enfrentadas. */
   .rot-title{margin:24px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
   .count-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
-  .count-btn{min-width:38px;padding:7px 12px;border-radius:10px;cursor:pointer;font-family:inherit;
-       border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);
-       font-size:.9rem;font-variant-numeric:tabular-nums}
-  .count-btn:hover{border-color:var(--accent)}
-  .count-btn.active{background:rgba(56,189,248,.16);border-color:rgba(56,189,248,.6);color:#bae6fd;font-weight:700}
+  .count-picker label{color:var(--muted);font-size:.82rem}
+  #challengeCount{width:88px;text-align:right;font-variant-numeric:tabular-nums;
+       background:rgba(255,255,255,.04);color:var(--text);border:1px solid var(--border);
+       border-radius:10px;padding:8px 10px;font-size:.9rem;font-family:inherit}
   .modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:12px}
   .mode-card{border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:rgba(255,255,255,.02)}
   .mode-card.is-best{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.05)}
@@ -662,8 +661,19 @@
           '<td class="num">' + (toDays(p.medianTrades) == null ? '—' : toDays(p.medianTrades)) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
+      '<h3 class="rot-title">¿Y si compro varios challenges?</h3>' +
+      '<p class="muted small">Escribe cuántos y compara las dos formas de gestionarlos. Se opera una ' +
+      'cuenta cada vez, así que el ritmo diario es el mismo: lo único que cambia es cuándo se salta ' +
+      'de una cuenta a otra.</p>' +
+      '<div class="count-picker"><label for="challengeCount">Compro</label>' +
+      '<input type="number" id="challengeCount" min="1" max="10" step="1" value="' + accounts + '" />' +
+      '<span class="muted small">challenges</span></div>' +
       '<div id="challengeRotation"></div>';
 
+    // La cabecera con el campo no se regenera al recalcular: si no, se perderia el foco al teclear.
+    document.getElementById('challengeCount').addEventListener('input', function (e) {
+      pickChallengeCount(e.target.value);
+    });
     renderRotationBlock();
 
     document.getElementById('challengeCaveat').innerHTML =
@@ -680,13 +690,14 @@
     card.style.display = 'block';
   }
 
-  /* "Y si compro varios challenges": apartado propio con su selector, en lenguaje llano.
-     El estado vive en CHALLENGE_CTX porque el bloque se redibuja solo al cambiar el numero. */
+  /* "Y si compro varios challenges": se escribe cuantos y se listan uno a uno hasta esa cifra.
+     Los dos modos usan el nombre del argot de props: riesgo rotativo (cambias de cuenta al
+     primer SL) y sin riesgo rotativo (agotas una antes de abrir la siguiente). */
   var CHALLENGE_CTX = null;
 
   function pickChallengeCount(n) {
     if (!CHALLENGE_CTX) return;
-    CHALLENGE_CTX.picked = Math.max(1, Math.min(6, Number(n) || 1));
+    CHALLENGE_CTX.picked = Math.max(1, Math.min(10, Math.round(Number(n)) || 1));
     renderRotationBlock();
   }
 
@@ -695,12 +706,10 @@
     if (!host || !CHALLENGE_CTX) return;
     var ctx = CHALLENGE_CTX;
     var pct = ctx.pct, tone = ctx.tone, picked = ctx.picked;
-    var rows = compareChallengeAccounts(ctx.rs, ctx.cfg, { runs: 1200, tradesPerDay: ctx.perDay }, 6);
+    var rows = compareChallengeAccounts(ctx.rs, ctx.cfg, { runs: 600, tradesPerDay: ctx.perDay }, picked);
     if (!rows.length) { host.innerHTML = ''; return; }
 
-    var current = null;
-    for (var i = 0; i < rows.length; i += 1) if (rows[i].accounts === picked) current = rows[i];
-    if (!current) current = rows[0];
+    var current = rows[rows.length - 1];
     var rotWins = current.rotating.avgAccountsPassed > current.sequential.avgAccountsPassed;
     var seqWins = current.sequential.avgAccountsPassed > current.rotating.avgAccountsPassed;
 
@@ -717,41 +726,31 @@
     }
 
     host.innerHTML =
-      '<h3 class="rot-title">¿Y si compro varios challenges?</h3>' +
-      '<p class="muted small">Elige cuántos y mira cómo cambia. Se opera una cuenta cada vez, así que ' +
-      'el ritmo diario es el mismo: lo único que cambia es cuándo se salta de una cuenta a otra.</p>' +
-      '<div class="count-picker"><span class="muted small">Compro</span>' +
-      rows.map(function (r) {
-        return '<button type="button" class="count-btn' + (r.accounts === picked ? ' active' : '') +
-          '" data-count="' + r.accounts + '">' + r.accounts + '</button>';
-      }).join('') +
-      '<span class="muted small">' + (picked === 1 ? 'challenge' : 'challenges') + '</span></div>' +
       (picked === 1
         ? '<p class="muted small">Con un solo challenge no hay nada que rotar: la probabilidad de pasarlo es ' +
-          pct(rows[0].rotating.anyPassRate) + '. Pulsa 2 o más para comparar las dos formas de gestionarlos.</p>'
+          pct(rows[0].rotating.anyPassRate) + '. Escribe 2 o más para comparar las dos formas de gestionarlos.</p>'
         : '<div class="modes">' +
-            modeCard('Voy cambiando de cuenta',
+            modeCard('Riesgo rotativo',
               'Se opera una cuenta y, en cuanto salta un SL, se pasa a la siguiente. Los SL se reparten entre todas y ninguna se acerca tanto a su pérdida máxima.',
               current.rotating, rotWins) +
-            modeCard('Exprimo una y luego la siguiente',
+            modeCard('Sin riesgo rotativo',
               'Se opera la misma cuenta hasta pasarla o quemarla. Solo entonces se empieza la siguiente, que sigue intacta.',
               current.sequential, seqWins) +
           '</div>' +
           '<p class="muted small">' +
           (rotWins
-            ? 'Con ' + picked + ' cuentas compensa ir cambiando: se pasan ' + current.rotating.avgAccountsPassed.toFixed(2) +
+            ? 'Con ' + picked + ' cuentas compensa el riesgo rotativo: se pasan ' + current.rotating.avgAccountsPassed.toFixed(2) +
               ' de media frente a ' + current.sequential.avgAccountsPassed.toFixed(2) + '.'
             : seqWins
-              ? 'Con ' + picked + ' cuentas sale mejor exprimir una antes de abrir la siguiente: ' +
-                current.sequential.avgAccountsPassed.toFixed(2) + ' de media frente a ' + current.rotating.avgAccountsPassed.toFixed(2) + '.'
+              ? 'Con ' + picked + ' cuentas sale mejor sin riesgo rotativo: ' +
+                current.sequential.avgAccountsPassed.toFixed(2) + ' de media frente a ' + current.rotating.avgAccountsPassed.toFixed(2) + ' rotando.'
               : 'Con ' + picked + ' cuentas da igual cómo se gestionen: los dos caminos acaban en lo mismo.') +
           ' Fíjate más en "pasados de media" que en "pasas al menos uno": lo segundo sube casi siempre ' +
           'por comprar más intentos, no porque el sistema sea mejor.</p>') +
-      '<details class="rot-details"><summary>Ver la comparativa de 1 a 6 challenges</summary>' +
       '<div class="table-scroll"><table><thead><tr>' +
       '<th class="no-sort">Compro</th>' +
-      '<th class="num no-sort">Cambiando · pasas ≥1</th><th class="num no-sort">Cambiando · media</th>' +
-      '<th class="num no-sort">Una a una · pasas ≥1</th><th class="num no-sort">Una a una · media</th>' +
+      '<th class="num no-sort">Rotativo · pasas ≥1</th><th class="num no-sort">Rotativo · media</th>' +
+      '<th class="num no-sort">Sin rotativo · pasas ≥1</th><th class="num no-sort">Sin rotativo · media</th>' +
       '</tr></thead><tbody>' +
       rows.map(function (r) {
         return '<tr' + (r.accounts === picked ? ' class="is-current"' : '') + '><td>' + r.accounts + '</td>' +
@@ -760,13 +759,8 @@
           '<td class="num ' + tone(r.sequential.anyPassRate) + '">' + pct(r.sequential.anyPassRate) + '</td>' +
           '<td class="num">' + r.sequential.avgAccountsPassed.toFixed(2) + '</td></tr>';
       }).join('') +
-      '</tbody></table></div></details>';
+      '</tbody></table></div>';
   }
-
-  document.addEventListener('click', function (e) {
-    var btn = e.target.closest ? e.target.closest('[data-count]') : null;
-    if (btn) pickChallengeCount(btn.getAttribute('data-count'));
-  });
 
   /* ------------------------------ Render ------------------------------ */
 

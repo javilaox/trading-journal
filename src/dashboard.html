@@ -8771,6 +8771,25 @@
                   </div>
 
                   <div id="btChallengeResults"></div>
+
+                  <!-- La cabecera de este apartado es estatica a proposito: dentro va el campo
+                       donde se escribe cuantos challenges se compran, y si se regenerase en cada
+                       pulsacion el usuario perderia el foco a mitad de escribir. Solo se
+                       reemplaza #btChallengeRotation, que es el resultado. -->
+                  <div id="btChallengeRotationHead" hidden>
+                    <h4 class="challenge-subtitle">¿Y si compro varios challenges?</h4>
+                    <p class="muted small">
+                      Escribe cuántos comprarías y compara las dos formas de gestionarlos. Operas
+                      una cuenta cada vez, así que el ritmo diario es el mismo: lo único que cambia
+                      es cuándo saltas de una cuenta a otra.
+                    </p>
+                    <div class="challenge-count-picker">
+                      <label for="btChallengeCount">Compro</label>
+                      <input type="number" class="input" id="btChallengeCount" data-challenge-count
+                             min="1" max="10" step="1" value="1" />
+                      <span class="muted small">challenges</span>
+                    </div>
+                  </div>
                   <div id="btChallengeRotation"></div>
                   <p class="muted small" id="btChallengeCaveat"></p>
                 </div>
