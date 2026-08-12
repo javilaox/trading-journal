@@ -8744,20 +8744,16 @@
 
                 <div id="btChallengeSection">
                   <div class="challenge-config">
-                    <div class="challenge-fields">
-                      <label class="challenge-phases-field">
-                        <span>Fases</span>
-                        <select id="btChallengePhases" class="input">
-                          <option value="1">1 fase</option>
-                          <option value="2" selected>2 fases</option>
-                          <option value="3">3 fases</option>
-                        </select>
-                      </label>
-                      <label class="challenge-phases-field">
-                        <span>Challenges comprados</span>
-                        <input type="number" class="input" id="btChallengeAccounts" data-challenge="accounts" min="1" max="6" step="1" value="1" />
-                      </label>
-                    </div>
+                    <!-- Cuantos challenges se compran ya no se configura aqui: vive en el bloque
+                         de rotacion, junto a los numeros que cambia. -->
+                    <label class="challenge-phases-field">
+                      <span>Fases</span>
+                      <select id="btChallengePhases" class="input">
+                        <option value="1">1 fase</option>
+                        <option value="2" selected>2 fases</option>
+                        <option value="3">3 fases</option>
+                      </select>
+                    </label>
                     <div class="table-wrap">
                       <table class="challenge-table">
                         <thead>

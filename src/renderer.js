@@ -797,11 +797,37 @@ body.light #backtestingView .bt-session-card.is-active-session{
   padding:3px 8px;border-radius:999px;color:#c4b5fd;background:rgba(139,92,246,.16);
   border:1px solid rgba(139,92,246,.38)}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
-.challenge-fields{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:12px}
-.challenge-fields .challenge-phases-field{margin-bottom:0}
-#btChallengeAccounts{width:90px;text-align:right}
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
-.challenge-subtitle{margin:22px 0 4px;font-size:.95rem}
+.challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
+/* Selector de cuantos challenges se compran: pastillas en vez de un campo numerico, para que
+   invite a probar valores y se vea al instante como cambian las dos tarjetas de abajo. */
+.challenge-count-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
+.challenge-count-btn{min-width:38px;padding:7px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text);
+  font-family:inherit;font-size:.9rem;font-variant-numeric:tabular-nums;transition:all .15s ease}
+.challenge-count-btn:hover{border-color:rgba(139,92,246,.5)}
+.challenge-count-btn.active{background:rgba(139,92,246,.18);border-color:rgba(139,92,246,.6);
+  color:#ddd6fe;font-weight:700}
+.challenge-modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:12px}
+.challenge-mode-card{border:1px solid var(--border);border-radius:14px;padding:14px 16px;
+  background:rgba(255,255,255,.02)}
+.challenge-mode-card.is-best{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.05)}
+.challenge-mode-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.challenge-mode-card h5{margin:0;font-size:.95rem}
+.challenge-mode-flag{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;
+  color:var(--green,#22c55e);background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.35);
+  border-radius:999px;padding:2px 8px;white-space:nowrap}
+.challenge-mode-card p{margin:6px 0 12px}
+.challenge-mode-rows{display:grid;gap:8px}
+.challenge-mode-rows>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding-bottom:6px;border-bottom:1px solid var(--border)}
+.challenge-mode-rows>div:last-child{border-bottom:none;padding-bottom:0}
+.challenge-mode-rows span{color:var(--text-muted);font-size:.82rem}
+.challenge-mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
+.challenge-verdict{margin-bottom:14px}
+.challenge-details{margin-top:6px}
+.challenge-details summary{cursor:pointer;color:var(--text-muted);font-size:.82rem;padding:6px 0}
+.challenge-details summary:hover{color:var(--text)}
 .challenge-warning{margin:0 0 12px;padding:10px 12px;border-radius:10px;font-size:.85rem;
   color:#fcd34d;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35)}
 .challenge-table--rotation th,.challenge-table--rotation td{text-align:center}
@@ -13292,8 +13318,6 @@ function renderChallengePhaseInputs() {
 
   const cfg = getChallengeConfig();
   if (select) select.value = String(cfg.phases.length);
-  const accountsInput = document.getElementById('btChallengeAccounts');
-  if (accountsInput) accountsInput.value = String(cfg.accounts || 1);
 
   host.innerHTML = cfg.phases
     .map(
@@ -13317,10 +13341,10 @@ function readChallengeConfigFromDom() {
     maxDrawdown: Number(row.querySelector('[data-challenge="maxDrawdown"]')?.value) || 0,
     consistency: Number(row.querySelector('[data-challenge="consistency"]')?.value) || 0,
   }));
-  const accounts = Math.max(
-    1,
-    Math.min(6, Number(document.getElementById('btChallengeAccounts')?.value) || 1)
-  );
+  // El numero de challenges comprados NO se lee del DOM: su selector se dibuja dentro del
+  // bloque de rotacion, que es HTML generado, y en el primer render todavia no existe. La
+  // fuente de verdad es la configuracion guardada.
+  const accounts = Math.max(1, Math.min(6, Number(getChallengeConfig().accounts) || 1));
   return { phases: phases.length ? phases : defaultChallengeConfig().phases, accounts };
 }
 
@@ -13351,15 +13375,9 @@ function renderBacktestingChallenge(filtered) {
   }
 
   const perDay = tradesPerTradingDay(trades);
-  const accounts = Math.max(1, Number(cfg.accounts) || 1);
-  const simOptions = {
-    runs: 3000,
-    tradesPerDay: perDay,
-    accounts,
-    // Con varias cuentas el modo de referencia es el que describe el usuario: rotar al primer SL.
-    rotateOnLoss: accounts > 1,
-  };
-  const sim = simulateChallenge(rValues, cfg.phases, simOptions);
+  // Este bloque responde siempre a "¿paso UN challenge?". Comprar varios es otra pregunta y
+  // tiene su propio apartado abajo; mezclarlas en el mismo titular confundía.
+  const sim = simulateChallenge(rValues, cfg.phases, { runs: 3000, tradesPerDay: perDay });
   if (!sim) return;
 
   const toDays = (n) => (n == null || !perDay ? null : Math.ceil(n / perDay));
@@ -13375,11 +13393,7 @@ function renderBacktestingChallenge(filtered) {
   if (results) {
     results.innerHTML = `
       <div class="challenge-headline ${tone(sim.overallPassRate)}">
-        ${
-          accounts > 1
-            ? `Probabilidad de pasar <strong>al menos uno</strong> de los ${accounts} challenges: <strong>${pct(sim.overallPassRate)}</strong>`
-            : `Probabilidad de superar el challenge completo: <strong>${pct(sim.overallPassRate)}</strong>`
-        }
+        Probabilidad de superar el challenge completo: <strong>${pct(sim.overallPassRate)}</strong>
       </div>
       <div class="stats-grid challenge-kpis">
         <div class="advanced-item">
@@ -13395,15 +13409,8 @@ function renderBacktestingChallenge(filtered) {
           <h2>${daysP90 ?? '—'}</h2>
         </div>
         ${
-          accounts > 1
-            ? `<div class="advanced-item">
-          <span>Challenges pasados · media</span>
-          <h2>${sim.avgAccountsPassed.toFixed(2)}</h2>
-        </div>`
-            : ''
-        }
-        ${
-          hasConsistency
+          // Solo se enseña si de verdad te frena: un "0.0" permanente es ruido.
+          hasConsistency && sim.avgConsistencyStops >= 0.05
             ? `<div class="advanced-item">
           <span>Días que paras por consistencia</span>
           <h2>${sim.avgConsistencyStops.toFixed(1)}</h2>
@@ -13475,82 +13482,125 @@ function renderBacktestingChallenge(filtered) {
 }
 
 /**
- * "¿Compensa comprar más challenges y rotarlos?" — una fila por número de cuentas compradas y,
- * en cada una, las dos formas de gestionarlas: rotando al primer SL o quemando una antes de
- * empezar la siguiente. Se calcula con menos repeticiones que el bloque principal porque son
- * ocho simulaciones seguidas y esto se redibuja en cada tecla.
+ * "¿Y si compro varios challenges?" — apartado propio, con su propio selector de cuántos se
+ * compran, porque es una decisión distinta de la configuración del challenge y el usuario quiere
+ * moverla viendo cómo cambian los números.
+ *
+ * Se evitan los tecnicismos: en vez de "rotando al primer SL" vs "una detrás de otra" se explica
+ * con las palabras que usaría el trader, y el resultado principal son dos tarjetas comparadas.
+ * La tabla completa queda plegada, para quien quiera el detalle.
  */
 function renderChallengeRotation(rValues, cfg, perDay, fmt) {
   const host = document.getElementById('btChallengeRotation');
   if (!host) return;
 
-  const top = Math.max(4, Math.min(6, Number(cfg.accounts) || 1));
-  const rows = compareChallengeAccounts(
-    rValues,
-    cfg.phases,
-    { runs: 1200, tradesPerDay: perDay },
-    top
-  );
+  const picked = Math.max(1, Math.min(6, Number(cfg.accounts) || 1));
+  const rows = compareChallengeAccounts(rValues, cfg.phases, { runs: 1200, tradesPerDay: perDay }, 6);
   if (!rows.length) {
     host.innerHTML = '';
     return;
   }
 
-  const best = rows.reduce((a, b) => (b.rotating.anyPassRate > a.rotating.anyPassRate ? b : a));
-  const rotHelps = rows
-    .filter((r) => r.accounts > 1)
-    .filter((r) => r.rotating.avgAccountsPassed > r.sequential.avgAccountsPassed).length;
-  const totalMulti = rows.filter((r) => r.accounts > 1).length;
+  const current = rows.find((r) => r.accounts === picked) || rows[0];
+  const single = rows[0];
+  const rotWins = current.rotating.avgAccountsPassed > current.sequential.avgAccountsPassed;
+  const seqWins = current.sequential.avgAccountsPassed > current.rotating.avgAccountsPassed;
+
+  const modeCard = (title, subtitle, data, isBest) => `
+    <div class="challenge-mode-card ${isBest ? 'is-best' : ''}">
+      <div class="challenge-mode-head">
+        <h5>${title}</h5>
+        ${isBest ? '<span class="challenge-mode-flag">Mejor opción</span>' : ''}
+      </div>
+      <p class="muted small">${subtitle}</p>
+      <div class="challenge-mode-rows">
+        <div><span>Pasas al menos uno</span><strong class="${fmt.tone(data.anyPassRate)}">${fmt.pct(data.anyPassRate)}</strong></div>
+        <div><span>Challenges pasados de media</span><strong>${data.avgAccountsPassed.toFixed(2)} de ${picked}</strong></div>
+        <div><span>Días hasta pasar el primero</span><strong>${data.medianDays ?? '—'}</strong></div>
+      </div>
+    </div>`;
 
   host.innerHTML = `
-    <h4 class="challenge-subtitle">Comprar varios challenges y rotarlos</h4>
+    <h4 class="challenge-subtitle">¿Y si compro varios challenges?</h4>
     <p class="muted small">
-      Rotar = operas una cuenta y saltas a la siguiente en cuanto tienes un SL. Seguidas = operas
-      una hasta que la pasas o la quemas, y entonces empiezas la siguiente. En ambos casos operas
-      una sola cuenta a la vez, así que el ritmo diario no cambia.
+      Elige cuántos comprarías y mira cómo cambia. Operas una cuenta cada vez, así que el ritmo
+      diario es el mismo: lo único que cambia es cuándo saltas de una cuenta a otra.
     </p>
-    <div class="table-wrap">
-      <table class="challenge-table challenge-table--rotation">
-        <thead>
-          <tr>
-            <th rowspan="2">Challenges</th>
-            <th colspan="3">Rotando al primer SL</th>
-            <th colspan="3">Una detrás de otra</th>
-          </tr>
-          <tr>
-            <th>Pasas ≥1</th><th>Pasados · media</th><th>Días</th>
-            <th>Pasas ≥1</th><th>Pasados · media</th><th>Días</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              (r) => `<tr class="${r.accounts === Number(cfg.accounts) ? 'is-current' : ''}">
-                <th>${r.accounts}</th>
-                <td class="${fmt.tone(r.rotating.anyPassRate)}">${fmt.pct(r.rotating.anyPassRate)}</td>
-                <td>${r.rotating.avgAccountsPassed.toFixed(2)}</td>
-                <td>${r.rotating.medianDays ?? '—'}</td>
-                <td class="${fmt.tone(r.sequential.anyPassRate)}">${fmt.pct(r.sequential.anyPassRate)}</td>
-                <td>${r.sequential.avgAccountsPassed.toFixed(2)}</td>
-                <td>${r.sequential.medianDays ?? '—'}</td>
-              </tr>`
-            )
-            .join('')}
-        </tbody>
-      </table>
+
+    <div class="challenge-count-picker" role="group" aria-label="Challenges comprados">
+      <span class="muted small">Compro</span>
+      ${rows
+        .map(
+          (r) =>
+            `<button type="button" class="challenge-count-btn ${r.accounts === picked ? 'active' : ''}"
+                     data-challenge-count="${r.accounts}">${r.accounts}</button>`
+        )
+        .join('')}
+      <span class="muted small">${picked === 1 ? 'challenge' : 'challenges'}</span>
     </div>
-    <p class="muted small">
-      Con ${best.accounts} ${best.accounts === 1 ? 'challenge' : 'challenges'} rotando llegas al
-      ${fmt.pct(best.rotating.anyPassRate)} de pasar al menos uno.
-      ${
-        totalMulti && rotHelps === totalMulti
-          ? 'Rotar sale mejor en todos los casos: al repartir los SL entre varias cuentas, ninguna se acerca tanto a su pérdida máxima.'
-          : totalMulti && rotHelps === 0
-            ? 'Aquí rotar no aporta: con tu distribución de resultados sale igual o mejor exprimir una cuenta antes de pasar a la siguiente.'
-            : 'Fíjate en la columna "Pasados · media": es la que dice si rotar aprovecha mejor las cuentas, más que el "pasas ≥1".'
-      }
-      Ojo: pasar al menos uno mejora sobre todo porque compras más intentos, no porque el sistema mejore.
-    </p>`;
+
+    ${
+      picked === 1
+        ? `<p class="muted small">Con un solo challenge no hay nada que rotar: tienes un ${fmt.pct(single.rotating.anyPassRate)}
+           de pasarlo. Pulsa 2 o más arriba para comparar las dos formas de gestionarlos.</p>`
+        : `<div class="challenge-modes">
+        ${modeCard(
+          'Voy cambiando de cuenta',
+          'Operas una cuenta y, en cuanto te salta un SL, pasas a la siguiente. Los SL se reparten entre todas y ninguna se acerca tanto a su pérdida máxima.',
+          current.rotating,
+          rotWins
+        )}
+        ${modeCard(
+          'Exprimo una y luego la siguiente',
+          'Operas la misma cuenta hasta que la pasas o la quemas. Solo entonces empiezas la siguiente, que sigue intacta.',
+          current.sequential,
+          seqWins
+        )}
+      </div>
+      <p class="muted small challenge-verdict">
+        ${
+          rotWins
+            ? `Con ${picked} cuentas te compensa ir cambiando: pasas ${current.rotating.avgAccountsPassed.toFixed(2)} de media frente a ${current.sequential.avgAccountsPassed.toFixed(2)}.`
+            : seqWins
+              ? `Con ${picked} cuentas sale mejor exprimir una antes de abrir la siguiente: pasas ${current.sequential.avgAccountsPassed.toFixed(2)} de media frente a ${current.rotating.avgAccountsPassed.toFixed(2)} cambiando.`
+              : `Con ${picked} cuentas da igual cómo las gestiones: los dos caminos acaban en lo mismo.`
+        }
+        Fíjate más en "pasados de media" que en "pasas al menos uno": lo segundo sube casi siempre
+        por comprar más intentos, no porque tu sistema sea mejor.
+      </p>`
+    }
+
+    <details class="challenge-details">
+      <summary>Ver la comparativa de 1 a 6 challenges</summary>
+      <div class="table-wrap">
+        <table class="challenge-table challenge-table--rotation">
+          <thead>
+            <tr>
+              <th rowspan="2">Compro</th>
+              <th colspan="2">Voy cambiando de cuenta</th>
+              <th colspan="2">Exprimo una y luego la siguiente</th>
+            </tr>
+            <tr>
+              <th>Pasas ≥1</th><th>Pasados de media</th>
+              <th>Pasas ≥1</th><th>Pasados de media</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (r) => `<tr class="${r.accounts === picked ? 'is-current' : ''}">
+                  <th>${r.accounts}</th>
+                  <td class="${fmt.tone(r.rotating.anyPassRate)}">${fmt.pct(r.rotating.anyPassRate)}</td>
+                  <td>${r.rotating.avgAccountsPassed.toFixed(2)}</td>
+                  <td class="${fmt.tone(r.sequential.anyPassRate)}">${fmt.pct(r.sequential.anyPassRate)}</td>
+                  <td>${r.sequential.avgAccountsPassed.toFixed(2)}</td>
+                </tr>`
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    </details>`;
 }
 
 function bindChallengeInputs() {
@@ -13563,9 +13613,29 @@ function bindChallengeInputs() {
     void persistBacktestingSettings();
   };
 
+  // Redibujar dispara doce simulaciones de Monte Carlo, así que no se hace en cada pulsación:
+  // se espera a que el usuario deje de teclear.
+  let redrawTimer = null;
+  const redrawSoon = () => {
+    clearTimeout(redrawTimer);
+    redrawTimer = setTimeout(() => renderBacktestingChallenge(getBacktestingTradesForMetrics()), 180);
+  };
+
   section.addEventListener('input', (event) => {
     if (!event.target.matches('[data-challenge]')) return;
+    redrawSoon();
+  });
+
+  // Selector de cuántos challenges se compran: vive dentro del HTML generado del bloque de
+  // rotación, por eso se escucha por delegación y el valor se guarda en la configuración.
+  section.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-challenge-count]');
+    if (!btn) return;
+    const wanted = Math.max(1, Math.min(6, Number(btn.dataset.challengeCount) || 1));
+    const cfg = readChallengeConfigFromDom();
+    backtestingSettings.challenge_config = { phases: cfg.phases, accounts: wanted };
     renderBacktestingChallenge(getBacktestingTradesForMetrics());
+    void persistBacktestingSettings();
   });
 
   // Se guarda al soltar el campo y no en cada tecla, para no escribir en Supabase en cada dígito.
