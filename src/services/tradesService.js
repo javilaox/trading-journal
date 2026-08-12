@@ -53,6 +53,37 @@ async function getTrades() {
 }
 
 /**
+ * Todos los ids de los trades del usuario, leyendo por páginas hasta agotar la tabla.
+ *
+ * Se pagina a mano en vez de hacer un `select('id')` a secas porque PostgREST puede tener un
+ * tope de filas por respuesta: una lista truncada haría creer que los trades que faltan se han
+ * borrado, y quien usa esto (la limpieza de la caché local) los borraría de verdad. Pedir solo
+ * la columna `id` hace que incluso miles de trades quepan en una o dos páginas.
+ */
+async function getAllTradeIds() {
+  const userId = await getCurrentUserId();
+  if (!userId) return { success: false, error: 'NO_AUTH', ids: [] };
+
+  const PAGE = 1000;
+  const ids = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('trades')
+      .select('id')
+      .eq('user_id', userId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) return { success: false, error, ids: [] };
+    const page = Array.isArray(data) ? data : [];
+    page.forEach((row) => ids.push(Number(row.id)));
+    if (page.length < PAGE) break;
+  }
+
+  return { success: true, ids };
+}
+
+/**
  * Borrar fila remota por id + user_id (RLS).
  * Reintenta con id numérico y, si hace falta, resuelve el id real vía listado (p. ej. string vs number).
  */
@@ -123,6 +154,7 @@ async function deleteTrade(id) {
 }
 
 module.exports = {
+  getAllTradeIds,
   addTrade,
   getTrades,
   deleteTrade

@@ -39,6 +39,7 @@ const {
   isTradeRowHidden,
   getTradesFromLocal,
   upsertTradesIntoLocal,
+  pruneDeletedRemoteTrades,
   loadTradesOfflineFirst
 } = require('./services/offlineFirstTrades');
 const {
@@ -3114,6 +3115,24 @@ async function syncPendingChanges(userId) {
   return { ok, failed, pull };
 }
 
+/**
+ * Quita de la caché local los trades que ya no están en Supabase.
+ *
+ * Va aparte y no dentro de upsertTradesIntoLocal porque necesita la lista completa de ids del
+ * servidor, que es una consulta propia: si se usara la lista de trades ya descargada y esa
+ * respuesta viniera recortada por el límite de filas de la API, se borrarían trades buenos.
+ */
+async function pruneLocalTradesAgainstRemote(userId, logPrefix) {
+  try {
+    const idsRes = await tradesService.getAllTradeIds();
+    if (!idsRes?.success) return 0;
+    return pruneDeletedRemoteTrades(db, idsRes.ids, userId, logPrefix);
+  } catch (err) {
+    console.warn('No se pudo limpiar la caché local de trades borrados:', err);
+    return 0;
+  }
+}
+
 async function pullRemoteData(userId, { assumeOnline = false } = {}) {
   if (!assumeOnline) {
     const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
@@ -3156,6 +3175,10 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     // upsertTradesIntoLocal preserva entry/exit_time y position_legs, respeta pending_* y tombstones,
     // y solo pisa filas locales si el remoto es más reciente (updated_at).
     upsertTradesIntoLocal(db, tradesRes.data, userId, '[pullRemoteData]');
+    // ...pero no borra nada, así que un trade eliminado desde otro sitio (el móvil) seguía en la
+    // caché local para siempre. Se comparan los ids con los del servidor y se limpia lo que ya
+    // no existe. Los ids se piden por páginas para no confundir "lista truncada" con "borrado".
+    await pruneLocalTradesAgainstRemote(userId, '[pullRemoteData]');
   }
 
   const upsertSimpleEntity = (table, localTable, rows, mapRow) => {
@@ -3397,6 +3420,7 @@ ipcMain.handle('sync-trades-from-supabase', async () => {
     }
 
     upsertTradesIntoLocal(db, result.data, userId, '⚖️');
+    await pruneLocalTradesAgainstRemote(userId, '⚖️');
     console.log('Local cache updated from Supabase');
 
     const trades = getTradesFromLocal(db, userId, mapRowToTradeResponse);

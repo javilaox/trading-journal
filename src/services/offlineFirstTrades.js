@@ -83,6 +83,52 @@ function isTradeRowHidden(row) {
   return sync === 'pending_delete' || sync === 'deleted';
 }
 
+/**
+ * Borra de la caché local los trades que ya no existen en Supabase.
+ *
+ * Hacía falta porque `upsertTradesIntoLocal` solo inserta y actualiza: un trade borrado desde
+ * otro sitio (el móvil, otro ordenador) seguía apareciendo aquí para siempre. La app mostraba
+ * datos que ya no existen y no había forma de enterarse.
+ *
+ * Reglas de seguridad, en orden de importancia:
+ *
+ *   1. Solo se ejecuta con la lista REMOTA COMPLETA (`remoteIds`). Si la consulta se hubiera
+ *      quedado a medias, aquí se borrarían trades buenos. Por eso quien llama debe pasar los ids
+ *      leyendo todas las páginas, no una consulta con límite.
+ *   2. Nunca se tocan filas con cambios pendientes (`pending_*`): son trabajo del usuario que
+ *      todavía no ha llegado al servidor. Un trade creado sin conexión no está en remoto, y eso
+ *      no significa que se haya borrado.
+ *   3. Solo se consideran filas con id positivo. Las creadas sin conexión llevan id temporal
+ *      negativo y no tienen contrapartida remota por definición.
+ */
+function pruneDeletedRemoteTrades(db, remoteIds, userId, logPrefix = '') {
+  if (!userId || !Array.isArray(remoteIds)) return 0;
+  const uid = String(userId);
+
+  const localRows = db
+    .prepare(
+      `SELECT id, sync_status FROM trades
+       WHERE user_id = ?
+         AND id > 0
+         AND (sync_status IS NULL OR sync_status = '' OR sync_status = 'synced')`
+    )
+    .all(uid);
+  if (!localRows.length) return 0;
+
+  const remoteSet = new Set(remoteIds.map((v) => Number(v)).filter((v) => Number.isFinite(v)));
+  const orphans = localRows.filter((r) => !remoteSet.has(Number(r.id))).map((r) => Number(r.id));
+  if (!orphans.length) return 0;
+
+  const del = db.prepare('DELETE FROM trades WHERE user_id = ? AND id = ?');
+  const tx = db.transaction((ids) => {
+    for (const id of ids) del.run(uid, id);
+  });
+  tx(orphans);
+
+  console.log(`${logPrefix} borrados en remoto, eliminados de la caché local:`, orphans.join(', '));
+  return orphans.length;
+}
+
 function getTradesFromLocal(db, userId, mapRowToTradeResponse) {
   if (!userId) return [];
   const uid = String(userId);
@@ -299,6 +345,7 @@ module.exports = {
   isTradeRowHidden,
   getTradesFromLocal,
   upsertTradesIntoLocal,
+  pruneDeletedRemoteTrades,
   getTradesFromSupabase,
   loadTradesOfflineFirst
 };
