@@ -241,6 +241,21 @@ function simulateChallenge(rValues, phases, options) {
     return s / list.length;
   }
 
+  // Reparto en numeros enteros: que porcentaje de las veces se acaba con 0, 1, 2... challenges
+  // pasados. Es lo unico que de verdad puede ocurrir (no existe "medio challenge pasado"), asi
+  // que es lo que se enseña; la media queda como dato de apoyo para comparar dos gestiones.
+  var distribution = [];
+  for (var d = 0; d <= accountCount; d += 1) distribution.push(0);
+  passedPerRun.forEach(function (v) {
+    distribution[v] += 1;
+  });
+  var passedDistribution = distribution.map(function (count, k) {
+    return { passed: k, pct: runs ? (count / runs) * 100 : 0 };
+  });
+  var mostLikely = passedDistribution.reduce(function (a, b) {
+    return b.pct > a.pct ? b : a;
+  }, passedDistribution[0]);
+
   // Aviso de consistencia imposible: si UNA sola operación ganadora ya supera el tope del día,
   // la regla no se puede cumplir por mucho que se reparta, hay que bajar el riesgo. Sin este
   // aviso la simulación seguiría dando un número razonable para un plan que la prop invalidaría.
@@ -281,6 +296,11 @@ function simulateChallenge(rValues, phases, options) {
     // Con una sola cuenta es "probabilidad de pasar el challenge"; con varias, "probabilidad de
     // pasar al menos uno", que es la pregunta real cuando compras varios.
     overallPassRate: (anyPass / runs) * 100,
+    // Pasarlos todos y el reparto por numero entero de challenges pasados.
+    passAllRate: passedDistribution[accountCount] ? passedDistribution[accountCount].pct : 0,
+    passedDistribution: passedDistribution,
+    mostLikelyPassed: mostLikely ? mostLikely.passed : 0,
+    mostLikelyPct: mostLikely ? mostLikely.pct : 0,
     avgAccountsPassed: mean(passedPerRun),
     medianTradesTotal: median(tradesToFirstPass),
     p90TradesTotal: percentile(tradesToFirstPass, 0.9),
@@ -316,12 +336,20 @@ function compareChallengeAccounts(rValues, phases, options, maxAccounts) {
       accounts: n,
       rotating: {
         anyPassRate: made[0].overallPassRate,
+        passAllRate: made[0].passAllRate,
+        mostLikelyPassed: made[0].mostLikelyPassed,
+        mostLikelyPct: made[0].mostLikelyPct,
+        passedDistribution: made[0].passedDistribution,
         avgAccountsPassed: made[0].avgAccountsPassed,
         medianTrades: made[0].medianTradesTotal,
         medianDays: made[0].medianDaysTotal,
       },
       sequential: {
         anyPassRate: made[1].overallPassRate,
+        passAllRate: made[1].passAllRate,
+        mostLikelyPassed: made[1].mostLikelyPassed,
+        mostLikelyPct: made[1].mostLikelyPct,
+        passedDistribution: made[1].passedDistribution,
         avgAccountsPassed: made[1].avgAccountsPassed,
         medianTrades: made[1].medianTradesTotal,
         medianDays: made[1].medianDaysTotal,

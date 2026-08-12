@@ -126,6 +126,9 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
   .mode-rows>div:last-child{border-bottom:none;padding-bottom:0}
   .mode-rows span{color:var(--muted);font-size:.82rem}
   .mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
+  .mode-card .dist{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 0;padding-top:10px;
+       border-top:1px solid var(--border)}
+  .mode-card .dist strong{color:var(--text)}
   .rot-details summary{cursor:pointer;color:var(--muted);font-size:.82rem;padding:6px 0}
   tbody tr.is-current{background:rgba(56,189,248,.10)}
   .shots figure{margin:0}
@@ -453,8 +456,13 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     if (!rows.length) { host.innerHTML = ''; return; }
 
     var current = rows[rows.length - 1];
-    var rotWins = current.rotating.avgAccountsPassed > current.sequential.avgAccountsPassed;
-    var seqWins = current.sequential.avgAccountsPassed > current.rotating.avgAccountsPassed;
+    // Se decide por "los pasas todos" y, si empatan, por "al menos uno": son las dos cifras que
+    // se ven, asi que el veredicto no puede apoyarse en otra cosa.
+    var gapAll = current.rotating.passAllRate - current.sequential.passAllRate;
+    var gapAny = current.rotating.anyPassRate - current.sequential.anyPassRate;
+    var decisive = Math.abs(gapAll) >= 1 ? gapAll : (Math.abs(gapAny) >= 1 ? gapAny : 0);
+    var rotWins = decisive > 0;
+    var seqWins = decisive < 0;
 
     function modeCard(title, subtitle, data, isBest) {
       return '<div class="mode-card' + (isBest ? ' is-best' : '') + '">' +
@@ -463,9 +471,13 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
         '<p class="muted small">' + subtitle + '</p>' +
         '<div class="mode-rows">' +
           '<div><span>Pasas al menos uno</span><strong class="' + tone(data.anyPassRate) + '">' + pct(data.anyPassRate) + '</strong></div>' +
-          '<div><span>Challenges pasados de media</span><strong>' + data.avgAccountsPassed.toFixed(2) + ' de ' + picked + '</strong></div>' +
+          '<div><span>Los pasas los ' + picked + '</span><strong class="' + tone(data.passAllRate) + '">' + pct(data.passAllRate) + '</strong></div>' +
+          '<div><span>Lo más habitual</span><strong>' + data.mostLikelyPassed + ' de ' + picked + '</strong></div>' +
           '<div><span>Días hasta pasar el primero</span><strong>' + (data.medianDays == null ? '—' : data.medianDays) + '</strong></div>' +
-        '</div></div>';
+        '</div>' +
+        '<p class="muted small dist">' + data.passedDistribution.map(function (d) {
+          return '<span>' + d.passed + ': <strong>' + d.pct.toFixed(0) + '%</strong></span>';
+        }).join(' · ') + '</p></div>';
     }
 
     host.innerHTML =
@@ -482,25 +494,25 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
           '</div>' +
           '<p class="muted small">' +
           (rotWins
-            ? 'Con ' + picked + ' cuentas compensa el riesgo rotativo: se pasan ' + current.rotating.avgAccountsPassed.toFixed(2) +
-              ' de media frente a ' + current.sequential.avgAccountsPassed.toFixed(2) + '.'
+            ? 'Con ' + picked + ' cuentas compensa el riesgo rotativo: se pasan todos el ' +
+              pct(current.rotating.passAllRate) + ' de las veces, frente al ' + pct(current.sequential.passAllRate) + '.'
             : seqWins
-              ? 'Con ' + picked + ' cuentas sale mejor sin riesgo rotativo: ' +
-                current.sequential.avgAccountsPassed.toFixed(2) + ' de media frente a ' + current.rotating.avgAccountsPassed.toFixed(2) + ' rotando.'
-              : 'Con ' + picked + ' cuentas da igual cómo se gestionen: los dos caminos acaban en lo mismo.') +
-          ' Fíjate más en "pasados de media" que en "pasas al menos uno": lo segundo sube casi siempre ' +
-          'por comprar más intentos, no porque el sistema sea mejor.</p>') +
+              ? 'Con ' + picked + ' cuentas sale mejor sin riesgo rotativo: se pasan todos el ' +
+                pct(current.sequential.passAllRate) + ' de las veces, frente al ' + pct(current.rotating.passAllRate) + '.'
+              : 'Con ' + picked + ' cuentas da igual cómo se gestionen: los dos caminos acaban practicamente en lo mismo.') +
+          ' La fila de abajo de cada tarjeta es el reparto completo: de cada 100 intentos, cuántas ' +
+          'veces se acabaría con 0 challenges pasados, con 1, con 2… Ahí no hay medias: o se pasa o no.</p>') +
       '<div class="table-scroll"><table><thead><tr>' +
       '<th class="no-sort">Compro</th>' +
-      '<th class="num no-sort">Rotativo · pasas ≥1</th><th class="num no-sort">Rotativo · media</th>' +
-      '<th class="num no-sort">Sin rotativo · pasas ≥1</th><th class="num no-sort">Sin rotativo · media</th>' +
+      '<th class="num no-sort">Rotativo · pasas ≥1</th><th class="num no-sort">Rotativo · todos</th>' +
+      '<th class="num no-sort">Sin rotativo · pasas ≥1</th><th class="num no-sort">Sin rotativo · todos</th>' +
       '</tr></thead><tbody>' +
       rows.map(function (r) {
         return '<tr' + (r.accounts === picked ? ' class="is-current"' : '') + '><td>' + r.accounts + '</td>' +
           '<td class="num ' + tone(r.rotating.anyPassRate) + '">' + pct(r.rotating.anyPassRate) + '</td>' +
-          '<td class="num">' + r.rotating.avgAccountsPassed.toFixed(2) + '</td>' +
+          '<td class="num">' + pct(r.rotating.passAllRate) + '</td>' +
           '<td class="num ' + tone(r.sequential.anyPassRate) + '">' + pct(r.sequential.anyPassRate) + '</td>' +
-          '<td class="num">' + r.sequential.avgAccountsPassed.toFixed(2) + '</td></tr>';
+          '<td class="num">' + pct(r.sequential.passAllRate) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>';
   }

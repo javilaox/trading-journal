@@ -845,6 +845,10 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-mode-rows span{color:var(--text-muted);font-size:.82rem}
 .challenge-mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
 .challenge-verdict{margin-bottom:14px}
+.challenge-dist{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 0;padding-top:10px;
+  border-top:1px solid var(--border)}
+.challenge-dist strong{color:var(--text)}
+.challenge-mode-rows small{color:var(--text-muted);font-weight:400;font-size:.78rem}
 .challenge-details{margin-top:6px}
 .challenge-details summary{cursor:pointer;color:var(--text-muted);font-size:.82rem;padding:6px 0}
 .challenge-details summary:hover{color:var(--text)}
@@ -13537,8 +13541,14 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
   }
 
   const current = rows[rows.length - 1];
-  const rotWins = current.rotating.avgAccountsPassed > current.sequential.avgAccountsPassed;
-  const seqWins = current.sequential.avgAccountsPassed > current.rotating.avgAccountsPassed;
+  // Se compara por "los pasas todos" y, si empatan, por "al menos uno". Antes se comparaba por
+  // la media, pero entonces el veredicto podía decir que una opción era mejor mientras las dos
+  // cifras en pantalla eran iguales.
+  const gapAll = current.rotating.passAllRate - current.sequential.passAllRate;
+  const gapAny = current.rotating.anyPassRate - current.sequential.anyPassRate;
+  const decisive = Math.abs(gapAll) >= 1 ? gapAll : Math.abs(gapAny) >= 1 ? gapAny : 0;
+  const rotWins = decisive > 0;
+  const seqWins = decisive < 0;
 
   const modeCard = (title, subtitle, data, isBest) => `
     <div class="challenge-mode-card ${isBest ? 'is-best' : ''}">
@@ -13549,9 +13559,15 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
       <p class="muted small">${subtitle}</p>
       <div class="challenge-mode-rows">
         <div><span>Pasas al menos uno</span><strong class="${fmt.tone(data.anyPassRate)}">${fmt.pct(data.anyPassRate)}</strong></div>
-        <div><span>Challenges pasados de media</span><strong>${data.avgAccountsPassed.toFixed(2)} de ${picked}</strong></div>
+        <div><span>Los pasas los ${picked}</span><strong class="${fmt.tone(data.passAllRate)}">${fmt.pct(data.passAllRate)}</strong></div>
+        <div><span>Lo más habitual</span><strong>${data.mostLikelyPassed} de ${picked} <small>(${fmt.pct(data.mostLikelyPct)})</small></strong></div>
         <div><span>Días hasta pasar el primero</span><strong>${data.medianDays ?? '—'}</strong></div>
       </div>
+      <p class="muted small challenge-dist">
+        ${data.passedDistribution
+          .map((d) => `<span>${d.passed}: <strong>${d.pct.toFixed(0)}%</strong></span>`)
+          .join(' · ')}
+      </p>
     </div>`;
 
   host.innerHTML = `
@@ -13576,13 +13592,13 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
       <p class="muted small challenge-verdict">
         ${
           rotWins
-            ? `Con ${picked} cuentas te compensa el riesgo rotativo: pasas ${current.rotating.avgAccountsPassed.toFixed(2)} de media frente a ${current.sequential.avgAccountsPassed.toFixed(2)}.`
+            ? `Con ${picked} cuentas te compensa el riesgo rotativo: los pasas todos el ${fmt.pct(current.rotating.passAllRate)} de las veces, frente al ${fmt.pct(current.sequential.passAllRate)}.`
             : seqWins
-              ? `Con ${picked} cuentas sale mejor sin riesgo rotativo: pasas ${current.sequential.avgAccountsPassed.toFixed(2)} de media frente a ${current.rotating.avgAccountsPassed.toFixed(2)} rotando.`
-              : `Con ${picked} cuentas da igual cómo las gestiones: los dos caminos acaban en lo mismo.`
+              ? `Con ${picked} cuentas sale mejor sin riesgo rotativo: los pasas todos el ${fmt.pct(current.sequential.passAllRate)} de las veces, frente al ${fmt.pct(current.rotating.passAllRate)}.`
+              : `Con ${picked} cuentas da igual cómo las gestiones: los dos caminos acaban prácticamente en lo mismo.`
         }
-        Fíjate más en "pasados de media" que en "pasas al menos uno": lo segundo sube casi siempre
-        por comprar más intentos, no porque tu sistema sea mejor.
+        La fila de abajo de cada tarjeta es el reparto completo: de cada 100 intentos, cuántas
+        veces acabarías con 0 challenges pasados, con 1, con 2… Ahí no hay medias: o lo pasas o no.
       </p>`
     }
 
@@ -13595,8 +13611,8 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
             <th colspan="2">Sin riesgo rotativo</th>
           </tr>
           <tr>
-            <th>Pasas ≥1</th><th>Pasados de media</th>
-            <th>Pasas ≥1</th><th>Pasados de media</th>
+            <th>Pasas ≥1</th><th>Los pasas todos</th>
+            <th>Pasas ≥1</th><th>Los pasas todos</th>
           </tr>
         </thead>
         <tbody>
@@ -13605,9 +13621,9 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
               (r) => `<tr class="${r.accounts === picked ? 'is-current' : ''}">
                 <th>${r.accounts}</th>
                 <td class="${fmt.tone(r.rotating.anyPassRate)}">${fmt.pct(r.rotating.anyPassRate)}</td>
-                <td>${r.rotating.avgAccountsPassed.toFixed(2)}</td>
+                <td>${fmt.pct(r.rotating.passAllRate)}</td>
                 <td class="${fmt.tone(r.sequential.anyPassRate)}">${fmt.pct(r.sequential.anyPassRate)}</td>
-                <td>${r.sequential.avgAccountsPassed.toFixed(2)}</td>
+                <td>${fmt.pct(r.sequential.passAllRate)}</td>
               </tr>`
             )
             .join('')}
