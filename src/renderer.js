@@ -813,6 +813,10 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-streak-row .streak-tp strong{color:var(--green,#22c55e)}
 #backtestingView .bt-streak-row .streak-sl strong{color:#ef4444}
 #backtestingView .bt-streak-note{margin:8px 0 0}
+/* Las clases .positive/.negative solo tienen color dentro de .kpi-value, y aqui el valor es un
+   <strong> de la pastilla, asi que se le da color explicitamente. */
+#backtestingView .bt-streak-row strong.positive{color:var(--green,#22c55e)}
+#backtestingView .bt-streak-row strong.negative{color:#ef4444}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
