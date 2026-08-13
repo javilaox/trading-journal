@@ -24,6 +24,11 @@
 
 const { ASSET_CATALOG } = require('./assetCatalog');
 const { ACCOUNT_SIZES, CATEGORY_SUGGESTIONS } = require('./expenseOptions');
+const {
+  accountSizeToCapital,
+  buildAccountNameFromExpense,
+  looksLikeAccountPurchase,
+} = require('./accountFromExpense');
 
 function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   return `<!doctype html>
@@ -100,6 +105,9 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   .checks label{display:flex;align-items:center;gap:10px;color:var(--text);font-size:.9rem;
        margin:0 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px}
   .checks input{width:22px;height:22px;flex:0 0 auto}
+  .switch-row{display:flex;align-items:center;gap:10px;color:var(--text);font-size:.9rem;margin:0;
+       padding:12px;border:1px solid var(--border);border-radius:10px}
+  .switch-row input{width:22px;height:22px;flex:0 0 auto}
   /* ── Selector de activo (hoja inferior) ── */
   .picker{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
        background:rgba(255,255,255,.04);color:var(--text);border:1px solid var(--border);
@@ -365,6 +373,20 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
         <select id="mgSize"></select>
       </div>
       <div class="field"><label for="mgNote">Nota (opcional)</label><input id="mgNote" /></div>
+
+      <!-- Comprar un challenge es un gasto y una cuenta nueva a la vez. -->
+      <div class="field expense-only hidden" id="mgCreateAccountWrap">
+        <label class="switch-row" for="mgCreateAccount">
+          <input id="mgCreateAccount" type="checkbox" />
+          <span>Crear también la cuenta de esta compra</span>
+        </label>
+        <div id="mgAccountNumberWrap" class="hidden" style="margin-top:10px">
+          <label for="mgAccountNumber">Nº de cuenta (opcional)</label>
+          <input id="mgAccountNumber" placeholder="Los últimos dígitos" />
+          <p class="muted small" id="mgAccountPreview" style="margin:6px 0 0"></p>
+        </div>
+      </div>
+
       <button class="btn" id="mgSaveBtn">Guardar</button>
       <button class="btn secondary hidden" id="mgCancelBtn">Cancelar edición</button>
     </div>
@@ -1193,6 +1215,10 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
    * ordenador la conservaría para siempre porque su sincronización no vería ninguna diferencia.
    */
 
+  ${accountSizeToCapital.toString()}
+  ${buildAccountNameFromExpense.toString()}
+  ${looksLikeAccountPurchase.toString()}
+
   var MANAGE_PROP = '';
   var MANAGE_CATEGORY = '';
   var CATEGORIES = [];
@@ -1207,6 +1233,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     MANAGE_PROP = value || '';
     $('mgPropLabel').textContent = MANAGE_PROP || 'Elegir prop';
     $('mgPropBtn').classList.toggle('empty', !MANAGE_PROP);
+    syncCreateAccountField(false);
   }
 
   /* ───────── Hoja de selección reutilizable ─────────
@@ -1259,6 +1286,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     MANAGE_CATEGORY = value || '';
     $('mgCategoryLabel').textContent = MANAGE_CATEGORY || 'Elegir categoría';
     $('mgCategoryBtn').classList.toggle('empty', !MANAGE_CATEGORY);
+    syncCreateAccountField(true);
   }
 
   $('mgPropBtn').addEventListener('click', function () {
@@ -1387,6 +1415,10 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     $('mgNote').value = '';
     $('mgSize').value = '';
     $('mgDate').value = todayIso();
+    var check = $('mgCreateAccount');
+    check.checked = false;
+    delete check.dataset.touched;
+    $('mgAccountNumber').value = '';
     syncManageForm();
   }
 
@@ -1426,6 +1458,74 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     document.querySelectorAll('.expense-only').forEach(function (el) {
       el.classList.toggle('hidden', !expenses);
     });
+    syncCreateAccountField(false);
+  }
+
+  /* ───────── Crear la cuenta al registrar la compra de un challenge ─────────
+   * Mismas reglas que en el ordenador (services/accountFromExpense.js, insertado abajo): el
+   * nombre es prop + tamaño + los últimos dígitos de la cuenta, y si ya existe se numera.
+   */
+
+  function accountPreviewName() {
+    return buildAccountNameFromExpense({
+      prop: MANAGE_PROP,
+      size: $('mgSize').value,
+      accountNumber: ($('mgAccountNumber').value || '').trim(),
+      existingNames: ACCOUNTS.map(function (a) { return a.name; }),
+    });
+  }
+
+  function syncCreateAccountField(auto) {
+    var wrap = $('mgCreateAccountWrap');
+    var check = $('mgCreateAccount');
+    // Al editar no se crean cuentas: si tocaba, ya se creó al registrar el gasto.
+    var visible = isExpenses() && !MOVEMENT_EDITING;
+    wrap.classList.toggle('hidden', !visible);
+    if (!visible) { check.checked = false; return; }
+
+    if (auto && !check.dataset.touched) {
+      check.checked = Boolean($('mgSize').value) && looksLikeAccountPurchase(MANAGE_CATEGORY);
+    }
+    $('mgAccountNumberWrap').classList.toggle('hidden', !check.checked);
+    var name = accountPreviewName();
+    $('mgAccountPreview').textContent = name
+      ? 'Se creará la cuenta "' + name + '"'
+      : 'Elige prop y tamaño para crear la cuenta.';
+  }
+
+  $('mgCreateAccount').addEventListener('change', function (e) {
+    e.target.dataset.touched = '1';
+    syncCreateAccountField(false);
+  });
+  $('mgAccountNumber').addEventListener('input', function () { syncCreateAccountField(false); });
+  $('mgSize').addEventListener('change', function () { syncCreateAccountField(true); });
+
+  /** Crea la cuenta del gasto recién guardado. Nunca tumba el gasto: son dos apuntes distintos. */
+  async function createAccountForExpense(prop, size, accountNumber) {
+    var name = buildAccountNameFromExpense({
+      prop: prop,
+      size: size,
+      accountNumber: accountNumber,
+      existingNames: ACCOUNTS.map(function (a) { return a.name; }),
+    });
+    if (!name) return null;
+
+    var out = await db.from('real_accounts').insert({
+      user_id: USER.id,
+      name: name,
+      prop_name: prop || null,
+      account_number: accountNumber || null,
+      account_type: 'challenge',
+      balance: accountSizeToCapital(size),
+      challenge_passed: false,
+      disabled_by_max_dd: false,
+    });
+    if (out.error) {
+      toast('Gasto guardado, pero la cuenta no se pudo crear', 'err');
+      return null;
+    }
+    await loadCatalogs();
+    return name;
   }
 
   async function loadManage() {
@@ -1581,7 +1681,16 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     btn.disabled = false;
     if (out.error) { toast('No se pudo guardar: ' + out.error.message, 'err'); return; }
 
-    toast(MOVEMENT_EDITING ? 'Cambios guardados' : (expenses ? 'Gasto guardado' : 'Retiro guardado'), 'ok');
+    var creada = null;
+    if (!MOVEMENT_EDITING && expenses && $('mgCreateAccount').checked) {
+      creada = await createAccountForExpense(row.account_name, row.account_size, ($('mgAccountNumber').value || '').trim());
+    }
+
+    toast(
+      creada ? 'Gasto guardado y cuenta "' + creada + '" creada'
+        : (MOVEMENT_EDITING ? 'Cambios guardados' : (expenses ? 'Gasto guardado' : 'Retiro guardado')),
+      'ok'
+    );
     resetMovementForm(true);
     await loadManage();
   });

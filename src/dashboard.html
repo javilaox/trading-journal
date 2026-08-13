@@ -9708,6 +9708,20 @@
             <label for="expenseFormNote" data-i18n="withdrawals_note">Nota (opcional)</label>
             <input id="expenseFormNote" class="input" type="text" data-i18n-placeholder="withdrawals_note_placeholder" placeholder="Comentario" />
           </div>
+
+          <!-- Comprar un challenge son dos cosas a la vez: un gasto y una cuenta nueva. Esto
+               evita tener que ir despues a Configuracion a crearla a mano. -->
+          <div class="field field-full expense-create-account">
+            <label class="toggle-row" for="expenseFormCreateAccount">
+              <input id="expenseFormCreateAccount" type="checkbox" />
+              <span data-i18n="expenses_create_account">Crear también la cuenta de esta compra</span>
+            </label>
+            <div id="expenseFormAccountNumberWrap" class="field" hidden>
+              <label for="expenseFormAccountNumber" data-i18n="expenses_account_number">Nº de cuenta (opcional)</label>
+              <input id="expenseFormAccountNumber" class="input" type="text" data-i18n-placeholder="expenses_account_number_placeholder" placeholder="Los últimos dígitos" />
+              <p class="form-hint" id="expenseFormAccountPreview"></p>
+            </div>
+          </div>
         </div>
         <div class="withdrawal-modal-actions">
           <button id="cancelExpenseEditBtn" class="button button-cancel" type="button" data-i18n="cancel">Cancelar</button>

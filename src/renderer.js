@@ -3105,6 +3105,11 @@ const {
 } = require('./services/scheduleUtils');
 const { planBacktestRecalc } = require('./services/backtestRecalc');
 const { computeResultStreaks } = require('./services/backtestStreaks');
+const {
+  accountSizeToCapital,
+  buildAccountNameFromExpense,
+  looksLikeAccountPurchase,
+} = require('./services/accountFromExpense');
 const { buildEquityCurve } = require('./services/backtestEquityCurve');
 const {
   simulateChallenge,
@@ -8391,6 +8396,7 @@ function openExpenseModal({ editId = null } = {}) {
   // que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
   refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
   syncCustomDatepicker('expenseFormDate');
+  syncExpenseCreateAccount({ auto: true });
   overlay.classList.add('active');
   document.getElementById('expenseFormAccount')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -8404,6 +8410,15 @@ function closeExpenseModal() {
 
 function resetExpenseForm({ keepEditingId = false } = {}) {
   if (!keepEditingId) editingExpenseId = null;
+  // La casilla de crear cuenta vuelve a estar sin tocar: cada gasto nuevo se juzga por su
+  // categoría, no arrastra lo que se decidiera en el anterior.
+  const createAccountCheck = document.getElementById('expenseFormCreateAccount');
+  if (createAccountCheck) {
+    createAccountCheck.checked = false;
+    delete createAccountCheck.dataset.touched;
+  }
+  const accountNumberInput = document.getElementById('expenseFormAccountNumber');
+  if (accountNumberInput) accountNumberInput.value = '';
   const dateInput = document.getElementById('expenseFormDate');
   if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
   const amountInput = document.getElementById('expenseFormAmount');
@@ -8424,6 +8439,94 @@ function resetExpenseForm({ keepEditingId = false } = {}) {
 
 function startEditExpense(id) {
   openExpenseModal({ editId: id });
+}
+
+/* ───────── Crear la cuenta al registrar la compra de un challenge ───────── */
+
+function expenseAccountPreviewName() {
+  return buildAccountNameFromExpense({
+    prop: document.getElementById('expenseFormAccount')?.value?.trim(),
+    size: document.getElementById('expenseFormAccountSize')?.value?.trim(),
+    accountNumber: document.getElementById('expenseFormAccountNumber')?.value?.trim(),
+    existingNames: getAccounts().map((a) => a.name),
+  });
+}
+
+/**
+ * Refresca la casilla de "crear también la cuenta".
+ *
+ * Se propone marcada solo cuando la categoría sugiere una compra de cuenta (Evaluación,
+ * Activación, Reset...) y hay tamaño elegido: proponerla en una suscripción mensual llenaría el
+ * listado de cuentas fantasma. Si el usuario la toca a mano, se respeta su decisión.
+ */
+function syncExpenseCreateAccount({ auto = false } = {}) {
+  const check = document.getElementById('expenseFormCreateAccount');
+  const wrap = document.getElementById('expenseFormAccountNumberWrap');
+  const preview = document.getElementById('expenseFormAccountPreview');
+  if (!check) return;
+
+  // Editar un gasto ya registrado no vuelve a crear cuentas: la cuenta, si tocaba, ya se creó.
+  const editing = Boolean(editingExpenseId);
+  const container = check.closest('.expense-create-account');
+  if (container) container.hidden = editing;
+  if (editing) {
+    check.checked = false;
+    if (wrap) wrap.hidden = true;
+    return;
+  }
+
+  if (auto && !check.dataset.touched) {
+    const category = document.getElementById('expenseFormCategory')?.value || '';
+    const size = document.getElementById('expenseFormAccountSize')?.value || '';
+    check.checked = Boolean(size) && looksLikeAccountPurchase(category);
+  }
+
+  if (wrap) wrap.hidden = !check.checked;
+  if (preview) {
+    const name = expenseAccountPreviewName();
+    preview.textContent = name ? `Se creará la cuenta "${name}"` : 'Elige prop y tamaño para crear la cuenta.';
+  }
+}
+
+/**
+ * Crea la cuenta asociada a un gasto. Devuelve el nombre creado, o null si no se creó.
+ *
+ * Nunca bloquea el gasto: si la cuenta falla, el gasto ya está guardado y se avisa aparte. Son
+ * dos cosas distintas y perder el gasto por un problema al crear la cuenta sería peor.
+ */
+async function createAccountFromExpense({ prop, size, accountNumber }) {
+  const name = buildAccountNameFromExpense({
+    prop,
+    size,
+    accountNumber,
+    existingNames: getAccounts().map((a) => a.name),
+  });
+  if (!name) return null;
+
+  const res = await createRealAccount({
+    name,
+    prop_name: prop || null,
+    account_number: accountNumber || null,
+    account_type: 'challenge',
+    capital: accountSizeToCapital(size),
+    commissionPerLot: 0,
+    freeSwap: false,
+    challenge_passed: false,
+    disabled_by_max_dd: false,
+  });
+
+  if (!res?.success) {
+    showToast(
+      res?.error === 'DUPLICATE'
+        ? `Ya existe una cuenta llamada "${name}"`
+        : 'El gasto se guardó, pero no se pudo crear la cuenta',
+      'warning'
+    );
+    return null;
+  }
+
+  await loadAccounts();
+  return name;
 }
 
 async function saveExpenseAction() {
@@ -8462,13 +8565,32 @@ async function saveExpenseAction() {
     showToast(res?.error || 'Error al guardar gasto', 'error');
     return;
   }
+  const createAccount =
+    !editingExpenseId && Boolean(document.getElementById('expenseFormCreateAccount')?.checked);
+  const accountNumber = document.getElementById('expenseFormAccountNumber')?.value?.trim() || '';
+
   closeExpenseModal();
   await registerExpensePropIfNew(account);
   await registerExpenseCategoryIfNew(category);
   if (backend.syncPendingChanges) void backend.syncPendingChanges();
   await refreshExpensesUI();
   renderManagementBalanceBanner();
-  showToast(t('expenses_saved', 'Gasto guardado'), 'success');
+
+  let createdAccountName = null;
+  if (createAccount) {
+    createdAccountName = await createAccountFromExpense({
+      prop: account,
+      size: accountSize,
+      accountNumber,
+    });
+  }
+
+  showToast(
+    createdAccountName
+      ? `Gasto guardado y cuenta "${createdAccountName}" creada`
+      : t('expenses_saved', 'Gasto guardado'),
+    'success'
+  );
 }
 
 async function deleteExpenseAction(id) {
@@ -8706,6 +8828,20 @@ function initExpensesUI() {
   document.getElementById('expensesEmptyCta')?.addEventListener('click', openModal);
   document.getElementById('saveExpenseBtn')?.addEventListener('click', () => {
     saveExpenseAction().catch(console.error);
+  });
+
+  // La propuesta se recalcula al cambiar categoría o tamaño; en cuanto el usuario toca la
+  // casilla, deja de proponerse sola (dataset.touched) y manda lo que él haya decidido.
+  ['expenseFormCategory', 'expenseFormAccountSize'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => syncExpenseCreateAccount({ auto: true }));
+    document.getElementById(id)?.addEventListener('input', () => syncExpenseCreateAccount({ auto: true }));
+  });
+  ['expenseFormAccount', 'expenseFormAccountNumber'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', () => syncExpenseCreateAccount());
+  });
+  document.getElementById('expenseFormCreateAccount')?.addEventListener('change', (event) => {
+    event.target.dataset.touched = '1';
+    syncExpenseCreateAccount();
   });
   document.getElementById('cancelExpenseEditBtn')?.addEventListener('click', closeExpenseModal);
   document.getElementById('closeExpenseModalBtn')?.addEventListener('click', closeExpenseModal);
