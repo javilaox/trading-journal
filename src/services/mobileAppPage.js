@@ -353,9 +353,8 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
         <div class="field"><label for="mgDate">Fecha</label><input id="mgDate" type="date" /></div>
       </div>
       <div class="field expense-only hidden">
-        <label for="mgCategory">Categoría</label>
-        <input id="mgCategory" list="mgCategoryList" placeholder="Suscripción, challenge…" />
-        <datalist id="mgCategoryList"></datalist>
+        <label for="mgCategoryBtn">Categoría</label>
+        <button type="button" class="picker" id="mgCategoryBtn"><span id="mgCategoryLabel">Elegir categoría</span><em>▾</em></button>
       </div>
       <div class="field expense-only hidden">
         <label for="mgSize">Tamaño de cuenta</label>
@@ -371,15 +370,16 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     </div>
   </section>
 
-<!-- Selector de prop: misma hoja inferior que la de activos. -->
-<div class="sheet hidden" id="propSheet">
+<!-- Hoja inferior reutilizable para las listas simples (prop, categoría): misma que la de
+     activos pero sin grupos. Una sola en el documento, se rellena al abrirla. -->
+<div class="sheet hidden" id="listSheet">
   <div class="sheet-body">
     <div class="sheet-head">
-      <strong>Elegir prop</strong>
-      <button type="button" class="link" id="propClose">Cerrar</button>
+      <strong id="listSheetTitle">Elegir</strong>
+      <button type="button" class="link" id="listSheetClose">Cerrar</button>
     </div>
-    <input type="search" id="propSearch" placeholder="Buscar prop…" autocomplete="off" />
-    <div class="sheet-list" id="propOptions"></div>
+    <input type="search" id="listSheetSearch" placeholder="Buscar…" autocomplete="off" />
+    <div class="sheet-list" id="listSheetOptions"></div>
   </div>
 </div>
 
@@ -1167,6 +1167,8 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
    */
 
   var MANAGE_PROP = '';
+  var MANAGE_CATEGORY = '';
+  var CATEGORIES = [];
   var ACCOUNT_SIZES = ${JSON.stringify(ACCOUNT_SIZES)};
   var CATEGORY_SUGGESTIONS = ${JSON.stringify(CATEGORY_SUGGESTIONS)};
 
@@ -1179,34 +1181,78 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     $('mgPropBtn').classList.toggle('empty', !MANAGE_PROP);
   }
 
-  function renderPropOptions() {
-    var q = ($('propSearch').value || '').trim().toUpperCase();
-    var list = PROPS.map(function (p) { return p.name; }).filter(function (n) {
-      return !q || n.toUpperCase().indexOf(q) >= 0;
+  /* ───────── Hoja de selección reutilizable ─────────
+   * Prop y categoría son listas cerradas: se elige de lo que ya existe y no se escribe. Escribir
+   * a mano es lo que acaba creando "Suscripcion", "Suscripción" y "suscripcion" como tres cosas
+   * distintas, y luego los totales por categoría no cuadran con nada.
+   */
+
+  var listPicker = { onPick: null, items: [], current: '' };
+
+  function openListPicker(config) {
+    listPicker = { onPick: config.onPick, items: config.items || [], current: config.current || '' };
+    $('listSheetTitle').textContent = config.title || 'Elegir';
+    $('listSheetSearch').placeholder = config.searchPlaceholder || 'Buscar…';
+    $('listSheetSearch').value = '';
+    renderListPicker(config.emptyText);
+    $('listSheet').classList.remove('hidden');
+  }
+
+  function closeListPicker() { $('listSheet').classList.add('hidden'); }
+
+  function renderListPicker(emptyText) {
+    var q = ($('listSheetSearch').value || '').trim().toUpperCase();
+    var items = listPicker.items.filter(function (n) {
+      return !q || String(n).toUpperCase().indexOf(q) >= 0;
     });
-    $('propOptions').innerHTML = list.length
-      ? list.map(function (n) {
-          return '<button type="button" class="sheet-item' + (n === MANAGE_PROP ? ' on' : '') +
-                 '" data-prop="' + escapeAttr(n) + '">' + escapeHtml(n) + '</button>';
+    $('listSheetOptions').innerHTML = items.length
+      ? items.map(function (n) {
+          return '<button type="button" class="sheet-item' + (n === listPicker.current ? ' on' : '') +
+                 '" data-pick="' + escapeAttr(n) + '">' + escapeHtml(n) + '</button>';
         }).join('')
-      : '<p class="muted small">No hay props guardadas. Se crean en el ordenador, en Configuración.</p>';
-    $('propOptions').querySelectorAll('[data-prop]').forEach(function (el) {
+      : '<p class="muted small">' + escapeHtml(emptyText || 'Nada que elegir.') + '</p>';
+
+    $('listSheetOptions').querySelectorAll('[data-pick]').forEach(function (el) {
       el.addEventListener('click', function () {
-        setProp(el.getAttribute('data-prop'));
-        $('propSheet').classList.add('hidden');
+        var value = el.getAttribute('data-pick');
+        closeListPicker();
+        if (listPicker.onPick) listPicker.onPick(value);
       });
     });
   }
 
-  $('mgPropBtn').addEventListener('click', function () {
-    $('propSheet').classList.remove('hidden');
-    $('propSearch').value = '';
-    renderPropOptions();
+  $('listSheetClose').addEventListener('click', closeListPicker);
+  $('listSheetSearch').addEventListener('input', function () { renderListPicker(); });
+  $('listSheet').addEventListener('click', function (e) {
+    if (e.target === $('listSheet')) closeListPicker();
   });
-  $('propClose').addEventListener('click', function () { $('propSheet').classList.add('hidden'); });
-  $('propSearch').addEventListener('input', renderPropOptions);
-  $('propSheet').addEventListener('click', function (e) {
-    if (e.target === $('propSheet')) $('propSheet').classList.add('hidden');
+
+  function setCategory(value) {
+    MANAGE_CATEGORY = value || '';
+    $('mgCategoryLabel').textContent = MANAGE_CATEGORY || 'Elegir categoría';
+    $('mgCategoryBtn').classList.toggle('empty', !MANAGE_CATEGORY);
+  }
+
+  $('mgPropBtn').addEventListener('click', function () {
+    openListPicker({
+      title: 'Elegir prop',
+      searchPlaceholder: 'Buscar prop…',
+      items: PROPS.map(function (p) { return p.name; }),
+      current: MANAGE_PROP,
+      emptyText: 'No hay props guardadas. Se crean en el ordenador, en Configuración.',
+      onPick: setProp,
+    });
+  });
+
+  $('mgCategoryBtn').addEventListener('click', function () {
+    openListPicker({
+      title: 'Elegir categoría',
+      searchPlaceholder: 'Buscar categoría…',
+      items: CATEGORIES,
+      current: MANAGE_CATEGORY,
+      emptyText: 'No hay categorías todavía.',
+      onPick: setCategory,
+    });
   });
 
   $('segManage').addEventListener('click', function () {
@@ -1239,19 +1285,19 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     MOVEMENTS.expenses = eRes.data || [];
 
     // Categorías: las sugeridas por defecto (las mismas del ordenador) más las que ya se hayan
-    // usado. No viven en ninguna tabla, así que esto es todo lo que se puede saber desde aquí.
+    // usado en gastos anteriores. No viven en ninguna tabla -en el ordenador se guardan en el
+    // propio equipo-, así que una categoría creada allí y aún sin usar no puede verse desde aquí.
+    // Se comparan en minúsculas para no ofrecer "Reset" y "reset" como si fueran dos.
     var seen = {};
-    var cats = [];
+    CATEGORIES = [];
     CATEGORY_SUGGESTIONS.concat(MOVEMENTS.expenses.map(function (e) { return e.category; }))
       .forEach(function (c) {
         var name = String(c || '').trim();
         if (!name || seen[name.toLowerCase()]) return;
         seen[name.toLowerCase()] = true;
-        cats.push(name);
+        CATEGORIES.push(name);
       });
-    $('mgCategoryList').innerHTML = cats.map(function (c) {
-      return '<option value="' + escapeAttr(c) + '"></option>';
-    }).join('');
+    CATEGORIES.sort(function (a, b) { return a.localeCompare(b, 'es', { sensitivity: 'base' }); });
 
     renderManage();
   }
@@ -1343,7 +1389,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       updated_at: new Date().toISOString(),
     };
     if (expenses) {
-      row.category = ($('mgCategory').value || '').trim() || null;
+      row.category = MANAGE_CATEGORY || null;
       row.account_size = ($('mgSize').value || '').trim() || null;
     }
 
@@ -1356,7 +1402,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     toast(expenses ? 'Gasto guardado' : 'Retiro guardado', 'ok');
     $('mgAmount').value = '';
     $('mgNote').value = '';
-    $('mgCategory').value = '';
+    setCategory('');
     $('mgSize').value = '';
     $('mgPropBtn').focus();
     await loadManage();
