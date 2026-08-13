@@ -7673,43 +7673,128 @@ function getKnownExpensePropsRecentFirst() {
   });
 }
 
-// Categorías de gasto: a diferencia de las props (que viven en Supabase vía expense_props para
-// sincronizarse entre dispositivos), las categorías son solo una lista de sugerencias de bajo
-// riesgo y se guardan localmente (localStorage, por usuario) — igual que otras listas simples de
-// la app (cuentas/estrategias "reales"). Arranca sembrada con EXPENSE_CATEGORY_SUGGESTIONS para
-// que también se puedan renombrar/eliminar desde Configuración.
+/* ───────────────────────── Categorías de gasto ─────────────────────────
+ * Antes vivían solo en el localStorage de este equipo. Eso significaba que no viajaban a otro
+ * ordenador ni al móvil, y como el móvil no podía ofrecerlas había que escribirlas a mano: así
+ * es como aparecen "Reset" y "reset" como dos categorías distintas.
+ *
+ * Ahora se guardan como las props: tabla propia sincronizada (expense_categories), con la misma
+ * cola offline. La lista antigua del navegador NO se borra y se usa para sembrar la tabla la
+ * primera vez, de modo que quien ya tuviera categorías las conserva tal cual.
+ *
+ * Lo que NO cambia: la categoría de cada gasto sigue guardada en el propio gasto. Tocar esta
+ * lista no altera ni un solo movimiento ya registrado.
+ */
 let customExpenseCategoriesCache = null;
+let expenseCategoryIdsByName = new Map();
 
-async function loadExpenseCategoriesCache() {
-  const key = await getUserScopedStorageKey('expense_categories');
-  if (!key) {
-    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
-    return;
-  }
-  const stored = getStoredList(key);
-  if (Array.isArray(stored) && stored.length) {
-    customExpenseCategoriesCache = stored.filter((s) => typeof s === 'string' && s.trim());
-  } else {
-    customExpenseCategoriesCache = [...EXPENSE_CATEGORY_SUGGESTIONS];
-    saveStoredList(key, customExpenseCategoriesCache);
-  }
-}
-
-async function saveCustomExpenseCategoriesList(list) {
-  const key = await getUserScopedStorageKey('expense_categories');
-  if (!key) return;
+function normalizeCategoryNames(list) {
   const seen = new Set();
-  const norm = [];
+  const out = [];
   (list || []).forEach((raw) => {
     const name = String(raw || '').trim();
     if (!name) return;
     const lower = name.toLowerCase();
     if (seen.has(lower)) return;
     seen.add(lower);
-    norm.push(name);
+    out.push(name);
   });
-  saveStoredList(key, norm);
-  customExpenseCategoriesCache = norm;
+  return out;
+}
+
+/** Categorías que el usuario ya tenía guardadas en este equipo, para la siembra inicial. */
+async function getLegacyLocalCategories() {
+  const key = await getUserScopedStorageKey('expense_categories');
+  if (!key) return [];
+  const stored = getStoredList(key);
+  return Array.isArray(stored) ? normalizeCategoryNames(stored) : [];
+}
+
+async function loadExpenseCategoriesCache() {
+  const backend = getBackendApi();
+  if (!backend?.getExpenseCategoriesLocal) {
+    // Sin el IPC nuevo (build antigua): se sigue con la lista local de siempre.
+    customExpenseCategoriesCache = normalizeCategoryNames(
+      (await getLegacyLocalCategories()).concat(EXPENSE_CATEGORY_SUGGESTIONS)
+    );
+    return;
+  }
+
+  let rows = [];
+  try {
+    rows = (await backend.getExpenseCategoriesLocal()) || [];
+  } catch (err) {
+    console.warn('No se pudieron leer las categorías guardadas:', err);
+  }
+
+  // Siembra: la primera vez la tabla está vacía, así que se rellena con lo que hubiera en este
+  // equipo (o con las sugerencias por defecto si no había nada). Solo ocurre una vez porque
+  // después la tabla ya no está vacía.
+  if (!rows.length) {
+    const legacy = await getLegacyLocalCategories();
+    const seed = legacy.length ? legacy : EXPENSE_CATEGORY_SUGGESTIONS;
+    for (const name of seed) {
+      try {
+        await backend.addExpenseCategoryLocal({ name });
+      } catch (err) {
+        console.warn('No se pudo migrar la categoría', name, err);
+      }
+    }
+    if (backend.syncPendingChanges) void backend.syncPendingChanges();
+    try {
+      rows = (await backend.getExpenseCategoriesLocal()) || [];
+    } catch {
+      rows = seed.map((name) => ({ name, client_uuid: null }));
+    }
+  }
+
+  expenseCategoryIdsByName = new Map();
+  rows.forEach((row) => {
+    const name = String(row?.name || '').trim();
+    if (!name) return;
+    expenseCategoryIdsByName.set(name.toLowerCase(), row.client_uuid || row.id);
+  });
+  customExpenseCategoriesCache = normalizeCategoryNames(rows.map((r) => r.name));
+}
+
+/**
+ * Guarda la lista completa aplicando solo las diferencias.
+ *
+ * Las pantallas que la usan (renombrar, eliminar) piensan en términos de "esta es la lista que
+ * debe quedar". Se comparan con la actual y se traducen a altas y bajas concretas, para no
+ * borrar y recrear todo cada vez: eso rompería la identidad de cada categoría y llenaría la cola
+ * de sincronización de ruido.
+ */
+async function saveCustomExpenseCategoriesList(list) {
+  const next = normalizeCategoryNames(list);
+  const backend = getBackendApi();
+
+  if (!backend?.addExpenseCategoryLocal) {
+    const key = await getUserScopedStorageKey('expense_categories');
+    if (key) saveStoredList(key, next);
+    customExpenseCategoriesCache = next;
+    return;
+  }
+
+  const current = customExpenseCategoriesCache || [];
+  const lower = (arr) => arr.map((c) => c.toLowerCase());
+  const nextLower = lower(next);
+  const currentLower = lower(current);
+
+  for (const name of next) {
+    if (!currentLower.includes(name.toLowerCase())) {
+      await backend.addExpenseCategoryLocal({ name });
+    }
+  }
+  for (const name of current) {
+    if (!nextLower.includes(name.toLowerCase())) {
+      const id = expenseCategoryIdsByName.get(name.toLowerCase());
+      if (id != null) await backend.deleteExpenseCategoryLocal(String(id));
+    }
+  }
+
+  if (backend.syncPendingChanges) void backend.syncPendingChanges();
+  await loadExpenseCategoriesCache();
 }
 
 function getKnownExpenseCategories() {
@@ -7718,6 +7803,8 @@ function getKnownExpenseCategories() {
     const name = String(c || '').trim();
     if (name) names.add(name);
   });
+  // También las que ya usan gastos existentes: aunque alguien borre una categoría de la lista,
+  // los gastos que la usaban siguen mostrándola.
   expensesCache.forEach((e) => {
     const name = String(e.category || '').trim();
     if (name) names.add(name);
@@ -7730,6 +7817,14 @@ async function registerExpenseCategoryIfNew(name) {
   if (!trimmed) return;
   const list = customExpenseCategoriesCache || [];
   if (list.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return;
+
+  const backend = getBackendApi();
+  if (backend?.addExpenseCategoryLocal) {
+    await backend.addExpenseCategoryLocal({ name: trimmed });
+    if (backend.syncPendingChanges) void backend.syncPendingChanges();
+    await loadExpenseCategoriesCache();
+    return;
+  }
   await saveCustomExpenseCategoriesList([...list, trimmed]);
 }
 

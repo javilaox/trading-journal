@@ -61,6 +61,10 @@ const {
   supabaseRowFromPayload: expensePropSupabaseRowFromPayload,
   upsertPropsIntoLocal: upsertExpensePropsIntoLocal,
 } = require('./services/expensePropsService');
+const {
+  propsService: expensePropsService,
+  categoriesService: expenseCategoriesService,
+} = require('./services/expensePropsService');
 
 let mainWindow = null;
 let currentUserId = null;
@@ -1839,133 +1843,167 @@ ipcMain.handle('delete-expense-local', async (_event, idOrClientUuid) => {
   return { success: true };
 });
 
-ipcMain.handle('get-expense-props-local', async () => {
-  const userId = await resolveUserIdForLocalCache();
-  if (!userId) return [];
-  return getExpensePropsFromLocal(db, userId);
-});
-
-// Idempotente: si ya existe una prop con ese nombre (case-insensitive) para el usuario,
-// la devuelve tal cual sin duplicar ni volver a encolar sync.
-ipcMain.handle('add-expense-prop-local', async (_event, raw) => {
-  const userId = await resolveUserIdForLocalCache();
-  if (!userId) return { success: false, error: 'NO_USER_ID' };
-  const name = String(raw?.name || '').trim();
-  if (!name) return { success: false, error: 'MISSING_NAME' };
-
-  const existing = db
-    .prepare(
-      `SELECT id, client_uuid, name FROM expense_props
-       WHERE user_id = ? AND name = ? COLLATE NOCASE
-         AND (deleted_at IS NULL OR deleted_at = '')
-       LIMIT 1`
-    )
-    .get(String(userId), name);
-  if (existing) {
-    return { success: true, created: false, prop: { id: existing.id, client_uuid: existing.client_uuid, name: existing.name } };
-  }
-
-  const clientUuid = makeClientUuid();
-  const ts = nowIso();
-  const info = db
-    .prepare(
-      `INSERT INTO expense_props (user_id, client_uuid, remote_id, name, created_at, updated_at, sync_status, deleted_at)
-       VALUES (?, ?, NULL, ?, ?, ?, 'pending_create', NULL)`
-    )
-    .run(String(userId), clientUuid, name, ts, ts);
-
-  enqueueSyncItem({
-    userId,
-    entityType: 'expense_prop',
-    entityLocalId: clientUuid,
-    action: 'create',
-    payload: { user_id: String(userId), client_uuid: clientUuid, name },
+/**
+ * Listas de nombres de Gestión (props y categorías de gasto).
+ *
+ * Las dos se comportan igual, así que los cuatro manejadores se registran una sola vez y se
+ * instancian por entidad. Antes esto estaba escrito solo para las props; duplicarlo para las
+ * categorías habría dejado dos copias del mismo código destinadas a separarse.
+ *
+ * Ninguna de estas operaciones toca los movimientos: en gastos y retiros, la prop y la
+ * categoría se guardan como texto dentro de la propia fila. Borrar o renombrar un nombre de la
+ * lista NO altera lo ya registrado; propagar un cambio de nombre a los movimientos, si se
+ * quiere, es cosa del renderer, fila a fila.
+ */
+function registerNameListIpc({ table, entityType, service, ipc }) {
+  ipcMain.handle(ipc.get, async () => {
+    const userId = await resolveUserIdForLocalCache();
+    if (!userId) return [];
+    return service.getFromLocal(db, userId);
   });
 
-  return {
-    success: true,
-    created: true,
-    prop: { id: Number(info.lastInsertRowid), client_uuid: clientUuid, name },
-  };
-});
+  // Idempotente: si ya existe un nombre igual (ignorando mayúsculas) se devuelve tal cual, sin
+  // duplicar ni volver a encolar sincronización.
+  ipcMain.handle(ipc.add, async (_event, raw) => {
+    const userId = await resolveUserIdForLocalCache();
+    if (!userId) return { success: false, error: 'NO_USER_ID' };
+    const name = String(raw?.name || '').trim();
+    if (!name) return { success: false, error: 'MISSING_NAME' };
 
-// Renombra una prop ya guardada. El propio renderer se encarga de propagar el nuevo nombre a
-// los retiros/gastos que ya la usaban (account_name es texto libre, no hay FK), llamando a
-// update-expense-local / update-withdrawal-local por cada fila afectada.
-ipcMain.handle('update-expense-prop-local', async (_event, raw) => {
-  const userId = await resolveUserIdForLocalCache();
-  if (!userId) return { success: false, error: 'NO_USER_ID' };
-  const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : '';
-  const localId = Number(raw?.id);
-  const name = String(raw?.name || '').trim();
-  if (!name) return { success: false, error: 'MISSING_NAME' };
+    const existing = db
+      .prepare(
+        `SELECT id, client_uuid, name FROM ${table}
+         WHERE user_id = ? AND name = ? COLLATE NOCASE
+           AND (deleted_at IS NULL OR deleted_at = '')
+         LIMIT 1`
+      )
+      .get(String(userId), name);
+    if (existing) {
+      return {
+        success: true,
+        created: false,
+        item: { id: existing.id, client_uuid: existing.client_uuid, name: existing.name },
+        prop: { id: existing.id, client_uuid: existing.client_uuid, name: existing.name },
+      };
+    }
 
-  const existing = clientUuid
-    ? db.prepare(`SELECT * FROM expense_props WHERE user_id = ? AND client_uuid = ? LIMIT 1`).get(String(userId), clientUuid)
-    : Number.isFinite(localId)
-      ? db.prepare(`SELECT * FROM expense_props WHERE user_id = ? AND id = ? LIMIT 1`).get(String(userId), localId)
-      : null;
-  if (!existing) return { success: false, error: 'NOT_FOUND' };
+    const clientUuid = makeClientUuid();
+    const ts = nowIso();
+    const info = db
+      .prepare(
+        `INSERT INTO ${table} (user_id, client_uuid, remote_id, name, created_at, updated_at, sync_status, deleted_at)
+         VALUES (?, ?, NULL, ?, ?, ?, 'pending_create', NULL)`
+      )
+      .run(String(userId), clientUuid, name, ts, ts);
 
-  const dupe = db
-    .prepare(
-      `SELECT id FROM expense_props
-       WHERE user_id = ? AND name = ? COLLATE NOCASE AND client_uuid != ?
-         AND (deleted_at IS NULL OR deleted_at = '')
-       LIMIT 1`
-    )
-    .get(String(userId), name, String(existing.client_uuid));
-  if (dupe) return { success: false, error: 'DUPLICATE_NAME' };
+    enqueueSyncItem({
+      userId,
+      entityType,
+      entityLocalId: clientUuid,
+      action: 'create',
+      payload: { user_id: String(userId), client_uuid: clientUuid, name },
+    });
 
-  const ts = nowIso();
-  db.prepare(
-    `UPDATE expense_props SET name = ?, updated_at = ?,
-      sync_status = CASE WHEN sync_status = 'pending_create' THEN 'pending_create' ELSE 'pending_update' END
-     WHERE user_id = ? AND client_uuid = ?`
-  ).run(name, ts, String(userId), String(existing.client_uuid));
-
-  enqueueSyncItem({
-    userId,
-    entityType: 'expense_prop',
-    entityLocalId: String(existing.client_uuid),
-    entityRemoteId: existing.remote_id ? String(existing.remote_id) : null,
-    action: String(existing.sync_status) === 'pending_create' ? 'create' : 'update',
-    payload: { user_id: String(userId), client_uuid: String(existing.client_uuid), name },
+    const item = { id: Number(info.lastInsertRowid), client_uuid: clientUuid, name };
+    return { success: true, created: true, item, prop: item };
   });
 
-  return { success: true, prop: { id: existing.id, client_uuid: existing.client_uuid, name } };
-});
+  ipcMain.handle(ipc.update, async (_event, raw) => {
+    const userId = await resolveUserIdForLocalCache();
+    if (!userId) return { success: false, error: 'NO_USER_ID' };
+    const clientUuid = raw?.client_uuid ? String(raw.client_uuid) : '';
+    const localId = Number(raw?.id);
+    const name = String(raw?.name || '').trim();
+    if (!name) return { success: false, error: 'MISSING_NAME' };
 
-// Borrado simple de la prop de la lista de sugerencias. NO toca los retiros/gastos que ya la
-// usaban (account_name es texto libre): eso lo decide y ejecuta el renderer según la elección
-// del usuario (borrar esos movimientos o desvincularlos), llamando a los IPC de retiros/gastos
-// ya existentes fila a fila antes de invocar este borrado.
-ipcMain.handle('delete-expense-prop-local', async (_event, clientUuidOrId) => {
-  const userId = await resolveUserIdForLocalCache();
-  if (!userId) return { success: false, error: 'NO_USER_ID' };
-  const needle = String(clientUuidOrId ?? '').trim();
-  if (!needle) return { success: false, error: 'MISSING_ID' };
+    const existing = clientUuid
+      ? db.prepare(`SELECT * FROM ${table} WHERE user_id = ? AND client_uuid = ? LIMIT 1`).get(String(userId), clientUuid)
+      : Number.isFinite(localId)
+        ? db.prepare(`SELECT * FROM ${table} WHERE user_id = ? AND id = ? LIMIT 1`).get(String(userId), localId)
+        : null;
+    if (!existing) return { success: false, error: 'NOT_FOUND' };
 
-  const row = db
-    .prepare(`SELECT client_uuid, remote_id, sync_status FROM expense_props WHERE user_id = ? AND (client_uuid = ? OR id = ?) LIMIT 1`)
-    .get(String(userId), needle, Number(needle) || -1);
-  if (!row) return { success: true, skipped: true };
+    const dupe = db
+      .prepare(
+        `SELECT id FROM ${table}
+         WHERE user_id = ? AND name = ? COLLATE NOCASE AND client_uuid != ?
+           AND (deleted_at IS NULL OR deleted_at = '')
+         LIMIT 1`
+      )
+      .get(String(userId), name, String(existing.client_uuid));
+    if (dupe) return { success: false, error: 'DUPLICATE_NAME' };
 
-  const ts = nowIso();
-  db.prepare(
-    `UPDATE expense_props SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
-  ).run(ts, ts, String(userId), String(row.client_uuid));
+    const ts = nowIso();
+    db.prepare(
+      `UPDATE ${table} SET name = ?, updated_at = ?,
+        sync_status = CASE WHEN sync_status = 'pending_create' THEN 'pending_create' ELSE 'pending_update' END
+       WHERE user_id = ? AND client_uuid = ?`
+    ).run(name, ts, String(userId), String(existing.client_uuid));
 
-  enqueueSyncItem({
-    userId,
-    entityType: 'expense_prop',
-    entityLocalId: String(row.client_uuid),
-    entityRemoteId: row.remote_id ? String(row.remote_id) : null,
-    action: 'delete',
-    payload: { user_id: String(userId), client_uuid: String(row.client_uuid), remote_id: row.remote_id || null },
+    enqueueSyncItem({
+      userId,
+      entityType,
+      entityLocalId: String(existing.client_uuid),
+      entityRemoteId: existing.remote_id ? String(existing.remote_id) : null,
+      action: String(existing.sync_status) === 'pending_create' ? 'create' : 'update',
+      payload: { user_id: String(userId), client_uuid: String(existing.client_uuid), name },
+    });
+
+    const item = { id: existing.id, client_uuid: existing.client_uuid, name };
+    return { success: true, item, prop: item };
   });
 
-  return { success: true };
+  ipcMain.handle(ipc.delete, async (_event, clientUuidOrId) => {
+    const userId = await resolveUserIdForLocalCache();
+    if (!userId) return { success: false, error: 'NO_USER_ID' };
+    const needle = String(clientUuidOrId ?? '').trim();
+    if (!needle) return { success: false, error: 'MISSING_ID' };
+
+    const row = db
+      .prepare(`SELECT client_uuid, remote_id, sync_status FROM ${table} WHERE user_id = ? AND (client_uuid = ? OR id = ?) LIMIT 1`)
+      .get(String(userId), needle, Number(needle) || -1);
+    if (!row) return { success: true, skipped: true };
+
+    const ts = nowIso();
+    db.prepare(
+      `UPDATE ${table} SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+    ).run(ts, ts, String(userId), String(row.client_uuid));
+
+    enqueueSyncItem({
+      userId,
+      entityType,
+      entityLocalId: String(row.client_uuid),
+      entityRemoteId: row.remote_id ? String(row.remote_id) : null,
+      action: 'delete',
+      payload: { user_id: String(userId), client_uuid: String(row.client_uuid), remote_id: row.remote_id || null },
+    });
+
+    return { success: true };
+  });
+}
+
+registerNameListIpc({
+  table: 'expense_props',
+  entityType: 'expense_prop',
+  service: expensePropsService,
+  ipc: {
+    get: 'get-expense-props-local',
+    add: 'add-expense-prop-local',
+    update: 'update-expense-prop-local',
+    delete: 'delete-expense-prop-local',
+  },
+});
+
+registerNameListIpc({
+  table: 'expense_categories',
+  entityType: 'expense_category',
+  service: expenseCategoriesService,
+  ipc: {
+    get: 'get-expense-categories-local',
+    add: 'add-expense-category-local',
+    update: 'update-expense-category-local',
+    delete: 'delete-expense-category-local',
+  },
 });
 
 ipcMain.handle('delete-real-strategy-local', async (_event, clientUuidOrName) => {
@@ -2998,25 +3036,29 @@ async function syncPendingChanges(userId) {
         }
       }
 
-      if (entityType === 'expense_prop' && action === 'create') {
+      // Props y categorías comparten estas tres ramas: lo único que cambia es la tabla.
+      const NAME_LIST_TABLES = { expense_prop: 'expense_props', expense_category: 'expense_categories' };
+      const nameListTable = NAME_LIST_TABLES[entityType] || null;
+
+      if (nameListTable && action === 'create') {
         const clientUuid = String(item.entity_local_id || '');
         const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
         const rowBody = expensePropSupabaseRowFromPayload({ ...payload, user_id: String(userId), client_uuid: payloadUuid });
 
-        const ins = await supabase.from('expense_props').insert(rowBody).select('id, client_uuid').single();
+        const ins = await supabase.from(nameListTable).insert(rowBody).select('id, client_uuid').single();
         if (ins.error) {
           const msg = String(ins.error?.message || '').toLowerCase();
           const isConflict = msg.includes('duplicate key') || msg.includes('unique') || ins.error?.code === '23505';
           if (isConflict) {
             const lookup = await supabase
-              .from('expense_props')
+              .from(nameListTable)
               .select('id, client_uuid')
               .eq('user_id', String(userId))
               .or(`client_uuid.eq.${payloadUuid},name.ilike.${rowBody.name}`)
               .maybeSingle();
             if (lookup.error || !lookup.data?.id) throw ins.error;
             db.prepare(
-              `UPDATE expense_props SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+              `UPDATE ${nameListTable} SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
             ).run(String(lookup.data.id), nowIso(), String(userId), payloadUuid);
             db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(String(lookup.data.id), Number(item.id));
             markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
@@ -3026,7 +3068,7 @@ async function syncPendingChanges(userId) {
           throw ins.error;
         }
         db.prepare(
-          `UPDATE expense_props SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+          `UPDATE ${nameListTable} SET remote_id = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
         ).run(String(ins.data.id), nowIso(), String(userId), payloadUuid);
         db.prepare(`UPDATE sync_queue SET entity_remote_id = ? WHERE id = ?`).run(String(ins.data.id), Number(item.id));
         markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
@@ -3034,41 +3076,41 @@ async function syncPendingChanges(userId) {
         continue;
       }
 
-      if (entityType === 'expense_prop' && action === 'update') {
+      if (nameListTable && action === 'update') {
         const clientUuid = String(item.entity_local_id || '');
         const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
         const remoteId = item.entity_remote_id || null;
         const name = String(payload?.name || '').trim();
 
         if (remoteId) {
-          const upd = await supabase.from('expense_props').update({ name, updated_at: nowIso() }).eq('id', String(remoteId)).eq('user_id', String(userId));
+          const upd = await supabase.from(nameListTable).update({ name, updated_at: nowIso() }).eq('id', String(remoteId)).eq('user_id', String(userId));
           if (upd.error) throw upd.error;
         } else {
-          const upd = await supabase.from('expense_props').update({ name, updated_at: nowIso() }).eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
+          const upd = await supabase.from(nameListTable).update({ name, updated_at: nowIso() }).eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
           if (upd.error) throw upd.error;
         }
 
         db.prepare(
-          `UPDATE expense_props SET name = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+          `UPDATE ${nameListTable} SET name = ?, sync_status = 'synced', updated_at = ? WHERE user_id = ? AND client_uuid = ?`
         ).run(name, nowIso(), String(userId), payloadUuid);
         markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
         ok += 1;
         continue;
       }
 
-      if (entityType === 'expense_prop' && action === 'delete') {
+      if (nameListTable && action === 'delete') {
         const clientUuid = String(item.entity_local_id || '');
         const payloadUuid = payload?.client_uuid ? String(payload.client_uuid) : clientUuid;
         const remoteId = item.entity_remote_id || payload?.remote_id || null;
         const tsDelete = nowIso();
 
         const local = db
-          .prepare(`SELECT remote_id, sync_status FROM expense_props WHERE user_id = ? AND client_uuid = ?`)
+          .prepare(`SELECT remote_id, sync_status FROM ${nameListTable} WHERE user_id = ? AND client_uuid = ?`)
           .get(String(userId), payloadUuid);
 
         if (!local?.remote_id && String(local?.sync_status || '').startsWith('pending_')) {
           db.prepare(
-            `UPDATE expense_props SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+            `UPDATE ${nameListTable} SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
           ).run(tsDelete, tsDelete, String(userId), payloadUuid);
           markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
           ok += 1;
@@ -3076,15 +3118,15 @@ async function syncPendingChanges(userId) {
         }
 
         if (remoteId) {
-          const del = await supabase.from('expense_props').delete().eq('id', String(remoteId)).eq('user_id', String(userId));
+          const del = await supabase.from(nameListTable).delete().eq('id', String(remoteId)).eq('user_id', String(userId));
           if (del.error) throw del.error;
         } else {
-          const del = await supabase.from('expense_props').delete().eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
+          const del = await supabase.from(nameListTable).delete().eq('user_id', String(userId)).eq('client_uuid', payloadUuid);
           if (del.error) throw del.error;
         }
 
         db.prepare(
-          `UPDATE expense_props SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
+          `UPDATE ${nameListTable} SET sync_status = 'synced', deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE user_id = ? AND client_uuid = ?`
         ).run(tsDelete, tsDelete, String(userId), payloadUuid);
         markQueueStatus(item.id, 'synced', { syncedAt: nowIso() });
         ok += 1;
@@ -3140,7 +3182,15 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
   }
 
   // Fetch remotos en paralelo (misma sesión/RLS). El merge local se hace después, secuencialmente.
-  const [tradesRes, accountsRes, strategiesRes, withdrawalsRes, expensesRes, expensePropsRes] = await Promise.all([
+  const [
+    tradesRes,
+    accountsRes,
+    strategiesRes,
+    withdrawalsRes,
+    expensesRes,
+    expensePropsRes,
+    expenseCategoriesRes,
+  ] = await Promise.all([
     tradesService.getTrades().catch((err) => ({ success: false, error: err })),
     supabase
       .from('real_accounts')
@@ -3166,6 +3216,11 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       .is('deleted_at', null),
     supabase
       .from('expense_props')
+      .select('id, user_id, name, client_uuid, created_at, updated_at, deleted_at')
+      .eq('user_id', String(userId))
+      .is('deleted_at', null),
+    supabase
+      .from('expense_categories')
       .select('id, user_id, name, client_uuid, created_at, updated_at, deleted_at')
       .eq('user_id', String(userId))
       .is('deleted_at', null),
@@ -3368,6 +3423,12 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     upsertExpensePropsIntoLocal(db, expensePropsRes.data || [], userId, '[pullRemoteData]');
   }
 
+  // Igual de tolerante: mientras la migración de categorías no esté aplicada, esto se salta y
+  // la aplicación sigue funcionando con las categorías que ya tuviera guardadas en local.
+  if (!expenseCategoriesRes.error) {
+    expenseCategoriesService.upsertIntoLocal(db, expenseCategoriesRes.data || [], userId, '[pullRemoteData]');
+  }
+
   return {
     pulled: true,
     trades: Array.isArray(tradesRes?.data) ? tradesRes.data.length : 0,
@@ -3376,6 +3437,7 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     real_account_withdrawals: Array.isArray(withdrawalsRes?.data) ? withdrawalsRes.data.length : 0,
     real_account_expenses: Array.isArray(expensesRes?.data) ? expensesRes.data.length : 0,
     expense_props: Array.isArray(expensePropsRes?.data) ? expensePropsRes.data.length : 0,
+    expense_categories: Array.isArray(expenseCategoriesRes?.data) ? expenseCategoriesRes.data.length : 0,
   };
 }
 

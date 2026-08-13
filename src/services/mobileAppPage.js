@@ -534,10 +534,16 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     var accRes = await db.from('real_accounts').select('id,name,disabled_by_max_dd').order('name');
     var strRes = await db.from('real_strategies').select('id,name,custom_metrics,is_active').order('name');
     var propRes = await db.from('expense_props').select('id,name').is('deleted_at', null).order('name');
+    var catRes = await db.from('expense_categories').select('id,name').is('deleted_at', null).order('name');
 
     ACCOUNTS = (accRes.data || []).filter(function (a) { return a.name; });
     STRATEGIES = (strRes.data || []).filter(function (s) { return s.name && s.is_active !== false; });
     PROPS = (propRes.data || []).filter(function (p) { return p.name; });
+    // Si la migración de categorías aún no está aplicada, catRes trae error: no se rompe nada,
+    // simplemente se sigue con las sugerencias y las ya usadas en gastos.
+    SAVED_CATEGORIES = (catRes && !catRes.error ? catRes.data || [] : [])
+      .map(function (c) { return c.name; })
+      .filter(Boolean);
 
     // Una cuenta marcada como deshabilitada (quemada por máximo DD) no se puede seguir
     // operando, así que no aparece al registrar un trade. En los filtros sí sale, porque sus
@@ -1190,6 +1196,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   var MANAGE_PROP = '';
   var MANAGE_CATEGORY = '';
   var CATEGORIES = [];
+  var SAVED_CATEGORIES = [];   // las guardadas en la tabla sincronizada
   var ACCOUNT_SIZES = ${JSON.stringify(ACCOUNT_SIZES)};
   var CATEGORY_SUGGESTIONS = ${JSON.stringify(CATEGORY_SUGGESTIONS)};
 
@@ -1430,13 +1437,13 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     MOVEMENTS.withdrawals = wRes.data || [];
     MOVEMENTS.expenses = eRes.data || [];
 
-    // Categorías: las sugeridas por defecto (las mismas del ordenador) más las que ya se hayan
-    // usado en gastos anteriores. No viven en ninguna tabla -en el ordenador se guardan en el
-    // propio equipo-, así que una categoría creada allí y aún sin usar no puede verse desde aquí.
-    // Se comparan en minúsculas para no ofrecer "Reset" y "reset" como si fueran dos.
+    // Categorías: las guardadas en la tabla sincronizada (las mismas que en el ordenador), más
+    // las sugeridas por defecto, más las que ya se hayan usado en gastos anteriores por si
+    // alguna se borró de la lista. Se comparan en minúsculas para no ofrecer "Reset" y "reset".
     var seen = {};
     CATEGORIES = [];
-    CATEGORY_SUGGESTIONS.concat(MOVEMENTS.expenses.map(function (e) { return e.category; }))
+    SAVED_CATEGORIES.concat(CATEGORY_SUGGESTIONS)
+      .concat(MOVEMENTS.expenses.map(function (e) { return e.category; }))
       .forEach(function (c) {
         var name = String(c || '').trim();
         if (!name || seen[name.toLowerCase()]) return;

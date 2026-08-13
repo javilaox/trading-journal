@@ -575,6 +575,34 @@ db.prepare(`
   WHERE deleted_at IS NULL
 `).run();
 
+// Categorías de gasto: misma estructura y mismo trato que las props. Antes vivían solo en el
+// localStorage del equipo, así que no viajaban a otros ordenadores ni al móvil.
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS expense_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    client_uuid TEXT NOT NULL,
+    remote_id TEXT,
+    name TEXT NOT NULL,
+    created_at TEXT,
+    updated_at TEXT,
+    sync_status TEXT DEFAULT 'synced',
+    deleted_at TEXT,
+    UNIQUE(user_id, client_uuid)
+  )
+`).run();
+
+db.prepare(`
+  CREATE INDEX IF NOT EXISTS expense_categories_user_id_idx
+  ON expense_categories(user_id)
+`).run();
+
+db.prepare(`
+  CREATE UNIQUE INDEX IF NOT EXISTS expense_categories_user_name_unique
+  ON expense_categories(user_id, name)
+  WHERE deleted_at IS NULL
+`).run();
+
 // Cola de sincronización
 db.prepare(`
   CREATE TABLE IF NOT EXISTS sync_queue (
