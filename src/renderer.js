@@ -7797,16 +7797,23 @@ async function saveCustomExpenseCategoriesList(list) {
   await loadExpenseCategoriesCache();
 }
 
+/**
+ * Categorías que se ofrecen al rellenar un gasto: exactamente las de la lista guardada.
+ *
+ * Antes se le sumaban las que aparecieran en gastos ya registrados. Parecía inofensivo, pero
+ * resucitaba las que se habían borrado a propósito desde Configuración y hacía que el móvil y
+ * el ordenador ofrecieran cosas distintas. Una categoría escrita al vuelo se añade sola a la
+ * lista (registerExpenseCategoryIfNew), así que no se pierde nada por no mezclarlas aquí.
+ *
+ * Los gastos ya guardados conservan su categoría pase lo que pase: está escrita en la propia
+ * fila del gasto, no depende de esta lista.
+ */
 function getKnownExpenseCategories() {
+  const saved = customExpenseCategoriesCache;
+  const source = saved && saved.length ? saved : EXPENSE_CATEGORY_SUGGESTIONS;
   const names = new Set();
-  (customExpenseCategoriesCache || EXPENSE_CATEGORY_SUGGESTIONS).forEach((c) => {
+  source.forEach((c) => {
     const name = String(c || '').trim();
-    if (name) names.add(name);
-  });
-  // También las que ya usan gastos existentes: aunque alguien borre una categoría de la lista,
-  // los gastos que la usaban siguen mostrándola.
-  expensesCache.forEach((e) => {
-    const name = String(e.category || '').trim();
     if (name) names.add(name);
   });
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));

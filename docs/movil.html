@@ -1409,19 +1409,24 @@
     MOVEMENTS.withdrawals = wRes.data || [];
     MOVEMENTS.expenses = eRes.data || [];
 
-    // Categorías: las guardadas en la tabla sincronizada (las mismas que en el ordenador), más
-    // las sugeridas por defecto, más las que ya se hayan usado en gastos anteriores por si
-    // alguna se borró de la lista. Se comparan en minúsculas para no ofrecer "Reset" y "reset".
+    // Categorías: manda la lista guardada, y punto. Sumarle las sugerencias por defecto y las
+    // que aparecieran en gastos antiguos hacía que el móvil ofreciera categorías que en el
+    // ordenador no existen, incluidas las que se habían borrado a propósito.
+    //
+    // El respaldo (sugerencias + usadas) solo entra si NO hay lista guardada, que es el caso de
+    // quien todavía no haya abierto la aplicación con la migración aplicada: ahí es preferible
+    // ofrecer algo razonable a dejar el campo vacío.
     var seen = {};
     CATEGORIES = [];
-    SAVED_CATEGORIES.concat(CATEGORY_SUGGESTIONS)
-      .concat(MOVEMENTS.expenses.map(function (e) { return e.category; }))
-      .forEach(function (c) {
-        var name = String(c || '').trim();
-        if (!name || seen[name.toLowerCase()]) return;
-        seen[name.toLowerCase()] = true;
-        CATEGORIES.push(name);
-      });
+    var source = SAVED_CATEGORIES.length
+      ? SAVED_CATEGORIES
+      : CATEGORY_SUGGESTIONS.concat(MOVEMENTS.expenses.map(function (e) { return e.category; }));
+    source.forEach(function (c) {
+      var name = String(c || '').trim();
+      if (!name || seen[name.toLowerCase()]) return;
+      seen[name.toLowerCase()] = true;
+      CATEGORIES.push(name);
+    });
     CATEGORIES.sort(function (a, b) { return a.localeCompare(b, 'es', { sensitivity: 'base' }); });
 
     renderManage();
