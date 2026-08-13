@@ -2117,6 +2117,12 @@ ipcMain.handle('add-trade', async (event, trade) => {
     image_after: mapped.image_after ?? trade.image_after ?? null,
     entry_time: mapped.entry_time ?? null,
     exit_time: mapped.exit_time ?? null,
+    // Faltaban las dos, y era una pérdida silenciosa: al crear un trade con conexión, la
+    // dirección y el checklist de la estrategia se guardaban en la copia local pero NO viajaban
+    // a Supabase. La siguiente sincronización traía la fila remota (con ambas vacías) y pisaba
+    // la local, así que el trade acababa sin dirección y sin métricas sin que nadie lo tocara.
+    direction: mapped.direction ?? null,
+    custom_metrics: mapped.custom_metrics || {},
     is_composite_position: Boolean(mapped.is_composite_position),
     // Conservamos position_legs incluso cuando es 1 sola entrada (trade de referencia).
     position_legs: mapped.position_legs || [],
@@ -3210,6 +3216,79 @@ async function pruneLocalTradesAgainstRemote(userId, logPrefix) {
   }
 }
 
+/**
+ * Recupera la dirección y las métricas que se quedaron solo en local.
+ *
+ * Los trades creados con conexión antes del arreglo se guardaron completos en la copia local
+ * pero llegaron a Supabase sin dirección ni métricas. Donde la copia local todavía conserva el
+ * dato, se sube; donde ya se perdió en las dos, no hay nada que hacer y no se inventa.
+ *
+ * Solo RELLENA huecos: si el servidor ya tiene un valor, no se toca. Se ejecuta una vez por
+ * arranque y en segundo plano, porque es una reparación de una vez, no una tarea periódica.
+ */
+let tradeFieldRepairDone = false;
+async function repairMissingTradeFields(userId) {
+  if (tradeFieldRepairDone || !userId) return { repaired: 0 };
+  tradeFieldRepairDone = true;
+
+  try {
+    const candidates = db
+      .prepare(
+        `SELECT id, direction, custom_metrics FROM trades
+         WHERE user_id = ?
+           AND id > 0
+           AND (sync_status IS NULL OR sync_status = '' OR sync_status = 'synced')
+           AND (
+             (direction IS NOT NULL AND direction != '')
+             OR (custom_metrics IS NOT NULL AND custom_metrics NOT IN ('', '{}'))
+           )`
+      )
+      .all(String(userId));
+    if (!candidates.length) return { repaired: 0 };
+
+    const ids = candidates.map((r) => Number(r.id));
+    const { data, error } = await supabase
+      .from('trades')
+      .select('id, direction, custom_metrics')
+      .eq('user_id', String(userId))
+      .in('id', ids);
+    if (error) return { repaired: 0 };
+
+    const remoteById = new Map((data || []).map((r) => [Number(r.id), r]));
+    let repaired = 0;
+
+    for (const local of candidates) {
+      const remote = remoteById.get(Number(local.id));
+      if (!remote) continue;
+
+      const patch = {};
+      const remoteDirection = String(remote.direction || '').trim();
+      const localDirection = String(local.direction || '').trim();
+      if (!remoteDirection && localDirection) patch.direction = localDirection;
+
+      const remoteMetrics = remote.custom_metrics && typeof remote.custom_metrics === 'object' ? remote.custom_metrics : {};
+      const localMetrics = normalizeTradeCustomMetrics(local.custom_metrics);
+      if (!Object.keys(remoteMetrics).length && Object.keys(localMetrics).length) {
+        patch.custom_metrics = localMetrics;
+      }
+      if (!Object.keys(patch).length) continue;
+
+      const upd = await supabase
+        .from('trades')
+        .update(patch)
+        .eq('id', Number(local.id))
+        .eq('user_id', String(userId));
+      if (!upd.error) repaired += 1;
+    }
+
+    if (repaired) console.log(`[reparación] dirección/métricas restauradas en ${repaired} trade(s)`);
+    return { repaired };
+  } catch (err) {
+    console.warn('[reparación] no se pudo completar:', err);
+    return { repaired: 0 };
+  }
+}
+
 async function pullRemoteData(userId, { assumeOnline = false } = {}) {
   if (!assumeOnline) {
     const online = await checkInternetConnectionMain({ timeoutMs: 2500 }).catch(() => false);
@@ -3269,6 +3348,8 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     // caché local para siempre. Se comparan los ids con los del servidor y se limpia lo que ya
     // no existe. Los ids se piden por páginas para no confundir "lista truncada" con "borrado".
     await pruneLocalTradesAgainstRemote(userId, '[pullRemoteData]');
+    // En segundo plano: no debe retrasar el arranque.
+    void repairMissingTradeFields(userId);
   }
 
   const upsertSimpleEntity = (table, localTable, rows, mapRow) => {
