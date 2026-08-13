@@ -827,6 +827,12 @@ body.light #backtestingView .bt-session-card.is-active-session{
   letter-spacing:.04em;color:var(--text-muted)}
 #backtestingView .bt-equity-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
 @media(max-width:760px){#backtestingView .bt-equity-chart-wrap{height:230px}}
+/* Pestanas de Configuracion: mismo aspecto que las de Gestion y Backtesting. */
+.config-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:18px}
+.config-tab-btn{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);
+  font-family:inherit;font-size:.95rem;font-weight:600;padding:10px 14px;cursor:pointer;margin-bottom:-1px}
+.config-tab-btn:hover{color:var(--text)}
+.config-tab-btn.active{color:var(--green,#22c55e);border-bottom-color:var(--green,#22c55e)}
 /* Challenges: configuracion de fases y resultado de la simulacion. */
 .challenge-table thead th small{display:block;font-weight:400;text-transform:none;letter-spacing:0}
 .challenge-subtitle{margin:26px 0 4px;font-size:1rem;padding-top:18px;border-top:1px solid var(--border)}
@@ -9413,21 +9419,62 @@ function buildStrategyCardDataAttrs(record) {
 
 // Pestaña activa en Configuración > Cuentas: 'all' | 'challenge' | 'funded' | 'own_capital' | 'disabled'.
 // 'disabled' son las cuentas Challenge marcadas como quemadas por Máximo DD (disabled_by_max_dd).
-let settingsAccountsTab = 'all';
+// Se arranca en "Activas": lo normal es tener muchas cuentas quemadas o pasadas acumuladas, y
+// abrir siempre con el listado entero obliga a buscar entre ellas la que se está usando.
+let settingsAccountsTab = 'active';
 // Prop/broker seleccionada en Configuración > Cuentas ('' = todas).
 let settingsAccountsPropFilter = '';
 
 function accountMatchesSettingsTab(account, tab) {
   if (tab === 'all') return true;
+  // "Activas" = las que se pueden seguir operando: ni quemadas por máximo DD, ni challenges ya
+  // superados (esos dan paso a la cuenta fondeada, que sí aparece aquí por su propio tipo).
+  if (tab === 'active') {
+    if (account.disabled_by_max_dd) return false;
+    if (account.account_type === 'challenge' && account.challenge_passed) return false;
+    return true;
+  }
   if (tab === 'disabled') return account.account_type === 'challenge' && Boolean(account.disabled_by_max_dd);
   if (tab === 'challenge') return account.account_type === 'challenge' && !account.disabled_by_max_dd;
   return account.account_type === tab;
 }
 
+/* ───────── Pestañas de Configuración ─────────
+ * Cuentas, Estrategias, General y Zona de peligro. Antes era una sola columna con las cinco
+ * tarjetas seguidas: para llegar a la zona de peligro había que recorrer toda la página, y las
+ * cuentas y las estrategias competían por el mismo espacio.
+ */
+let configActiveTab = 'accounts';
+
+function switchConfigTab(tab) {
+  const panels = document.querySelectorAll('[data-config-panel]');
+  if (!panels.length) return;
+  const valid = [...panels].some((p) => p.dataset.configPanel === tab);
+  configActiveTab = valid ? tab : 'accounts';
+
+  panels.forEach((panel) => {
+    panel.hidden = panel.dataset.configPanel !== configActiveTab;
+  });
+  document.querySelectorAll('[data-config-tab]').forEach((btn) => {
+    const isActive = btn.dataset.configTab === configActiveTab;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', String(isActive));
+  });
+}
+
+function initConfigTabs() {
+  const buttons = document.querySelectorAll('[data-config-tab]');
+  if (!buttons.length) return;
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => switchConfigTab(btn.dataset.configTab));
+  });
+  switchConfigTab(configActiveTab);
+}
+
 function initSettingsAccountsTabs() {
   document.querySelectorAll('.settings-accounts-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      settingsAccountsTab = btn.getAttribute('data-accounts-tab') || 'all';
+      settingsAccountsTab = btn.getAttribute('data-accounts-tab') || 'active';
       document.querySelectorAll('.settings-accounts-tab-btn').forEach((b) => {
         b.classList.toggle('active', b === btn);
       });
@@ -9487,7 +9534,6 @@ function renderSettingsAccountsList() {
   listEl.innerHTML = filteredAccounts
     .map((account) => {
       const stats = getAccountWithdrawalStats(account);
-      const expenseStats = getAccountExpenseStats(account);
       const balance = getAccountEstimatedBalance(account);
       const tradeCount = countTradesForAccount(account);
       const badges = [];
@@ -9511,7 +9557,6 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
               <div class="settings-entity-stat" title="Solo retiros vinculados a esta cuenta">Retirado (cuenta)<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
-              <div class="settings-entity-stat" title="Gastos de la prop (evaluaciones, resets...), no de esta cuenta en concreto">Gastado (prop)<strong>${formatNegativeEuro(expenseStats.spent)}</strong></div>
               ${
                 // Gastos asociados a ESTA cuenta (la compra con la que se creó, un reset
                 // posterior...). Es la otra mitad del vínculo: desde el gasto se ve la cuenta y
@@ -18878,6 +18923,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   initAccountStrategyModals();
   initSettingsAccountsTabs();
+  initConfigTabs();
   initWithdrawalsUI();
   initExpensesUI();
   initManagementTabs();

@@ -7554,29 +7554,17 @@
         <div id="configView" style="display:none;">
           <section class="card">
             <h2 class="section-title title-with-icon"><i data-lucide="settings"></i><span data-i18n="settings_title">Configuración</span></h2>
-            <div class="settings-layout">
-              <article class="settings-card">
-                <div class="settings-header">
-                  <h3 class="title-with-icon"><i data-lucide="settings"></i><span data-i18n="mode_section">Modo</span></h3>
-                  <p data-i18n="mode_section_desc">Selecciona flujo básico o avanzado</p>
-                </div>
-                <div class="mode-toggle">
-                  <button id="basicModeBtn" class="mode-btn active" type="button" data-i18n="mode_basic">Básico</button>
-                  <button id="proModeBtn" class="mode-btn" type="button" data-i18n="mode_pro">Pro</button>
-                </div>
-              </article>
+            <!-- Configuracion en pestanas: antes eran cinco tarjetas una debajo de otra y habia
+                 que bajar hasta el final para llegar a la zona de peligro. Cada bloque tiene su
+                 sitio y solo se ve lo que se esta mirando. -->
+            <div class="config-tabs" role="tablist">
+              <button type="button" class="config-tab-btn active" data-config-tab="accounts" data-i18n="accounts_section">Cuentas</button>
+              <button type="button" class="config-tab-btn" data-config-tab="strategies" data-i18n="strategies_section">Estrategias</button>
+              <button type="button" class="config-tab-btn" data-config-tab="general" data-i18n="config_tab_general">General</button>
+              <button type="button" class="config-tab-btn" data-config-tab="danger" data-i18n="danger_zone">Zona de peligro</button>
+            </div>
 
-              <article class="settings-card" id="settingsStrategyCard">
-                <div class="settings-header">
-                  <h3 class="title-with-icon"><i data-lucide="brain"></i><span data-i18n="strategies_section">Estrategias</span></h3>
-                  <p data-i18n="strategies_section_desc">Crea y gestiona tus setups de trading</p>
-                </div>
-                <div class="settings-list-toolbar">
-                  <button id="openNewStrategyModalBtn" class="button button-add" type="button" data-i18n="add_strategy">Nueva estrategia</button>
-                </div>
-                <div id="settingsStrategiesList" class="settings-entity-list" role="list"></div>
-              </article>
-
+            <div class="settings-layout config-tab-panel" data-config-panel="accounts">
               <article class="settings-card" id="settingsAccountCard">
                 <div class="settings-header">
                   <h3 class="title-with-icon"><i data-lucide="wallet"></i><span data-i18n="accounts_section">Cuentas</span></h3>
@@ -7593,13 +7581,38 @@
                   </select>
                 </div>
                 <div class="settings-accounts-tabs" role="tablist">
-                  <button type="button" class="settings-accounts-tab-btn active" id="accountsTabBtnAll" data-accounts-tab="all" data-i18n="accounts_tab_all">Todas</button>
+                  <button type="button" class="settings-accounts-tab-btn active" id="accountsTabBtnActive" data-accounts-tab="active" data-i18n="accounts_tab_active">Activas</button>
+                  <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnAll" data-accounts-tab="all" data-i18n="accounts_tab_all">Todas</button>
                   <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnChallenge" data-accounts-tab="challenge" data-i18n="accounts_tab_challenge">Challenges</button>
                   <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnFunded" data-accounts-tab="funded" data-i18n="accounts_tab_funded">Fondeadas</button>
                   <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnOwnCapital" data-accounts-tab="own_capital" data-i18n="accounts_tab_own_capital">Capital propio</button>
                   <button type="button" class="settings-accounts-tab-btn" id="accountsTabBtnDisabled" data-accounts-tab="disabled" data-i18n="accounts_tab_disabled">Deshabilitadas</button>
                 </div>
                 <div id="settingsAccountsList" class="settings-entity-list" role="list"></div>
+              </article>
+            </div>
+            <div class="settings-layout config-tab-panel" data-config-panel="strategies" hidden>
+              <article class="settings-card" id="settingsStrategyCard">
+                <div class="settings-header">
+                  <h3 class="title-with-icon"><i data-lucide="brain"></i><span data-i18n="strategies_section">Estrategias</span></h3>
+                  <p data-i18n="strategies_section_desc">Crea y gestiona tus setups de trading</p>
+                </div>
+                <div class="settings-list-toolbar">
+                  <button id="openNewStrategyModalBtn" class="button button-add" type="button" data-i18n="add_strategy">Nueva estrategia</button>
+                </div>
+                <div id="settingsStrategiesList" class="settings-entity-list" role="list"></div>
+              </article>
+            </div>
+            <div class="settings-layout config-tab-panel" data-config-panel="general" hidden>
+              <article class="settings-card">
+                <div class="settings-header">
+                  <h3 class="title-with-icon"><i data-lucide="settings"></i><span data-i18n="mode_section">Modo</span></h3>
+                  <p data-i18n="mode_section_desc">Selecciona flujo básico o avanzado</p>
+                </div>
+                <div class="mode-toggle">
+                  <button id="basicModeBtn" class="mode-btn active" type="button" data-i18n="mode_basic">Básico</button>
+                  <button id="proModeBtn" class="mode-btn" type="button" data-i18n="mode_pro">Pro</button>
+                </div>
               </article>
 
               <article class="settings-card" id="configWithdrawalsLinkCard">
@@ -7609,7 +7622,8 @@
                 </div>
                 <button id="goToManagementBtn" class="button button-add" type="button" data-i18n="withdrawals_manage_btn">Gestionar retiros y gastos</button>
               </article>
-
+            </div>
+            <div class="settings-layout config-tab-panel" data-config-panel="danger" hidden>
               <article class="settings-card">
                 <div class="danger-zone">
                   <h3 data-i18n="danger_zone">Zona de peligro</h3>

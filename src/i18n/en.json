@@ -236,6 +236,8 @@
   "accounts_prop_filter_all": "All props",
   "filter_all_account_types": "All types",
   "accounts_tab_all": "All",
+  "accounts_tab_active": "Active",
+  "config_tab_general": "General",
   "accounts_tab_challenge": "Challenges",
   "accounts_tab_funded": "Funded",
   "accounts_tab_own_capital": "Own capital",
