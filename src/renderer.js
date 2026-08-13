@@ -861,6 +861,11 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-mode-rows span{color:var(--text-muted);font-size:.82rem}
 .challenge-mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
 .challenge-verdict{margin-bottom:14px}
+.challenge-policy{margin:12px 0 4px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;
+  background:rgba(255,255,255,.02)}
+.challenge-policy .toggle-row{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:.9rem}
+.challenge-policy .toggle-row input{width:18px;height:18px;flex:0 0 auto}
+.challenge-policy p{margin:0;line-height:1.6}
 .challenge-dist{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 0;padding-top:10px;
   border-top:1px solid var(--border)}
 .challenge-dist strong{color:var(--text)}
@@ -13980,6 +13985,8 @@ function renderChallengePhaseInputs() {
   if (select) select.value = String(cfg.phases.length);
   const countInput = document.getElementById('btChallengeCount');
   if (countInput && document.activeElement !== countInput) countInput.value = String(cfg.accounts || 1);
+  const policyCheck = document.getElementById('btChallengeContinueOnStop');
+  if (policyCheck) policyCheck.checked = cfg.continue_on_consistency_stop !== false;
 
   host.innerHTML = cfg.phases
     .map(
@@ -14005,7 +14012,12 @@ function readChallengeConfigFromDom() {
   }));
   const typed = Number(document.getElementById('btChallengeCount')?.value);
   const accounts = Math.max(1, Math.min(10, typed || Number(getChallengeConfig().accounts) || 1));
-  return { phases: phases.length ? phases : defaultChallengeConfig().phases, accounts };
+  const continueOnStop = document.getElementById('btChallengeContinueOnStop')?.checked !== false;
+  return {
+    phases: phases.length ? phases : defaultChallengeConfig().phases,
+    accounts,
+    continue_on_consistency_stop: continueOnStop,
+  };
 }
 
 function renderBacktestingChallenge(filtered) {
@@ -14039,7 +14051,11 @@ function renderBacktestingChallenge(filtered) {
   const perDay = tradesPerTradingDay(trades);
   // Este bloque responde siempre a "¿paso UN challenge?". Comprar varios es otra pregunta y
   // tiene su propio apartado abajo; mezclarlas en el mismo titular confundía.
-  const sim = simulateChallenge(rValues, cfg.phases, { runs: 3000, tradesPerDay: perDay });
+  const sim = simulateChallenge(rValues, cfg.phases, {
+    runs: 3000,
+    tradesPerDay: perDay,
+    continueOnConsistencyStop: cfg.continue_on_consistency_stop !== false,
+  });
   if (!sim) return;
 
   const toDays = (n) => (n == null || !perDay ? null : Math.ceil(n / perDay));
@@ -14122,6 +14138,7 @@ function renderBacktestingChallenge(filtered) {
   }
 
   renderChallengeRotation(rValues, cfg, perDay, { pct, tone });
+  renderChallengePolicy(rValues, cfg, perDay, { pct });
 
   if (caveat) {
     // El usuario tiene que poder juzgar cuánto fiarse: se dice el tamaño de la muestra y los
@@ -14144,6 +14161,54 @@ function renderBacktestingChallenge(filtered) {
 }
 
 /**
+ * Compara las dos formas de reaccionar al tope de consistencia, para el número de cuentas
+ * elegido: seguir el día en la siguiente cuenta o parar del todo hasta mañana.
+ *
+ * Se enseñan las dos aunque solo una esté activa, porque la pregunta que se hace uno no es
+ * "¿qué pasa con la que tengo puesta?" sino "¿cuál de las dos me conviene?". Con una sola
+ * cuenta o sin consistencia configurada no hay decisión que tomar y el bloque no aparece.
+ */
+function renderChallengePolicy(rValues, cfg, perDay, fmt) {
+  const wrap = document.getElementById('btChallengePolicyWrap');
+  const verdict = document.getElementById('btChallengePolicyVerdict');
+  if (!wrap) return;
+
+  const accounts = Math.max(1, Math.min(10, Number(cfg.accounts) || 1));
+  const hasConsistency = cfg.phases.some((p) => Number(p.consistency) > 0);
+  wrap.hidden = !(hasConsistency && accounts > 1 && perDay > 0);
+  if (wrap.hidden || !verdict) return;
+
+  const run = (continueOnStop) =>
+    simulateChallenge(rValues, cfg.phases, {
+      runs: 1200,
+      tradesPerDay: perDay,
+      accounts,
+      rotateOnLoss: true,
+      continueOnConsistencyStop: continueOnStop,
+    });
+
+  const sigue = run(true);
+  const para = run(false);
+  if (!sigue || !para) return;
+
+  const linea = (nombre, sim) =>
+    `<strong>${nombre}</strong>: pasas los ${accounts} el ${fmt.pct(sim.passAllRate)} de las veces, ` +
+    `en ${sim.medianDaysTotal ?? '—'} días.`;
+
+  // El criterio es "pasar todas las cuentas": es lo que de verdad cambia entre las dos formas.
+  // Los días se dicen aparte porque casi siempre van en contra, y esa es justo la decisión.
+  const diff = sigue.passAllRate - para.passAllRate;
+  const conclusion =
+    Math.abs(diff) < 1
+      ? 'Con tus datos da casi igual: elige por comodidad.'
+      : diff > 0
+        ? 'Con tus datos compensa seguir en la siguiente cuenta.'
+        : 'Con tus datos compensa parar el día: pasas más cuentas, aunque tardes más.';
+
+  verdict.innerHTML = `${linea('Seguir en la siguiente', sigue)}<br>${linea('Parar el día', para)}<br>${conclusion}`;
+}
+
+/**
  * "¿Y si compro varios challenges?" — el usuario escribe cuántos compra y se listan uno a uno,
  * de 1 hasta esa cifra, para ver dónde deja de compensar.
  *
@@ -14163,7 +14228,12 @@ function renderChallengeRotation(rValues, cfg, perDay, fmt) {
   // 600 repeticiones y no 3.000 como el bloque principal: aquí se listan hasta diez escenarios
   // (el doble contando las dos gestiones) y las cifras ya se estabilizan en la segunda decimal,
   // comprobado. Con 1.200 la lista de diez tardaba casi un segundo en redibujarse.
-  const rows = compareChallengeAccounts(rValues, cfg.phases, { runs: 600, tradesPerDay: perDay }, picked);
+  const simOptions = {
+    runs: 600,
+    tradesPerDay: perDay,
+    continueOnConsistencyStop: cfg.continue_on_consistency_stop !== false,
+  };
+  const rows = compareChallengeAccounts(rValues, cfg.phases, simOptions, picked);
   if (!rows.length) {
     host.innerHTML = '';
     return;
@@ -14282,6 +14352,13 @@ function bindChallengeInputs() {
   section.addEventListener('input', (event) => {
     if (!event.target.matches('[data-challenge], [data-challenge-count]')) return;
     redrawSoon();
+  });
+
+  document.getElementById('btChallengeContinueOnStop')?.addEventListener('change', () => {
+    const cfg = readChallengeConfigFromDom();
+    backtestingSettings.challenge_config = cfg;
+    renderBacktestingChallenge(getBacktestingTradesForMetrics());
+    void persistBacktestingSettings();
   });
 
   // Se guarda al soltar el campo y no en cada tecla, para no escribir en Supabase en cada dígito.

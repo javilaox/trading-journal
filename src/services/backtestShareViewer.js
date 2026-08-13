@@ -360,9 +360,15 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     var perDay = tradesPerTradingDay(TRADES);
     // El bloque principal responde siempre a "paso UN challenge"; comprar varios es otra
     // pregunta y tiene su propio apartado debajo.
-    var sim = simulateChallenge(rs, cfg, { runs: 3000, tradesPerDay: perDay });
+    var continueOnStop = payload.challenge.continue_on_consistency_stop !== false;
+    var sim = simulateChallenge(rs, cfg, {
+      runs: 3000, tradesPerDay: perDay, continueOnConsistencyStop: continueOnStop
+    });
     if (!sim) return;
-    CHALLENGE_CTX = { rs: rs, cfg: cfg, perDay: perDay, picked: accounts, pct: pct, tone: tone };
+    CHALLENGE_CTX = {
+      rs: rs, cfg: cfg, perDay: perDay, picked: accounts, pct: pct, tone: tone,
+      continueOnStop: continueOnStop,
+    };
 
     var toDays = function (n) { return (n == null || !perDay) ? null : Math.ceil(n / perDay); };
     var pct = function (v) { return v == null ? '—' : v.toFixed(1) + '%'; };
@@ -452,7 +458,11 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     if (!host || !CHALLENGE_CTX) return;
     var ctx = CHALLENGE_CTX;
     var pct = ctx.pct, tone = ctx.tone, picked = ctx.picked;
-    var rows = compareChallengeAccounts(ctx.rs, ctx.cfg, { runs: 600, tradesPerDay: ctx.perDay }, picked);
+    var rows = compareChallengeAccounts(
+      ctx.rs, ctx.cfg,
+      { runs: 600, tradesPerDay: ctx.perDay, continueOnConsistencyStop: ctx.continueOnStop },
+      picked
+    );
     if (!rows.length) { host.innerHTML = ''; return; }
 
     var current = rows[rows.length - 1];

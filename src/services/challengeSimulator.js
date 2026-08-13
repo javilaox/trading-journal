@@ -41,6 +41,10 @@ function simulateChallenge(rValues, phases, options) {
   var maxTradesPerPhase = opts.maxTradesPerPhase || 1000;
   var accountCount = Math.max(1, Math.round(Number(opts.accounts) || 1));
   var rotateOnLoss = opts.rotateOnLoss === true && accountCount > 1;
+  // Qué hacer cuando la consistencia obliga a parar una cuenta: seguir el día en la siguiente
+  // cuenta (por defecto) o dar el día por terminado en todas. Es una decisión real de gestión y
+  // no hay una respuesta obvia, por eso se puede comparar.
+  var continueOnConsistencyStop = opts.continueOnConsistencyStop !== false;
   // Operaciones por día operado: sin este dato no se pueden simular días y, por tanto, tampoco
   // la regla de consistencia. En ese caso el motor funciona como antes, operación a operación.
   var perDay = Number(opts.tradesPerDay) || 0;
@@ -146,6 +150,11 @@ function simulateChallenge(rValues, phases, options) {
           if (acc.dayPnl >= cap || (acc.dayPnl > 0 && acc.dayPnl + maxR * risk > cap)) {
             acc.blockedToday = true;
             stopsThisRun += 1;
+
+            // Parar en seco: el día se acaba para todas las cuentas. Mañana se sigue donde se
+            // dejó. Es lo contrario a aprovechar el resto del día en otra cuenta.
+            if (!continueOnConsistencyStop) break;
+
             slot -= 1; // el hueco del día lo aprovecha otra cuenta, si la hay
             var otherFree = false;
             for (var j = 0; j < accounts.length; j += 1) {
@@ -281,6 +290,7 @@ function simulateChallenge(rValues, phases, options) {
     sampleSize: rs.length,
     accounts: accountCount,
     rotateOnLoss: rotateOnLoss,
+    continueOnConsistencyStop: continueOnConsistencyStop,
     consistencyIssues: consistencyIssues,
     // Probabilidad de superar cada fase CONDICIONADA a haber llegado a ella.
     phases: phaseStats.map(function (st, i) {
@@ -381,6 +391,7 @@ function defaultChallengeConfig() {
       { target: 5, risk: 1, maxDrawdown: 10, consistency: 0 },
     ],
     accounts: 1,
+    continue_on_consistency_stop: true,
   };
 }
 
@@ -391,9 +402,13 @@ function normalizeChallengeConfig(raw) {
   if (!phases.length) {
     var def = defaultChallengeConfig();
     def.accounts = accounts;
+    def.continue_on_consistency_stop = cfg.continue_on_consistency_stop !== false;
     return def;
   }
   return {
+    // Al tocar el tope de consistencia: seguir el día en la siguiente cuenta (true, por defecto)
+    // o dar el día por terminado en todas (false).
+    continue_on_consistency_stop: cfg.continue_on_consistency_stop !== false,
     phases: phases.slice(0, 3).map(function (p) {
       return {
         target: Number(p && p.target) || 0,

@@ -367,6 +367,10 @@
   var maxTradesPerPhase = opts.maxTradesPerPhase || 1000;
   var accountCount = Math.max(1, Math.round(Number(opts.accounts) || 1));
   var rotateOnLoss = opts.rotateOnLoss === true && accountCount > 1;
+  // Qué hacer cuando la consistencia obliga a parar una cuenta: seguir el día en la siguiente
+  // cuenta (por defecto) o dar el día por terminado en todas. Es una decisión real de gestión y
+  // no hay una respuesta obvia, por eso se puede comparar.
+  var continueOnConsistencyStop = opts.continueOnConsistencyStop !== false;
   // Operaciones por día operado: sin este dato no se pueden simular días y, por tanto, tampoco
   // la regla de consistencia. En ese caso el motor funciona como antes, operación a operación.
   var perDay = Number(opts.tradesPerDay) || 0;
@@ -472,6 +476,11 @@
           if (acc.dayPnl >= cap || (acc.dayPnl > 0 && acc.dayPnl + maxR * risk > cap)) {
             acc.blockedToday = true;
             stopsThisRun += 1;
+
+            // Parar en seco: el día se acaba para todas las cuentas. Mañana se sigue donde se
+            // dejó. Es lo contrario a aprovechar el resto del día en otra cuenta.
+            if (!continueOnConsistencyStop) break;
+
             slot -= 1; // el hueco del día lo aprovecha otra cuenta, si la hay
             var otherFree = false;
             for (var j = 0; j < accounts.length; j += 1) {
@@ -607,6 +616,7 @@
     sampleSize: rs.length,
     accounts: accountCount,
     rotateOnLoss: rotateOnLoss,
+    continueOnConsistencyStop: continueOnConsistencyStop,
     consistencyIssues: consistencyIssues,
     // Probabilidad de superar cada fase CONDICIONADA a haber llegado a ella.
     phases: phaseStats.map(function (st, i) {
@@ -699,9 +709,15 @@
     var perDay = tradesPerTradingDay(TRADES);
     // El bloque principal responde siempre a "paso UN challenge"; comprar varios es otra
     // pregunta y tiene su propio apartado debajo.
-    var sim = simulateChallenge(rs, cfg, { runs: 3000, tradesPerDay: perDay });
+    var continueOnStop = payload.challenge.continue_on_consistency_stop !== false;
+    var sim = simulateChallenge(rs, cfg, {
+      runs: 3000, tradesPerDay: perDay, continueOnConsistencyStop: continueOnStop
+    });
     if (!sim) return;
-    CHALLENGE_CTX = { rs: rs, cfg: cfg, perDay: perDay, picked: accounts, pct: pct, tone: tone };
+    CHALLENGE_CTX = {
+      rs: rs, cfg: cfg, perDay: perDay, picked: accounts, pct: pct, tone: tone,
+      continueOnStop: continueOnStop,
+    };
 
     var toDays = function (n) { return (n == null || !perDay) ? null : Math.ceil(n / perDay); };
     var pct = function (v) { return v == null ? '—' : v.toFixed(1) + '%'; };
@@ -791,7 +807,11 @@
     if (!host || !CHALLENGE_CTX) return;
     var ctx = CHALLENGE_CTX;
     var pct = ctx.pct, tone = ctx.tone, picked = ctx.picked;
-    var rows = compareChallengeAccounts(ctx.rs, ctx.cfg, { runs: 600, tradesPerDay: ctx.perDay }, picked);
+    var rows = compareChallengeAccounts(
+      ctx.rs, ctx.cfg,
+      { runs: 600, tradesPerDay: ctx.perDay, continueOnConsistencyStop: ctx.continueOnStop },
+      picked
+    );
     if (!rows.length) { host.innerHTML = ''; return; }
 
     var current = rows[rows.length - 1];

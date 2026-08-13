@@ -8829,6 +8829,16 @@
                     </p>
                     <!-- No lleva la clase .input a proposito: esa clase es width:100% y estiraba
                          el campo a lo ancho de la tarjeta. Aqui solo caben dos digitos. -->
+                    <!-- Que hacer al topar la consistencia: aprovechar el resto del dia en otra
+                         cuenta o parar del todo. No hay respuesta obvia, por eso se compara. -->
+                    <div class="challenge-policy" id="btChallengePolicyWrap" hidden>
+                      <label class="toggle-row" for="btChallengeContinueOnStop">
+                        <input id="btChallengeContinueOnStop" type="checkbox" checked />
+                        <span>Al tocar el tope de consistencia, seguir el día en la siguiente cuenta</span>
+                      </label>
+                      <p class="muted small" id="btChallengePolicyVerdict"></p>
+                    </div>
+
                     <div class="challenge-count-picker">
                       <label for="btChallengeCount">Compro</label>
                       <input type="number" class="challenge-count-input" id="btChallengeCount"
