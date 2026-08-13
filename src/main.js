@@ -3536,10 +3536,11 @@ ipcMain.handle('get-trade', async (event, id) => {
   const tradeId = Number(id);
   if (!Number.isFinite(tradeId)) return null;
 
+  // Sin usuario resuelto no se devuelve nada: leer por id a secas podría sacar de la caché
+  // local una operación de otra persona que use este mismo ordenador.
   const userId = await resolveUserIdForLocalCache();
-  const row = userId
-    ? db.prepare('SELECT * FROM trades WHERE user_id = ? AND id = ?').get(String(userId), tradeId)
-    : db.prepare('SELECT * FROM trades WHERE id = ?').get(tradeId);
+  if (!userId) return null;
+  const row = db.prepare('SELECT * FROM trades WHERE user_id = ? AND id = ?').get(String(userId), tradeId);
   const localMapped = row ? mapRowToTradeResponse(row) : null;
   const localLegs = parsePositionLegs(localMapped?.position_legs ?? []);
   if (localMapped && (localLegs.length > 0 || isCompositePositionFlag(localMapped.is_composite_position))) {
@@ -4025,14 +4026,18 @@ async function renameTradesField(column, oldName, newName) {
   const col = column === 'strategy' ? 'strategy' : column === 'account' ? 'account' : null;
   if (!col) return { success: false, error: 'INVALID_COLUMN' };
 
-  const nowIso = new Date().toISOString();
-  const info = db.prepare(`UPDATE trades SET ${col} = ?, updated_at = ? WHERE ${col} = ?`).run(n, nowIso, o);
-  const localChanges = Number(info.changes || 0);
-
+  // El filtro por usuario va ANTES de tocar nada. La caché local es un único archivo para todo
+  // el equipo: sin este filtro, renombrar "FTMO 100k" reescribía también las operaciones de
+  // otra persona que hubiera usado la aplicación en este mismo ordenador y tuviera una cuenta
+  // con ese nombre.
   const userId = await getCurrentUserId();
-  if (!userId) {
-    return { success: true, localChanges };
-  }
+  if (!userId) return { success: false, error: 'NO_USER_ID' };
+
+  const nowIso = new Date().toISOString();
+  const info = db
+    .prepare(`UPDATE trades SET ${col} = ?, updated_at = ? WHERE user_id = ? AND ${col} = ?`)
+    .run(n, nowIso, String(userId), o);
+  const localChanges = Number(info.changes || 0);
 
   const { error, data } = await supabase
     .from('trades')

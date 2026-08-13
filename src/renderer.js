@@ -3776,19 +3776,24 @@ const BT_EXCLUDE_SCHEDULE_KEY_PREFIX = 'bt_exclude_out_of_schedule';
  * listas vacías en Supabase y borraría las estrategias del usuario. Por eso existe la bandera
  * de abajo: mientras no se hayan cargado con éxito, no se permite guardar.
  */
+/** Estado inicial de la configuración de backtesting; también es a lo que se vuelve al salir. */
+function emptyBacktestingSettings() {
+  return {
+    challenge_config: null,
+    accounts: [],
+    strategies: [],
+    assets: [],
+    sessions: [],
+    default_account: '',
+    default_strategy: '',
+    default_asset: '',
+    default_risk: 100,
+    default_rr: 2,
+  };
+}
+
 let backtestingSettingsLoaded = false;
-let backtestingSettings = {
-  challenge_config: null,
-  accounts: [],
-  strategies: [],
-  assets: [],
-  sessions: [],
-  default_account: '',
-  default_strategy: '',
-  default_asset: '',
-  default_risk: 100,
-  default_rr: 2
-};
+let backtestingSettings = emptyBacktestingSettings();
 
 /** Filtros dashboard multiselect (solo vista; datos completos en cachedTrades). */
 let selectedDashboardAccounts = new Set(['ALL']);
@@ -18618,11 +18623,27 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     isAppAuthenticated = false;
+    // Se vacía TODO lo que quedó en memoria del usuario que sale. Antes solo se limpiaban las
+    // cuentas, las estrategias y los trades reales: si otra persona iniciaba sesión sin cerrar
+    // la aplicación, podía ver por un momento el backtesting y la gestión del anterior, hasta
+    // que cada vista recargaba sus datos.
     realAccountsCache = [];
     realStrategiesCache = [];
     realStrategiesByName = new Map();
     cachedTrades = [];
     window.cachedTrades = [];
+    cachedBacktestingTrades = [];
+    cachedBacktestingSessions = [];
+    cachedBacktestingMetrics = [];
+    backtestingSettings = emptyBacktestingSettings();
+    backtestingSettingsLoaded = false;
+    withdrawalsCache = [];
+    expensesCache = [];
+    expensePropsCache = [];
+    customExpenseCategoriesCache = null;
+    expenseCategoryIdsByName = new Map();
+    selectedBacktestingSessionIds = ['all'];
+    activeBacktestingSessionId = null;
     selectedDashboardAccounts = new Set(['ALL']);
     selectedDashboardStrategies = new Set(['ALL']);
     void renderDashboardFilters([]);
