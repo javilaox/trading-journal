@@ -117,6 +117,10 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   .sheet-item{width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);
        color:var(--text);font-size:.95rem;font-family:inherit;padding:13px 4px}
   .sheet-item.on{color:var(--accent);font-weight:700}
+  .detail-row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .detail-row:last-child{border-bottom:none}
+  .detail-row span{color:var(--muted);font-size:.82rem}
+  .detail-row strong{text-align:right;font-size:.92rem;word-break:break-word}
   .filters-card{padding:10px 14px}
   .filters-card label{margin-bottom:4px}
   /* ── Calendario del mes ── */
@@ -362,6 +366,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       </div>
       <div class="field"><label for="mgNote">Nota (opcional)</label><input id="mgNote" /></div>
       <button class="btn" id="mgSaveBtn">Guardar</button>
+      <button class="btn secondary hidden" id="mgCancelBtn">Cancelar edición</button>
     </div>
 
     <div class="card">
@@ -369,6 +374,22 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       <div id="manageList"><p class="muted small">Cargando…</p></div>
     </div>
   </section>
+
+<!-- Ficha de un retiro o gasto: se abre al tocarlo en la lista y muestra todos sus datos,
+     porque en la fila solo caben tres. Desde aquí se edita o se borra. -->
+<div class="sheet hidden" id="detailSheet">
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <strong id="detailTitle">Detalle</strong>
+      <button type="button" class="link" id="detailClose">Cerrar</button>
+    </div>
+    <div class="sheet-list">
+      <div id="detailBody"></div>
+      <button class="btn secondary" id="detailEditBtn" style="margin-top:14px">Editar</button>
+      <button class="btn danger" id="detailDeleteBtn">Borrar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Hoja inferior reutilizable para las listas simples (prop, categoría): misma que la de
      activos pero sin grupos. Una sola en el documento, se rellena al abrirla. -->
@@ -1256,19 +1277,144 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   });
 
   $('segManage').addEventListener('click', function () {
-    syncManageForm();
+    // Un gasto y un retiro no tienen los mismos campos: si se estaba editando uno, cambiar de
+    // pestaña cancela la edición en vez de arrastrar datos de un tipo al otro. Si no se estaba
+    // editando no se toca nada: vaciar el formulario por cambiar de pestaña sería una faena.
+    if (MOVEMENT_EDITING) cancelMovementEdit();
+    else syncManageForm();
     renderManage();
   });
 
+  /* ───────── Ficha de un movimiento: ver, editar, borrar ─────────
+   * En la fila solo caben tres datos; el resto (categoría, tamaño, nota) solo se puede
+   * comprobar abriéndola. Y editar es tan necesario como borrar: hasta ahora, corregir un
+   * importe mal tecleado obligaba a borrar y volver a crear, con lo que se perdía la fecha
+   * original del registro.
+   */
+
+  var MOVEMENT_EDITING = null;   // fila que se está editando, o null si es un alta
+  var DETAIL_MOVEMENT = null;    // fila abierta en la ficha
+
+  function movementLabel(plural) {
+    if (plural) return isExpenses() ? 'gastos' : 'retiros';
+    return isExpenses() ? 'gasto' : 'retiro';
+  }
+
+  function openMovementDetail(id) {
+    var list = isExpenses() ? MOVEMENTS.expenses : MOVEMENTS.withdrawals;
+    var m = list.filter(function (x) { return Number(x.id) === Number(id); })[0];
+    if (!m) return;
+    DETAIL_MOVEMENT = m;
+
+    var expenses = isExpenses();
+    var rows = [
+      ['Prop', m.account_name || '—'],
+      ['Importe', (expenses ? '-' : '+') + (Number(m.amount) || 0).toFixed(2) + '€'],
+      ['Fecha', displayDate(m.date)],
+    ];
+    if (expenses) {
+      rows.push(['Categoría', m.category || '—']);
+      rows.push(['Tamaño de cuenta', m.account_size || '—']);
+    }
+    rows.push(['Nota', m.note || '—']);
+    if (m.created_at) rows.push(['Registrado', displayDate(String(m.created_at).slice(0, 10))]);
+
+    $('detailTitle').textContent = expenses ? 'Detalle del gasto' : 'Detalle del retiro';
+    $('detailBody').innerHTML = rows.map(function (r) {
+      return '<div class="detail-row"><span>' + escapeHtml(r[0]) + '</span><strong>' +
+             escapeHtml(r[1]) + '</strong></div>';
+    }).join('');
+    $('detailSheet').classList.remove('hidden');
+  }
+
+  function closeMovementDetail() {
+    $('detailSheet').classList.add('hidden');
+    DETAIL_MOVEMENT = null;
+  }
+
+  $('detailClose').addEventListener('click', closeMovementDetail);
+  $('detailSheet').addEventListener('click', function (e) {
+    if (e.target === $('detailSheet')) closeMovementDetail();
+  });
+
+  $('detailEditBtn').addEventListener('click', function () {
+    if (!DETAIL_MOVEMENT) return;
+    startMovementEdit(DETAIL_MOVEMENT);
+    closeMovementDetail();
+  });
+
+  $('detailDeleteBtn').addEventListener('click', function () {
+    if (!DETAIL_MOVEMENT) return;
+    var id = DETAIL_MOVEMENT.id;
+    closeMovementDetail();
+    deleteMovement(id);
+  });
+
+  function startMovementEdit(m) {
+    MOVEMENT_EDITING = m;
+    setProp(m.account_name || '');
+    setCategory(m.category || '');
+    $('mgAmount').value = m.amount != null ? m.amount : '';
+    $('mgDate').value = String(m.date || '').slice(0, 10);
+    $('mgNote').value = m.note || '';
+    // El tamaño guardado puede no estar en la lista (un gasto antiguo con "50k" escrito a mano,
+    // o un tamaño que se retiró de las opciones). Se añade solo para este registro: si no, al
+    // guardar los cambios el gasto perdería el tamaño sin que nadie lo note.
+    setSizeValue(m.account_size || '');
+    syncManageForm();
+    window.scrollTo(0, 0);
+  }
+
+  /**
+   * Deja el formulario listo para un alta.
+   *
+   * "keepProp" es la diferencia entre guardar y cancelar: tras guardar se conserva la prop
+   * porque lo normal es meter varios movimientos seguidos de la misma; al cancelar una edición
+   * se limpia todo, que es lo que se espera de "cancelar".
+   */
+  function resetMovementForm(keepProp) {
+    MOVEMENT_EDITING = null;
+    if (!keepProp) setProp('');
+    setCategory('');
+    $('mgAmount').value = '';
+    $('mgNote').value = '';
+    $('mgSize').value = '';
+    $('mgDate').value = todayIso();
+    syncManageForm();
+  }
+
+  function cancelMovementEdit() {
+    resetMovementForm(false);
+  }
+
+  function setSizeValue(value) {
+    var select = $('mgSize');
+    var wanted = String(value || '');
+    if (wanted && ![].some.call(select.options, function (o) { return o.value === wanted; })) {
+      var option = document.createElement('option');
+      option.value = wanted;
+      option.textContent = wanted + ' (antiguo)';
+      select.appendChild(option);
+    }
+    select.value = wanted;
+  }
+
+  $('mgCancelBtn').addEventListener('click', cancelMovementEdit);
+
   function syncManageForm() {
     var expenses = isExpenses();
+    var editing = Boolean(MOVEMENT_EDITING);
+    $('manageFormTitle').textContent = editing
+      ? (expenses ? 'Editar gasto' : 'Editar retiro')
+      : (expenses ? 'Nuevo gasto' : 'Nuevo retiro');
+    $('mgSaveBtn').textContent = editing ? 'Guardar cambios' : 'Guardar';
+    $('mgCancelBtn').classList.toggle('hidden', !editing);
     if (!$('mgSize').options.length) {
       // Los mismos tamaños que ofrece el ordenador, para que la columna no acabe con "50k",
       // "50K" y "50.000" conviviendo.
       $('mgSize').innerHTML = '<option value="">Sin especificar</option>' +
         ACCOUNT_SIZES.map(function (v) { return '<option value="' + v + '">' + v + '</option>'; }).join('');
     }
-    $('manageFormTitle').textContent = expenses ? 'Nuevo gasto' : 'Nuevo retiro';
     $('manageListTitle').textContent = expenses ? 'Últimos gastos' : 'Últimos retiros';
     document.querySelectorAll('.expense-only').forEach(function (el) {
       el.classList.toggle('hidden', !expenses);
@@ -1346,22 +1492,23 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       if (expenses && m.category) meta.push(escapeHtml(m.category));
       if (expenses && m.account_size) meta.push(escapeHtml(m.account_size));
       if (m.note) meta.push(escapeHtml(m.note));
-      return '<div class="trade">' +
+      return '<div class="trade" data-movement="' + m.id + '">' +
         '<div class="trade-main"><strong>' + escapeHtml(m.account_name || '—') + '</strong>' +
         '<small>' + meta.join(' · ') + '</small></div>' +
         '<div class="trade-pnl ' + tone + '">' + sign + (Number(m.amount) || 0).toFixed(2) + '€</div>' +
-        '<button type="button" class="link mg-del" data-id="' + m.id + '" style="color:var(--red);padding:6px 4px">Borrar</button>' +
       '</div>';
     }).join('');
 
-    host.querySelectorAll('.mg-del').forEach(function (btn) {
-      btn.addEventListener('click', function () { deleteMovement(Number(btn.getAttribute('data-id'))); });
+    host.querySelectorAll('[data-movement]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        openMovementDetail(Number(row.getAttribute('data-movement')));
+      });
     });
   }
 
   async function deleteMovement(id) {
     var expenses = isExpenses();
-    if (!window.confirm('¿Borrar este ' + (expenses ? 'gasto' : 'retiro') + '?')) return;
+    if (!window.confirm('¿Borrar este ' + movementLabel() + '?')) return;
     var table = expenses ? 'real_account_expenses' : 'real_account_withdrawals';
     var now = new Date().toISOString();
     // Borrado suave, igual que en el ordenador: así su sincronización ve el cambio y lo aplica.
@@ -1369,6 +1516,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       .eq('id', id).eq('user_id', USER.id);
     if (out.error) { toast('No se pudo borrar: ' + out.error.message, 'err'); return; }
     toast('Eliminado', 'ok');
+    if (MOVEMENT_EDITING && Number(MOVEMENT_EDITING.id) === Number(id)) cancelMovementEdit();
     await loadManage();
   }
 
@@ -1393,18 +1541,36 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       row.account_size = ($('mgSize').value || '').trim() || null;
     }
 
+    var table = expenses ? 'real_account_expenses' : 'real_account_withdrawals';
     var btn = $('mgSaveBtn');
-    btn.disabled = true;
-    var out = await db.from(expenses ? 'real_account_expenses' : 'real_account_withdrawals').insert(row);
+    var out;
+
+    if (MOVEMENT_EDITING) {
+      // Confirmación solo al editar: crear de más se arregla borrando, pero machacar un
+      // registro que ya existía no se puede deshacer.
+      if (!window.confirm('¿Guardar los cambios de este ' + movementLabel() + '?')) return;
+      var patch = {
+        account_name: row.account_name,
+        amount: row.amount,
+        date: row.date,
+        note: row.note,
+        updated_at: row.updated_at,
+      };
+      if (expenses) {
+        patch.category = row.category;
+        patch.account_size = row.account_size;
+      }
+      btn.disabled = true;
+      out = await db.from(table).update(patch).eq('id', MOVEMENT_EDITING.id).eq('user_id', USER.id);
+    } else {
+      btn.disabled = true;
+      out = await db.from(table).insert(row);
+    }
     btn.disabled = false;
     if (out.error) { toast('No se pudo guardar: ' + out.error.message, 'err'); return; }
 
-    toast(expenses ? 'Gasto guardado' : 'Retiro guardado', 'ok');
-    $('mgAmount').value = '';
-    $('mgNote').value = '';
-    setCategory('');
-    $('mgSize').value = '';
-    $('mgPropBtn').focus();
+    toast(MOVEMENT_EDITING ? 'Cambios guardados' : (expenses ? 'Gasto guardado' : 'Retiro guardado'), 'ok');
+    resetMovementForm(true);
     await loadManage();
   });
 
