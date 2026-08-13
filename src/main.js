@@ -1411,7 +1411,30 @@ ipcMain.handle('delete-real-account-local', async (_event, clientUuidOrName) => 
   return { success: true };
 });
 
-function resolveRealAccountMetaForWithdrawal(userId, accountName) {
+/**
+ * Cuenta a la que se asocia un movimiento de Gestión.
+ *
+ * Manda el vínculo explícito (`account_client_uuid`), que es el que se guarda al crear la cuenta
+ * desde la compra de un challenge. Solo si no lo hay se intenta adivinar por el nombre, que es
+ * el comportamiento antiguo y falla casi siempre en Gestión: ahí el nombre que se guarda es el
+ * de la PROP ("Lucid Trading"), no el de la cuenta ("Lucid Trading 50K 4821").
+ */
+function resolveRealAccountMetaForWithdrawal(userId, accountName, explicitClientUuid = null) {
+  const explicit = String(explicitClientUuid || '').trim();
+  if (explicit) {
+    const row = db
+      .prepare(
+        `SELECT remote_id, client_uuid FROM real_accounts
+         WHERE user_id = ? AND client_uuid = ? LIMIT 1`
+      )
+      .get(String(userId), explicit);
+    return {
+      account_id: row?.remote_id ? String(row.remote_id) : null,
+      // Se conserva aunque la cuenta aún no esté en local: el vínculo lo puso quien la creó.
+      account_client_uuid: row?.client_uuid ? String(row.client_uuid) : explicit,
+    };
+  }
+
   const name = String(accountName || '').trim();
   if (!name) return { account_id: null, account_client_uuid: null };
   const row = db
@@ -1470,6 +1493,7 @@ ipcMain.handle('add-withdrawal-local', async (_event, raw) => {
     user_id: String(userId),
     client_uuid: clientUuid,
     account_id: accountMeta.account_id,
+    account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     amount: normalized.amount,
     date: normalized.date,
@@ -1558,6 +1582,7 @@ ipcMain.handle('update-withdrawal-local', async (_event, raw) => {
     client_uuid: String(existing.client_uuid),
     remote_id: existing.remote_id ? String(existing.remote_id) : null,
     account_id: accountMeta.account_id,
+    account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     amount: normalized.amount,
     date: normalized.date,
@@ -1629,8 +1654,8 @@ ipcMain.handle('delete-withdrawal-local', async (_event, idOrClientUuid) => {
   return { success: true };
 });
 
-function resolveRealAccountMetaForExpense(userId, accountName) {
-  return resolveRealAccountMetaForWithdrawal(userId, accountName);
+function resolveRealAccountMetaForExpense(userId, accountName, explicitClientUuid = null) {
+  return resolveRealAccountMetaForWithdrawal(userId, accountName, explicitClientUuid);
 }
 
 ipcMain.handle('get-expenses-local', async () => {
@@ -1647,7 +1672,11 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
   const normalized = normalizeExpenseInput({ ...raw, client_uuid: clientUuid }, userId);
   if (normalized.error) return { success: false, error: normalized.error };
 
-  const accountMeta = resolveRealAccountMetaForExpense(userId, normalized.account_name);
+  const accountMeta = resolveRealAccountMetaForExpense(
+    userId,
+    normalized.account_name,
+    normalized.account_client_uuid
+  );
   const ts = nowIso();
 
   const info = db
@@ -1675,6 +1704,7 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
     user_id: String(userId),
     client_uuid: clientUuid,
     account_id: accountMeta.account_id,
+    account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     account_size: normalized.account_size,
     amount: normalized.amount,
@@ -1732,7 +1762,11 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
   );
   if (normalized.error) return { success: false, error: normalized.error };
 
-  const accountMeta = resolveRealAccountMetaForExpense(userId, normalized.account_name);
+  const accountMeta = resolveRealAccountMetaForExpense(
+    userId,
+    normalized.account_name,
+    normalized.account_client_uuid
+  );
   const ts = nowIso();
 
   db.prepare(
@@ -1770,6 +1804,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
     client_uuid: String(existing.client_uuid),
     remote_id: existing.remote_id ? String(existing.remote_id) : null,
     account_id: accountMeta.account_id,
+    account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     account_size: normalized.account_size,
     amount: normalized.amount,
@@ -3203,14 +3238,14 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
     supabase
       .from('real_account_withdrawals')
       .select(
-        'id, user_id, account_id, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
+        'id, user_id, account_id, account_client_uuid, account_name, client_uuid, amount, date, note, created_at, updated_at, deleted_at'
       )
       .eq('user_id', String(userId))
       .is('deleted_at', null),
     supabase
       .from('real_account_expenses')
       .select(
-        'id, user_id, account_id, account_name, account_size, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
+        'id, user_id, account_id, account_client_uuid, account_name, account_size, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
       )
       .eq('user_id', String(userId))
       .is('deleted_at', null),

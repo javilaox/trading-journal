@@ -82,6 +82,9 @@ function supabaseRowFromPayload(payload) {
     user_id: String(payload.user_id),
     client_uuid: payload.client_uuid ? String(payload.client_uuid) : null,
     account_id: payload.account_id ? String(payload.account_id) : null,
+    // El vínculo con la cuenta viaja por client_uuid: es lo único que se conoce sin conexión,
+    // porque el id remoto no existe hasta que la cuenta se sincroniza.
+    account_client_uuid: payload.account_client_uuid ? String(payload.account_client_uuid) : null,
     account_name: String(payload.account_name || ''),
     amount: Number(payload.amount) || 0,
     date: String(payload.date || '').slice(0, 10),

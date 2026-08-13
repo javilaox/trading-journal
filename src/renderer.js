@@ -8305,6 +8305,16 @@ function renderExpensesTable(list) {
       <td>${escapeHtmlChipText(formatDateEs(e.date))}</td>
       <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
       <td>${escapeHtmlChipText(e.account_size || '—')}</td>
+      <td>${
+        // Cuenta creada a partir de este gasto, si la hubo: es lo que hace visible la relación
+        // sin tener que abrir nada.
+        (() => {
+          const linked = getAccountForExpense(e);
+          return linked
+            ? `<span class="linked-account" title="Cuenta creada con este gasto">${escapeHtmlChipText(linked.name)}</span>`
+            : '—';
+        })()
+      }</td>
       <td>${escapeHtmlChipText(e.category || '—')}</td>
       <td class="wd-amount wd-amount-expense">${formatExpenseEuro(e.amount)}</td>
       <td>${escapeHtmlChipText(e.note || '—')}</td>
@@ -8316,7 +8326,7 @@ function renderExpensesTable(list) {
   };
 
   buildMovementDateGroups(list).forEach((group, index) => {
-    appendMovementGroup(tbody, group, 7, formatExpenseEuro, renderRow, index < 2, 'wd-amount-expense');
+    appendMovementGroup(tbody, group, 8, formatExpenseEuro, renderRow, index < 2, 'wd-amount-expense');
   });
 
   tbody.querySelectorAll('[data-expense-edit]').forEach((btn) => {
@@ -8526,7 +8536,21 @@ async function createAccountFromExpense({ prop, size, accountNumber }) {
   }
 
   await loadAccounts();
-  return name;
+  return { name, client_uuid: res.client_uuid };
+}
+
+/** Gastos asociados a una cuenta concreta (por el vínculo estable, no por el nombre). */
+function getExpensesForAccount(account) {
+  const uuid = String(account?.client_uuid || '').trim();
+  if (!uuid) return [];
+  return expensesCache.filter((e) => String(e.account_client_uuid || '') === uuid);
+}
+
+/** Cuenta asociada a un gasto, si la hay. */
+function getAccountForExpense(expense) {
+  const uuid = String(expense?.account_client_uuid || '').trim();
+  if (!uuid) return null;
+  return getAccounts().find((a) => String(a.client_uuid || '') === uuid) || null;
 }
 
 async function saveExpenseAction() {
@@ -8557,6 +8581,9 @@ async function saveExpenseAction() {
       id: editingExpenseId,
       client_uuid: existing?.client_uuid,
       ...payload,
+      // El vínculo con la cuenta se conserva al editar: si no se reenvía, se perdería y el
+      // gasto dejaría de aparecer asociado a la cuenta que se creó con él.
+      account_client_uuid: existing?.account_client_uuid || null,
     });
   } else {
     res = await backend.addExpenseLocal(payload);
@@ -8576,18 +8603,36 @@ async function saveExpenseAction() {
   await refreshExpensesUI();
   renderManagementBalanceBanner();
 
-  let createdAccountName = null;
+  let createdAccount = null;
   if (createAccount) {
-    createdAccountName = await createAccountFromExpense({
+    createdAccount = await createAccountFromExpense({
       prop: account,
       size: accountSize,
       accountNumber,
     });
+
+    // Se enlaza el gasto con la cuenta recién creada. El vínculo se guarda en el gasto (y no al
+    // revés) porque una cuenta puede acumular varios gastos: la compra, un reset, la activación.
+    if (createdAccount?.client_uuid) {
+      const savedId = res?.id ?? res?.expense?.id ?? null;
+      const savedUuid = res?.client_uuid ?? res?.expense?.client_uuid ?? null;
+      if (savedId != null || savedUuid) {
+        const link = await backend.updateExpenseLocal({
+          id: savedId,
+          client_uuid: savedUuid,
+          ...payload,
+          account_client_uuid: createdAccount.client_uuid,
+        });
+        if (!link?.success) console.warn('[gastos] no se pudo enlazar el gasto con la cuenta', link);
+        if (backend.syncPendingChanges) void backend.syncPendingChanges();
+        await refreshExpensesUI();
+      }
+    }
   }
 
   showToast(
-    createdAccountName
-      ? `Gasto guardado y cuenta "${createdAccountName}" creada`
+    createdAccount
+      ? `Gasto guardado y cuenta "${createdAccount.name}" creada`
       : t('expenses_saved', 'Gasto guardado'),
     'success'
   );
@@ -9467,6 +9512,17 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
               <div class="settings-entity-stat" title="Solo retiros vinculados a esta cuenta">Retirado (cuenta)<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
               <div class="settings-entity-stat" title="Gastos de la prop (evaluaciones, resets...), no de esta cuenta en concreto">Gastado (prop)<strong>${formatNegativeEuro(expenseStats.spent)}</strong></div>
+              ${
+                // Gastos asociados a ESTA cuenta (la compra con la que se creó, un reset
+                // posterior...). Es la otra mitad del vínculo: desde el gasto se ve la cuenta y
+                // desde la cuenta, lo que ha costado.
+                (() => {
+                  const linked = getExpensesForAccount(account);
+                  if (!linked.length) return '';
+                  const total = linked.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+                  return `<div class="settings-entity-stat" title="Gastos creados junto a esta cuenta">Coste de la cuenta<strong>${formatNegativeEuro(total)} <small>(${linked.length})</small></strong></div>`;
+                })()
+              }
               <div class="settings-entity-stat" title="Capital + PnL de sus trades − retiros vinculados a esta cuenta">Balance est.<strong>${formatWithdrawalEuro(balance)}</strong></div>
             </div>
             ${badges.length ? `<div class="settings-entity-badges">${badges.join('')}</div>` : ''}

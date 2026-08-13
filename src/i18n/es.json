@@ -458,6 +458,8 @@
   "expenses_save_btn": "Guardar cambios",
   "expenses_list_title": "Listado de gastos",
   "expenses_col_category": "Categoría",
+  "expenses_col_linked_account": "Cuenta creada",
+  "accounts_linked_expenses": "gastos asociados",
   "expenses_empty": "Sin gastos",
   "expenses_analytics_title": "Estadísticas de gastos",
   "expenses_filter_prop": "Prop",

@@ -553,7 +553,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
   /* ─────────────────────── Cuentas y estrategias ─────────────────────── */
 
   async function loadCatalogs() {
-    var accRes = await db.from('real_accounts').select('id,name,disabled_by_max_dd').order('name');
+    var accRes = await db.from('real_accounts').select('id,client_uuid,name,disabled_by_max_dd').order('name');
     var strRes = await db.from('real_strategies').select('id,name,custom_metrics,is_active').order('name');
     var propRes = await db.from('expense_props').select('id,name').is('deleted_at', null).order('name');
     var catRes = await db.from('expense_categories').select('id,name').is('deleted_at', null).order('name');
@@ -1351,6 +1351,10 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       rows.push(['Categoría', m.category || '—']);
       rows.push(['Tamaño de cuenta', m.account_size || '—']);
     }
+    if (expenses && m.account_client_uuid) {
+      var cuenta = ACCOUNTS.filter(function (a) { return a.client_uuid === m.account_client_uuid; })[0];
+      rows.push(['Cuenta creada', cuenta ? cuenta.name : 'Sí (no está en la lista)']);
+    }
     rows.push(['Nota', m.note || '—']);
     if (m.created_at) rows.push(['Registrado', displayDate(String(m.created_at).slice(0, 10))]);
 
@@ -1510,8 +1514,13 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     });
     if (!name) return null;
 
+    // client_uuid es la identidad estable que usa la aplicación de escritorio, y también el
+    // vínculo que se guarda en el gasto. Sin él, la cuenta creada desde el móvil sería una
+    // cuenta huérfana para el ordenador.
+    var clientUuid = cryptoUuid();
     var out = await db.from('real_accounts').insert({
       user_id: USER.id,
+      client_uuid: clientUuid,
       name: name,
       prop_name: prop || null,
       account_number: accountNumber || null,
@@ -1525,7 +1534,7 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       return null;
     }
     await loadCatalogs();
-    return name;
+    return { name: name, client_uuid: clientUuid };
   }
 
   async function loadManage() {
@@ -1676,7 +1685,8 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
       out = await db.from(table).update(patch).eq('id', MOVEMENT_EDITING.id).eq('user_id', USER.id);
     } else {
       btn.disabled = true;
-      out = await db.from(table).insert(row);
+      // Se pide el id de vuelta para poder enlazar la cuenta con este gasto justo después.
+      out = await db.from(table).insert(row).select('id');
     }
     btn.disabled = false;
     if (out.error) { toast('No se pudo guardar: ' + out.error.message, 'err'); return; }
@@ -1684,10 +1694,17 @@ function buildMobileHtml({ supabaseUrl, supabaseAnonKey }) {
     var creada = null;
     if (!MOVEMENT_EDITING && expenses && $('mgCreateAccount').checked) {
       creada = await createAccountForExpense(row.account_name, row.account_size, ($('mgAccountNumber').value || '').trim());
+      // El vínculo se guarda en el gasto: una cuenta puede acumular varios (compra, reset...).
+      if (creada && out.data && out.data[0]) {
+        await db.from('real_account_expenses')
+          .update({ account_client_uuid: creada.client_uuid, updated_at: new Date().toISOString() })
+          .eq('id', out.data[0].id)
+          .eq('user_id', USER.id);
+      }
     }
 
     toast(
-      creada ? 'Gasto guardado y cuenta "' + creada + '" creada'
+      creada ? 'Gasto guardado y cuenta "' + creada.name + '" creada'
         : (MOVEMENT_EDITING ? 'Cambios guardados' : (expenses ? 'Gasto guardado' : 'Retiro guardado')),
       'ok'
     );
