@@ -14153,6 +14153,8 @@ function renderBacktestingChallenge(filtered) {
         : '') +
       `Calculado repartiendo al azar 3.000 veces las ${sim.sampleSize} operaciones de este backtest, ` +
       `al ritmo real de ${perDay ? perDay.toFixed(1) : '—'} operaciones por día operado. ` +
+      '<strong>No se respeta el orden en que ocurrieron</strong>: se barajan, así que si tu sistema ' +
+      'encadena rachas (días buenos seguidos de días buenos), aquí esas rachas no aparecen. ' +
       'Da por hecho que tus próximas operaciones se parecerán a estas y son independientes entre sí. ' +
       'No tiene en cuenta el límite de pérdida diaria ni el mínimo de días operados que exija tu prop.';
   }
@@ -14534,9 +14536,7 @@ function renderBacktestingMetricExplorer(filtered) {
 
   const body = document.getElementById('btExplorerBody');
   if (body) {
-    const rows = [...subset]
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-      .slice(0, 100);
+    const rows = sortTradesChronologically(subset).slice(0, 100);
     body.innerHTML = rows.length
       ? rows
           .map((t) => {
@@ -15043,6 +15043,22 @@ function bindBacktestingDayTradeEditHandlers() {
   });
 }
 
+/**
+ * Orden cronológico de una lista de operaciones: fecha y, dentro del día, hora de entrada.
+ *
+ * Existe para que todas las vistas ordenen igual. Sin él, unas listas iban por fecha y dentro
+ * del día quedaban en el orden en que se metieron, así que dos pantallas del mismo día podían
+ * enseñar las operaciones en distinto orden. Las que no tienen hora van al final de su día.
+ */
+function sortTradesChronologically(list) {
+  const key = (t) =>
+    `${String(t?.date || '').slice(0, 10)} ${String(t?.entry_time || '99:99').slice(0, 5)}`;
+  return [...(list || [])].sort((a, b) => {
+    const diff = key(a).localeCompare(key(b));
+    return diff !== 0 ? diff : String(a?.id || '').localeCompare(String(b?.id || ''));
+  });
+}
+
 function renderBacktestingDayTrades() {
   const wrap = document.getElementById('backtestingDayTrades');
   const lbl = document.getElementById('backtestingSelectedDateLabel');
@@ -15055,7 +15071,9 @@ function renderBacktestingDayTrades() {
     return;
   }
   if (lbl) lbl.textContent = formatDateEs(dateStr);
-  const dayTrades = pool.filter((t) => (t.date || '').slice(0, 10) === dateStr);
+  const dayTrades = sortTradesChronologically(
+    pool.filter((t) => (t.date || '').slice(0, 10) === dateStr)
+  );
   wrap.innerHTML = '';
   if (!dayTrades.length) {
     wrap.innerHTML = '<p class="muted-label">Sin operaciones este día.</p>';
@@ -16366,8 +16384,7 @@ function openBacktestingOutsideScheduleModal() {
   const body = document.getElementById('btOutsideBody');
   if (body) {
     body.innerHTML = outside.length
-      ? [...outside]
-          .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      ? sortTradesChronologically(outside)
           .map((t) => {
             const pnl = getBacktestingTradePnlEuros(t);
             const r = getBacktestingTradeRValue(t);

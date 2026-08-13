@@ -784,7 +784,8 @@
         ? 'La <strong>consistencia</strong> actúa como tope de beneficio del día: con un ' + consistency +
           '% ningún día puede aportar más de esa parte del objetivo, así que hay que parar aunque el sistema siga dando señales.<br>'
         : '') +
-      'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest. ' +
+      'Calculado repartiendo al azar 3.000 veces las ' + sim.sampleSize + ' operaciones de este backtest, ' +
+      'sin respetar el orden en que ocurrieron. ' +
       'Da por hecho que las próximas se parecerán a estas. No incluye el límite de pérdida diaria ' +
       'ni el mínimo de días operados que exija cada prop.';
 
@@ -1015,9 +1016,15 @@
     return dd;
   }
 
+  /* Orden cronologico: fecha y, dentro del dia, hora de entrada. Mismo criterio que la
+     aplicacion; si aqui se ordenara solo por fecha, la curva de capital del enlace podria
+     dibujar el mismo dia en distinto orden que la del ordenador. */
   function ordered(list) {
+    var key = function (t) {
+      return String(t.date || '').slice(0, 10) + ' ' + String(t.entry_time || '99:99').slice(0, 5);
+    };
     return list.slice().sort(function (a, b) {
-      return String(a.date).localeCompare(String(b.date)) || Number(a.id || 0) - Number(b.id || 0);
+      return key(a).localeCompare(key(b)) || Number(a.id || 0) - Number(b.id || 0);
     });
   }
 
