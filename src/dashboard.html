@@ -1319,6 +1319,10 @@
         margin: 0 0 var(--space-md) 0;
       }
       .settings-layout { display:grid; gap: var(--space-lg); }
+      /* El panel oculto tiene que ganarle a .settings-layout: un display declarado en CSS pisa
+         al display:none que el navegador aplica por el atributo hidden, y por eso las cuatro
+         pestañas se veían a la vez. El selector con [hidden] tiene más peso y lo corrige. */
+      .config-tab-panel[hidden] { display: none; }
       .settings-card {
         background: var(--card-bg);
         border: 1px solid var(--border);
@@ -7558,13 +7562,13 @@
                  que bajar hasta el final para llegar a la zona de peligro. Cada bloque tiene su
                  sitio y solo se ve lo que se esta mirando. -->
             <div class="config-tabs" role="tablist">
-              <button type="button" class="config-tab-btn active" data-config-tab="accounts" data-i18n="accounts_section">Cuentas</button>
-              <button type="button" class="config-tab-btn" data-config-tab="strategies" data-i18n="strategies_section">Estrategias</button>
-              <button type="button" class="config-tab-btn" data-config-tab="general" data-i18n="config_tab_general">General</button>
-              <button type="button" class="config-tab-btn" data-config-tab="danger" data-i18n="danger_zone">Zona de peligro</button>
+              <button type="button" class="config-tab-btn active" data-config-tab="accounts" role="tab" aria-selected="true" aria-controls="configPanel-accounts" data-i18n="accounts_section">Cuentas</button>
+              <button type="button" class="config-tab-btn" data-config-tab="strategies" role="tab" aria-selected="false" aria-controls="configPanel-strategies" data-i18n="strategies_section">Estrategias</button>
+              <button type="button" class="config-tab-btn" data-config-tab="general" role="tab" aria-selected="false" aria-controls="configPanel-general" data-i18n="config_tab_general">General</button>
+              <button type="button" class="config-tab-btn" data-config-tab="danger" role="tab" aria-selected="false" aria-controls="configPanel-danger" data-i18n="danger_zone">Zona de peligro</button>
             </div>
 
-            <div class="settings-layout config-tab-panel" data-config-panel="accounts">
+            <div class="settings-layout config-tab-panel" data-config-panel="accounts" id="configPanel-accounts" role="tabpanel">
               <article class="settings-card" id="settingsAccountCard">
                 <div class="settings-header">
                   <h3 class="title-with-icon"><i data-lucide="wallet"></i><span data-i18n="accounts_section">Cuentas</span></h3>
@@ -7591,7 +7595,7 @@
                 <div id="settingsAccountsList" class="settings-entity-list" role="list"></div>
               </article>
             </div>
-            <div class="settings-layout config-tab-panel" data-config-panel="strategies" hidden>
+            <div class="settings-layout config-tab-panel" data-config-panel="strategies" id="configPanel-strategies" role="tabpanel" hidden>
               <article class="settings-card" id="settingsStrategyCard">
                 <div class="settings-header">
                   <h3 class="title-with-icon"><i data-lucide="brain"></i><span data-i18n="strategies_section">Estrategias</span></h3>
@@ -7603,7 +7607,7 @@
                 <div id="settingsStrategiesList" class="settings-entity-list" role="list"></div>
               </article>
             </div>
-            <div class="settings-layout config-tab-panel" data-config-panel="general" hidden>
+            <div class="settings-layout config-tab-panel" data-config-panel="general" id="configPanel-general" role="tabpanel" hidden>
               <article class="settings-card">
                 <div class="settings-header">
                   <h3 class="title-with-icon"><i data-lucide="settings"></i><span data-i18n="mode_section">Modo</span></h3>
@@ -7623,7 +7627,7 @@
                 <button id="goToManagementBtn" class="button button-add" type="button" data-i18n="withdrawals_manage_btn">Gestionar retiros y gastos</button>
               </article>
             </div>
-            <div class="settings-layout config-tab-panel" data-config-panel="danger" hidden>
+            <div class="settings-layout config-tab-panel" data-config-panel="danger" id="configPanel-danger" role="tabpanel" hidden>
               <article class="settings-card">
                 <div class="danger-zone">
                   <h3 data-i18n="danger_zone">Zona de peligro</h3>
