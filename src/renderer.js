@@ -861,11 +861,28 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-mode-rows span{color:var(--text-muted);font-size:.82rem}
 .challenge-mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
 .challenge-verdict{margin-bottom:14px}
-.challenge-policy{margin:12px 0 4px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;
+/* La casilla de esta tarjeta necesita ganarle a "#backtestingView input{width:100%}", que la
+   estiraba a todo lo ancho y empujaba su etiqueta fuera del bloque. Se acota a este componente
+   en vez de excluir las casillas en la regla general: los interruptores del resto de la vista
+   dependen de esa regla y tocarla los destaparia. */
+.challenge-policy{margin:14px 0 16px;padding:14px 16px;border:1px solid var(--border);
+  border-radius:12px;background:rgba(255,255,255,.02)}
+#backtestingView .challenge-policy .challenge-policy-switch{display:flex;align-items:flex-start;
+  gap:10px;margin:0;cursor:pointer;font-size:.9rem;color:var(--text);line-height:1.45}
+#backtestingView .challenge-policy .challenge-policy-switch input[type="checkbox"]{
+  width:18px;min-width:18px;max-width:18px;height:18px;flex:0 0 18px;margin:1px 0 0;cursor:pointer}
+#backtestingView .challenge-policy .challenge-policy-verdict{margin:12px 0 0;padding-top:12px;
+  border-top:1px solid var(--border);line-height:1.7}
+#backtestingView .challenge-policy .challenge-policy-verdict strong{color:var(--text)}
+.policy-compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.policy-option{border:1px solid var(--border);border-radius:10px;padding:10px 12px;
   background:rgba(255,255,255,.02)}
-.challenge-policy .toggle-row{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:.9rem}
-.challenge-policy .toggle-row input{width:18px;height:18px;flex:0 0 auto}
-.challenge-policy p{margin:0;line-height:1.6}
+.policy-option.is-best{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.06)}
+.policy-option span{display:block;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;
+  letter-spacing:.04em}
+.policy-option strong{display:block;font-size:1.15rem;margin-top:3px;font-variant-numeric:tabular-nums}
+.policy-option small{display:block;color:var(--text-muted);font-size:.75rem;margin-top:2px}
+.policy-conclusion{margin:10px 0 0;line-height:1.5}
 .challenge-dist{display:flex;flex-wrap:wrap;gap:4px 12px;margin:12px 0 0;padding-top:10px;
   border-top:1px solid var(--border)}
 .challenge-dist strong{color:var(--text)}
@@ -14193,21 +14210,47 @@ function renderChallengePolicy(rValues, cfg, perDay, fmt) {
   const para = run(false);
   if (!sigue || !para) return;
 
-  const linea = (nombre, sim) =>
-    `<strong>${nombre}</strong>: pasas los ${accounts} el ${fmt.pct(sim.passAllRate)} de las veces, ` +
-    `en ${sim.medianDaysTotal ?? '—'} días.`;
-
   // El criterio es "pasar todas las cuentas": es lo que de verdad cambia entre las dos formas.
-  // Los días se dicen aparte porque casi siempre van en contra, y esa es justo la decisión.
+  // Los días se enseñan al lado porque casi siempre van en contra, y esa es justo la decisión.
   const diff = sigue.passAllRate - para.passAllRate;
-  const conclusion =
-    Math.abs(diff) < 1
-      ? 'Con tus datos da casi igual: elige por comodidad.'
-      : diff > 0
-        ? 'Con tus datos compensa seguir en la siguiente cuenta.'
-        : 'Con tus datos compensa parar el día: pasas más cuentas, aunque tardes más.';
+  const empate = Math.abs(diff) < 1;
+  const dias = (sim) => (sim.medianDaysTotal == null ? null : Number(sim.medianDaysTotal));
+  const diasSigue = dias(sigue);
+  const diasPara = dias(para);
 
-  verdict.innerHTML = `${linea('Seguir en la siguiente', sigue)}<br>${linea('Parar el día', para)}<br>${conclusion}`;
+  // La coletilla de los días se dice solo si de verdad hay diferencia: dar por hecho que parar
+  // siempre tarda más sería mentir en los casos en que tarda lo mismo.
+  let matiz = '';
+  if (!empate && diasSigue != null && diasPara != null && diasSigue !== diasPara) {
+    const ganadorTardaMas = diff > 0 ? diasSigue > diasPara : diasPara > diasSigue;
+    matiz = ganadorTardaMas ? ', aunque tardes más' : ' y además tardas menos';
+  }
+
+  const conclusion = empate
+    ? 'Con tus datos da casi igual: elige por comodidad.'
+    : diff > 0
+      ? `Con tus datos compensa seguir en la siguiente cuenta${matiz}.`
+      : `Con tus datos compensa parar el día${matiz}.`;
+
+  const cuentasTexto = accounts === 1 ? 'la cuenta' : `las ${accounts}`;
+  const diasTexto = (sim) => {
+    const d = sim.medianDaysTotal;
+    if (d == null) return '— días';
+    return Number(d) === 1 ? '1 día' : `${d} días`;
+  };
+  const opcion = (nombre, sim, mejor) => `
+    <div class="policy-option ${mejor ? 'is-best' : ''}">
+      <span>${nombre}</span>
+      <strong>${fmt.pct(sim.passAllRate)}</strong>
+      <small>pasas ${cuentasTexto} · ${diasTexto(sim)}</small>
+    </div>`;
+
+  verdict.innerHTML = `
+    <div class="policy-compare">
+      ${opcion('Seguir en la siguiente', sigue, !empate && diff > 0)}
+      ${opcion('Parar el día', para, !empate && diff < 0)}
+    </div>
+    <p class="policy-conclusion">${conclusion}</p>`;
 }
 
 /**
