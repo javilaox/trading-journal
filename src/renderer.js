@@ -13999,7 +13999,13 @@ function renderChallengePhaseInputs() {
   if (!host) return;
 
   const cfg = getChallengeConfig();
-  if (select) select.value = String(cfg.phases.length);
+  if (select) {
+    select.value = String(cfg.phases.length);
+    // Asignar .value no dispara "change", así que el desplegable de la app (que es el que se ve;
+    // el <select> real está oculto) se quedaba mostrando la opción escrita en el HTML aunque la
+    // tabla de abajo tuviera otras fases. Hay que refrescarlo a mano.
+    refreshCustomSelectForNative(select);
+  }
   const countInput = document.getElementById('btChallengeCount');
   if (countInput && document.activeElement !== countInput) countInput.value = String(cfg.accounts || 1);
   const policyCheck = document.getElementById('btChallengeContinueOnStop');

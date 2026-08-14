@@ -383,13 +383,14 @@ function tradesPerTradingDay(trades) {
   return n ? list.length / n : 0;
 }
 
-/** Configuración por defecto: un challenge de 2 fases al uso (8% y 5%, 10% de pérdida máxima). */
+/**
+ * Configuración de partida: una sola fase (8% de objetivo, 10% de pérdida máxima). Se empieza por
+ * lo más simple y quien tenga un challenge de dos o tres fases las añade desde el desplegable.
+ * Solo se usa cuando no hay nada guardado: una configuración ya existente nunca se toca.
+ */
 function defaultChallengeConfig() {
   return {
-    phases: [
-      { target: 8, risk: 1, maxDrawdown: 10, consistency: 0 },
-      { target: 5, risk: 1, maxDrawdown: 10, consistency: 0 },
-    ],
+    phases: [{ target: 8, risk: 1, maxDrawdown: 10, consistency: 0 }],
     accounts: 1,
     continue_on_consistency_stop: true,
   };
