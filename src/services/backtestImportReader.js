@@ -58,8 +58,9 @@ function readDate(value) {
     return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
   }
 
-  // DD/MM/AAAA y DD-MM-AAAA, que es como se escribe una fecha aquí.
-  const euro = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  // DD-MM-AAAA (el formato de la plantilla y del resto de la aplicación) y también DD/MM/AAAA,
+  // porque es lo que sale si alguien reescribe la fecha con las barras.
+  const euro = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
   if (euro) {
     return `${euro[3]}-${euro[2].padStart(2, '0')}-${euro[1].padStart(2, '0')}`;
   }
@@ -163,11 +164,14 @@ function buildTradeFromRow(values, { knownStrategyNames }) {
   if (!date) {
     reasons.push(
       readText(values.date) || values.date != null
-        ? 'La fecha no se entiende. Usa AAAA-MM-DD o DD/MM/AAAA.'
+        ? 'La fecha no se entiende. Usa DD-MM-AAAA (por ejemplo 15-01-2026).'
         : 'Falta la fecha.'
     );
   } else if (!isRealDate(date)) {
-    reasons.push(`La fecha ${date} no existe.`);
+    // Se repite en DD-MM-AAAA, que es como lo ha escrito el usuario en la hoja: verlo en otro
+    // formato al que acaba de teclear solo despista a la hora de buscar la fila.
+    const [y, m, d] = date.split('-');
+    reasons.push(`La fecha ${d}-${m}-${y} no existe.`);
   }
 
   const rawAsset = readText(values.asset);

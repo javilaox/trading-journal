@@ -165,7 +165,9 @@ function writeTradesSheet(workbook, assets) {
     const range = `${letter}${FIRST_DATA_ROW}:${letter}${LAST_TEMPLATE_ROW}`;
 
     if (column.type === 'date') {
-      ws.getColumn(i + 1).numFmt = 'yyyy-mm-dd';
+      // DD-MM-AAAA, el mismo formato que muestra la aplicación. Se aplica a la columna entera,
+      // asi que una fecha escrita como fecha de Excel se ve igual que una escrita como texto.
+      ws.getColumn(i + 1).numFmt = 'dd-mm-yyyy';
     }
     if (column.type === 'time') {
       // Texto, no hora de Excel: así «09:30» se queda como se escribe y no se convierte en un

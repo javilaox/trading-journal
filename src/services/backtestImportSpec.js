@@ -67,8 +67,10 @@ const COLUMNS = [
     required: true,
     type: 'date',
     width: 14,
-    example: '2026-01-15',
-    help: 'Día de la operación. Vale una fecha de Excel o el texto AAAA-MM-DD.',
+    example: '15-01-2026',
+    help:
+      'Día de la operación, en formato DD-MM-AAAA (por ejemplo 15-01-2026), igual que en el ' +
+      'resto de la aplicación. También se admite una fecha de Excel o el formato AAAA-MM-DD.',
   },
   {
     key: 'asset',
