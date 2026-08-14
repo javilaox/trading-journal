@@ -3796,6 +3796,12 @@ let backtestingCurrentMonth = new Date().getMonth();
 let backtestingCurrentYear = new Date().getFullYear();
 let selectedBacktestingDate = '';
 let editingBacktestingTradeId = null;
+/**
+ * Valor del antiguo campo "Horario" (etiquetas tipo Londres/NY) de la operación que se está
+ * editando. El campo ya no está en el formulario, pero las operaciones guardadas antes de
+ * retirarlo lo conservan y hay que devolverlo intacto al grabar. En operaciones nuevas es ''.
+ */
+let editingBacktestingTradeLegacySession = '';
 let btManagementCollapsed = true;
 let btResultCollapsed = false;
 /** Unidad de riesgo en el modal Nueva/Editar estrategia (`'eur'` | `'percent'`). */
@@ -14997,7 +15003,10 @@ function openBacktestingTradeEditor(trade) {
   setValueIfExists('btExitTime', trade.exit_time || trade.exitTime || '');
 
   ensureSelectHasValue(document.getElementById('btStrategy'), trade.strategy || '');
-  ensureSelectHasValue(document.getElementById('btSession'), trade.session || '');
+  // El campo "Horario" ya no se muestra, pero las operaciones antiguas pueden tenerlo relleno.
+  // Se guarda aparte para devolverlo tal cual al grabar: editar un trade viejo no debe borrarle
+  // un dato que el usuario introdujo en su día.
+  editingBacktestingTradeLegacySession = trade.session || '';
 
   setValueIfExists('btDirection', trade.direction || 'LONG');
   setValueIfExists('btResult', trade.result || 'BE');
@@ -15049,7 +15058,6 @@ function openBacktestingTradeEditor(trade) {
   if (saveBtn) saveBtn.textContent = t('bt_update_operation', 'Guardar cambios');
 
   refreshBacktestingCustomSelect(document.getElementById('btStrategy'));
-  refreshBacktestingCustomSelect(document.getElementById('btSession'));
   refreshBacktestingCustomSelect(document.getElementById('btResult'));
 
   if (editingBacktestingTradeId) {
@@ -16965,41 +16973,8 @@ async function removeBacktestingItem(key, value) {
   }
 }
 
-function renderChipList(containerId, key) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-
-  el.innerHTML = '';
-  (backtestingSettings[key] || []).forEach((item) => {
-    const span = document.createElement('span');
-    span.className = 'config-chip';
-    // Las etiquetas de sesión se pueden renombrar: al pulsar el texto se abre el modal de edición.
-    if (key === 'sessions') {
-      const label = document.createElement('button');
-      label.type = 'button';
-      label.className = 'config-chip-label';
-      label.textContent = item;
-      label.title = 'Editar etiqueta';
-      label.addEventListener('click', () => openBtSessionTagModal(item));
-      span.appendChild(label);
-    } else {
-      span.appendChild(document.createTextNode(item));
-    }
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'config-chip-remove';
-    btn.setAttribute('aria-label', 'Quitar');
-    btn.dataset.btKey = key;
-    btn.dataset.btVal = encodeURIComponent(item);
-    btn.textContent = '×';
-    span.appendChild(btn);
-    el.appendChild(span);
-  });
-}
-
 function renderBacktestingSettings() {
   renderBacktestingStrategiesConfigList();
-  renderChipList('btSessionsList', 'sessions');
 
   backtestingAssetComboboxState?.rebuildFromSettings?.();
 }
@@ -17078,10 +17053,8 @@ function refreshBacktestingFormUiWidgets() {
 function populateBacktestingSelects() {
   const stratSel = document.getElementById('btStrategy');
   const accSel = document.getElementById('btAccount');
-  const sessSel = document.getElementById('btSession');
   const strategies = getBacktestingStrategyNames();
   const accounts = backtestingSettings.accounts || [];
-  const sessions = backtestingSettings.sessions || [];
 
   function refill(sel, items) {
     if (!sel) return;
@@ -17100,9 +17073,7 @@ function populateBacktestingSelects() {
   refill(stratSel, strategies);
   refill(accSel, accounts);
   backtestingAssetComboboxState?.rebuildFromSettings?.();
-  refill(sessSel, sessions);
   refreshBacktestingCustomSelect(stratSel);
-  refreshBacktestingCustomSelect(sessSel);
 }
 
 const BT_INCLUDE_BE_KEY = 'backtesting_include_be';
@@ -17582,7 +17553,6 @@ const BT_STICKY_FIELD_IDS = [
   'btAsset',
   'btStrategy',
   'btAccount',
-  'btSession',
   'btRisk',
   'btRrPlanned',
   'btSlMode',
@@ -17625,7 +17595,6 @@ function resetBacktestFormForNextTrade() {
     }
   }
   refreshBacktestingCustomSelect(document.getElementById('btStrategy'));
-  refreshBacktestingCustomSelect(document.getElementById('btSession'));
 
   refreshBacktestingFormUiWidgets();
   // El PnL automático depende de riesgo/RR, que acabamos de restaurar.
@@ -17636,6 +17605,7 @@ function resetBacktestFormForNextTrade() {
 
 function clearBacktestForm() {
   editingBacktestingTradeId = null;
+  editingBacktestingTradeLegacySession = '';
   btManagementCollapsed = true;
   btResultCollapsed = false;
   const hid = document.getElementById('btEditId');
@@ -17692,7 +17662,6 @@ function clearBacktestForm() {
   pick('btAccount', d.default_account);
   pick('btStrategy', d.default_strategy);
   pick('btAsset', d.default_asset);
-  pick('btSession', '');
   const riskEl = document.getElementById('btRisk');
   const rrEl = document.getElementById('btRrPlanned');
   if (riskEl) riskEl.value = '';
@@ -18188,67 +18157,6 @@ function openBtMetricModal(metric = null) {
 function closeBtMetricModal() {
   document.getElementById('btMetricModalOverlay')?.classList.remove('active');
   editingBtMetricId = null;
-}
-
-let editingBtSessionTag = null;
-
-function openBtSessionTagModal(tag = null) {
-  const overlay = document.getElementById('btSessionTagModalOverlay');
-  if (!overlay) return;
-  editingBtSessionTag = tag;
-  const title = document.getElementById('btSessionTagModalTitle');
-  if (title) title.textContent = tag ? 'Editar etiqueta' : 'Nueva etiqueta';
-  const input = document.getElementById('btSessionInput');
-  if (input) input.value = tag || '';
-  const original = document.getElementById('btSessionTagOriginal');
-  if (original) original.value = tag || '';
-  overlay.classList.add('active');
-  input?.focus();
-}
-
-function closeBtSessionTagModal() {
-  document.getElementById('btSessionTagModalOverlay')?.classList.remove('active');
-  editingBtSessionTag = null;
-}
-
-/** Crea o renombra una etiqueta de franja horaria. */
-async function saveBtSessionTagFromModal() {
-  const input = document.getElementById('btSessionInput');
-  const value = String(input?.value || '').trim();
-  if (!value) {
-    showToast('Indica un nombre para la etiqueta', 'error');
-    return;
-  }
-  if (!Array.isArray(backtestingSettings.sessions)) backtestingSettings.sessions = [];
-
-  const exists = backtestingSettings.sessions.some(
-    (s) => String(s).toLowerCase() === value.toLowerCase() && s !== editingBtSessionTag
-  );
-  if (exists) {
-    showToast('Ya existe una etiqueta con ese nombre', 'error');
-    return;
-  }
-
-  if (editingBtSessionTag) {
-    const idx = backtestingSettings.sessions.indexOf(editingBtSessionTag);
-    if (idx >= 0) backtestingSettings.sessions[idx] = value;
-  } else {
-    backtestingSettings.sessions.push(value);
-  }
-
-  closeBtSessionTagModal();
-  renderBacktestingSettings();
-
-  const api = getBackendApi();
-  if (api?.saveBacktestingSettings) {
-    const result = await persistBacktestingSettings(api);
-    if (!result?.success) {
-      showToast('No se pudo guardar la etiqueta', 'error');
-      return;
-    }
-  }
-  populateBacktestingSelects();
-  showToast('Etiqueta guardada', 'success');
 }
 
 function renderBtMetricsConfigList() {
@@ -18874,6 +18782,531 @@ async function saveEditedTrade() {
   }
 }
 
+/* ============================ Importar operaciones desde Excel ============================
+ * Flujo en dos pasos, a propósito: primero se elige destino y archivo, y solo después de ver
+ * cuántas filas entran y cuáles se descartan (y por qué) se guarda algo. Así nadie se encuentra
+ * con media importación hecha.
+ *
+ * La lectura y la validación del archivo viven en el proceso principal
+ * (services/backtestImportReader.js). Aquí solo está la conversación con el usuario.
+ */
+
+/** Resultado de la última lectura, a la espera de que el usuario confirme. */
+let btImportPreview = null;
+
+function getBtImportTargetMode() {
+  const checked = document.querySelector('input[name="btImportTarget"]:checked');
+  return checked?.value === 'existing' ? 'existing' : 'new';
+}
+
+function setBtImportMessage(text, isError) {
+  const el = document.getElementById('btImportPickMsg');
+  if (!el) return;
+  if (!text) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
+  el.textContent = text;
+  el.className = isError ? 'form-hint error' : 'form-hint';
+}
+
+function refreshBtImportTargetFields() {
+  const mode = getBtImportTargetMode();
+  const nuevos = document.getElementById('btImportNewFields');
+  const existentes = document.getElementById('btImportExistingFields');
+  if (nuevos) nuevos.hidden = mode !== 'new';
+  if (existentes) existentes.hidden = mode !== 'existing';
+}
+
+function fillBtImportSessionSelect() {
+  const select = document.getElementById('btImportExistingSession');
+  if (!select) return;
+  const sessions = Array.isArray(cachedBacktestingSessions) ? cachedBacktestingSessions : [];
+  select.innerHTML = '';
+  if (!sessions.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Todavía no tienes ninguna sesión';
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  sessions.forEach((session) => {
+    const option = document.createElement('option');
+    option.value = String(session.id);
+    const pares = getSessionPairs(session).join(' · ') || '—';
+    option.textContent = `${session.name || 'Sin nombre'} (${pares})`;
+    select.appendChild(option);
+  });
+  refreshCustomSelectForNative(select);
+}
+
+function openBtImportModal() {
+  const overlay = document.getElementById('btImportModalOverlay');
+  if (!overlay) return;
+
+  btImportPreview = null;
+  const nameInput = document.getElementById('btImportNewName');
+  const capitalInput = document.getElementById('btImportNewCapital');
+  if (nameInput) nameInput.value = '';
+  if (capitalInput) capitalInput.value = '';
+  const first = document.querySelector('input[name="btImportTarget"][value="new"]');
+  if (first) first.checked = true;
+
+  fillBtImportSessionSelect();
+  refreshBtImportTargetFields();
+  setBtImportMessage('');
+  showBtImportStep('pick');
+  overlay.classList.add('active');
+}
+
+function closeBtImportModal() {
+  document.getElementById('btImportModalOverlay')?.classList.remove('active');
+  btImportPreview = null;
+}
+
+function showBtImportStep(step) {
+  const isPreview = step === 'preview';
+  const pick = document.getElementById('btImportStepPick');
+  const preview = document.getElementById('btImportStepPreview');
+  if (pick) pick.hidden = isPreview;
+  if (preview) preview.hidden = !isPreview;
+
+  const pickBtn = document.getElementById('btImportPickFileBtn');
+  const confirmBtn = document.getElementById('btImportConfirmBtn');
+  const backBtn = document.getElementById('btImportBackBtn');
+  if (pickBtn) pickBtn.hidden = isPreview;
+  if (confirmBtn) confirmBtn.hidden = !isPreview;
+  if (backBtn) backBtn.hidden = !isPreview;
+}
+
+/** Capital con el que calcular el riesgo de las estrategias que lo tienen configurado en %. */
+function getBtImportTargetCapital() {
+  if (getBtImportTargetMode() === 'new') {
+    return Number(document.getElementById('btImportNewCapital')?.value) || 0;
+  }
+  const id = document.getElementById('btImportExistingSession')?.value || '';
+  const session = (cachedBacktestingSessions || []).find((s) => String(s.id) === String(id));
+  return Number(session?.account_capital) || 0;
+}
+
+/**
+ * Comprobaciones que dependen de la sesión de destino y que por tanto no puede hacer el lector
+ * del archivo: que la fecha caiga dentro del rango de la sesión y que el par sea uno de los que
+ * esa sesión incluye. Son las mismas reglas que aplica el formulario al guardar una operación a
+ * mano; si no se comprobaran aquí, la importación podría meter operaciones que la propia
+ * aplicación considera inválidas.
+ */
+function checkTradeAgainstSession(trade, session) {
+  if (!session) return [];
+  const reasons = [];
+
+  const pares = getSessionPairs(session);
+  if (pares.length && !pares.includes(trade.asset)) {
+    reasons.push(`La sesión "${session.name}" solo incluye ${pares.join(', ')}.`);
+  }
+
+  const inicio = String(session.start_date || '').slice(0, 10);
+  const fin = String(session.end_date || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(inicio) && /^\d{4}-\d{2}-\d{2}$/.test(fin)) {
+    if (trade.date < inicio || trade.date > fin) {
+      reasons.push(`Fuera del rango de la sesión (${formatDateEs(inicio)} a ${formatDateEs(fin)}).`);
+    }
+  }
+
+  return reasons;
+}
+
+async function pickBtImportFile() {
+  const api = getBackendApi();
+  if (!api?.readBacktestImportFile) {
+    setBtImportMessage('Esta versión no puede leer archivos. Reinicia la aplicación.', true);
+    return;
+  }
+
+  const mode = getBtImportTargetMode();
+  if (mode === 'new') {
+    const name = document.getElementById('btImportNewName')?.value?.trim() || '';
+    if (!name) {
+      setBtImportMessage('Ponle un nombre a la sesión antes de elegir el archivo.', true);
+      return;
+    }
+  } else {
+    const id = document.getElementById('btImportExistingSession')?.value || '';
+    if (!id) {
+      setBtImportMessage('Elige la sesión de destino.', true);
+      return;
+    }
+  }
+
+  setBtImportMessage('Leyendo el archivo…');
+
+  const result = await api.readBacktestImportFile({
+    strategies: getBacktestingStrategies(),
+    capital: getBtImportTargetCapital(),
+    // Los mismos valores con los que se crearán las estrategias que no existan, para que a esas
+    // operaciones también se les pueda calcular el PnL.
+    defaultRisk: Number(backtestingSettings?.default_risk) || 100,
+    defaultRr: Number(backtestingSettings?.default_rr) || 2,
+  });
+
+  if (result?.cancelled) {
+    setBtImportMessage('');
+    return;
+  }
+
+  if (!result?.success) {
+    const motivos = {
+      EMPTY_FILE: 'El archivo no tiene ninguna hoja con datos.',
+      NO_HEADERS:
+        'No se reconoce ninguna columna. Comprueba que la primera fila son los nombres de la plantilla.',
+      MISSING_COLUMNS: `Faltan columnas obligatorias: ${(result?.missing || []).join(', ')}.`,
+    };
+    setBtImportMessage(motivos[result?.error] || `No se pudo leer el archivo: ${result?.error || 'error desconocido'}`, true);
+    return;
+  }
+
+  // Las reglas de la sesión de destino se aplican ahora, sobre las filas que ya han pasado la
+  // validación de formato.
+  const session =
+    mode === 'existing'
+      ? (cachedBacktestingSessions || []).find(
+          (s) => String(s.id) === String(document.getElementById('btImportExistingSession')?.value)
+        )
+      : null;
+
+  const validas = [];
+  const errores = [...(result.errors || [])];
+
+  (result.valid || []).forEach((trade) => {
+    const reasons = checkTradeAgainstSession(trade, session);
+    if (reasons.length) errores.push({ row: trade.__row || 0, reasons });
+    else validas.push(trade);
+  });
+
+  errores.sort((a, b) => (a.row || 0) - (b.row || 0));
+
+  btImportPreview = {
+    fileName: result.fileName || '',
+    totalRows: result.totalRows || 0,
+    valid: validas,
+    errors: errores,
+    newStrategies: (result.newStrategies || []).filter((name) =>
+      validas.some((t) => t.strategy === name)
+    ),
+    mode,
+    sessionId: session ? session.id : null,
+  };
+
+  setBtImportMessage('');
+  renderBtImportPreview();
+  showBtImportStep('preview');
+}
+
+function renderBtImportPreview() {
+  const preview = btImportPreview;
+  if (!preview) return;
+
+  const resumen = document.getElementById('btImportSummary');
+  if (resumen) {
+    const buenas = preview.valid.length;
+    const malas = preview.errors.length;
+    resumen.innerHTML = `
+      <div class="bt-import-file">${escapeHtmlChipText(preview.fileName)}</div>
+      <div class="bt-import-counts">
+        <div class="bt-import-count is-ok">
+          <strong>${buenas}</strong>
+          <span>${buenas === 1 ? 'operación se importa' : 'operaciones se importan'}</span>
+        </div>
+        <div class="bt-import-count ${malas ? 'is-bad' : ''}">
+          <strong>${malas}</strong>
+          <span>${malas === 1 ? 'fila se descarta' : 'filas se descartan'}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const bloqueErrores = document.getElementById('btImportErrors');
+  const cuerpo = document.getElementById('btImportErrorsBody');
+  if (bloqueErrores && cuerpo) {
+    if (!preview.errors.length) {
+      bloqueErrores.hidden = true;
+      cuerpo.innerHTML = '';
+    } else {
+      bloqueErrores.hidden = false;
+      cuerpo.innerHTML = preview.errors
+        .map(
+          (e) => `
+          <tr>
+            <td>${e.row || '—'}</td>
+            <td>${escapeHtmlChipText(e.reasons.join(' '))}</td>
+          </tr>`
+        )
+        .join('');
+    }
+  }
+
+  const bloqueEstrategias = document.getElementById('btImportNewStrategies');
+  if (bloqueEstrategias) {
+    if (!preview.newStrategies.length) {
+      bloqueEstrategias.hidden = true;
+      bloqueEstrategias.innerHTML = '';
+    } else {
+      bloqueEstrategias.hidden = false;
+      const lista = preview.newStrategies.map((n) => `<span class="bt-import-chip">${escapeHtmlChipText(n)}</span>`).join('');
+      bloqueEstrategias.innerHTML = `
+        <h4>Se crearán estas estrategias</h4>
+        <p>No coinciden con ninguna de las tuyas. Podrás ajustarles el riesgo y el RR en Config. Backtesting.</p>
+        <div class="bt-import-chips">${lista}</div>
+      `;
+    }
+  }
+
+  const confirmBtn = document.getElementById('btImportConfirmBtn');
+  if (confirmBtn) {
+    const n = preview.valid.length;
+    confirmBtn.disabled = n === 0;
+    confirmBtn.textContent = n === 0 ? 'No hay nada que importar' : `Importar ${n}`;
+  }
+}
+
+/**
+ * Crea las estrategias que no existían. Se añaden a la lista actual sin tocar las que ya estaban,
+ * con el riesgo y el RR por defecto de la configuración: el usuario los ajusta luego si quiere.
+ */
+async function createMissingStrategiesForImport(nombres) {
+  if (!nombres.length) return true;
+
+  const actuales = Array.isArray(backtestingSettings.strategies) ? backtestingSettings.strategies : [];
+  const yaEstan = new Set(actuales.map((s) => String(s?.name || '').trim().toLowerCase()));
+
+  const nuevas = nombres
+    .filter((name) => !yaEstan.has(name.toLowerCase()))
+    .map((name) => ({
+      id: crypto.randomUUID(),
+      name,
+      risk_value: Number(backtestingSettings?.default_risk) || 100,
+      risk_unit: 'eur',
+      risk: Number(backtestingSettings?.default_risk) || 100,
+      risk_per_trade: Number(backtestingSettings?.default_risk) || 100,
+      rr: Number(backtestingSettings?.default_rr) || 2,
+      notes: 'Creada al importar operaciones desde Excel.',
+      description: 'Creada al importar operaciones desde Excel.',
+      schedule_enabled: false,
+      operating_hours: [],
+      active: true,
+    }));
+
+  if (!nuevas.length) return true;
+
+  backtestingSettings.strategies = [...actuales, ...nuevas];
+
+  const api = getBackendApi();
+  if (api?.saveBacktestingSettings) {
+    const result = await persistBacktestingSettings(api);
+    if (!result?.success) {
+      // Se deshace el cambio en memoria para no dejar la aplicación mostrando estrategias que
+      // en realidad no se han guardado en ningún sitio.
+      backtestingSettings.strategies = actuales;
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Crea la sesión de destino a partir de lo que trae el propio Excel. */
+async function createSessionForImport(trades) {
+  const api = getBackendApi();
+  if (!api?.addBacktestingSession) return null;
+
+  const fechas = trades.map((t) => t.date).sort();
+  const pares = [...new Set(trades.map((t) => t.asset))];
+
+  // La estrategia de la sesión es la más repetida: es solo una etiqueta descriptiva, cada
+  // operación lleva la suya.
+  const cuenta = new Map();
+  trades.forEach((t) => cuenta.set(t.strategy, (cuenta.get(t.strategy) || 0) + 1));
+  const principal = [...cuenta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+  const payload = {
+    name: document.getElementById('btImportNewName')?.value?.trim() || 'Importación',
+    asset: pares.join(','),
+    strategy: principal,
+    start_date: fechas[0] || null,
+    end_date: fechas[fechas.length - 1] || null,
+    status: 'in_progress',
+    notes: 'Sesión creada al importar operaciones desde Excel.',
+    account_capital: Number(document.getElementById('btImportNewCapital')?.value) || 0,
+  };
+
+  const result = await api.addBacktestingSession(payload);
+  if (!result?.success) {
+    showToast(
+      typeof result?.error === 'string' ? result.error : result?.error?.message || 'No se pudo crear la sesión',
+      'error'
+    );
+    return null;
+  }
+  return result.data?.id ?? result.data?.[0]?.id ?? null;
+}
+
+async function confirmBtImport() {
+  const preview = btImportPreview;
+  if (!preview || !preview.valid.length) return;
+
+  if (!(await ensureUserReady())) return;
+  if (!(await syncSupabaseSessionWithMain())) {
+    showToast('Tu sesión ha caducado o no se pudo verificar. Cierra sesión y vuelve a entrar.', 'error');
+    return;
+  }
+
+  const api = getBackendApi();
+  if (!api?.addBacktestTradesBulk) {
+    showToast('Esta versión no puede importar. Reinicia la aplicación.', 'error');
+    return;
+  }
+
+  const confirmBtn = document.getElementById('btImportConfirmBtn');
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Importando…';
+  }
+
+  try {
+    if (!(await createMissingStrategiesForImport(preview.newStrategies))) {
+      showToast('No se pudieron crear las estrategias. No se ha importado nada.', 'error');
+      return;
+    }
+
+    let sessionId = preview.sessionId;
+    if (preview.mode === 'new') {
+      sessionId = await createSessionForImport(preview.valid);
+      if (!sessionId) return;
+    }
+
+    const payloads = preview.valid.map((t) => ({
+      date: t.date,
+      asset: t.asset,
+      strategy: t.strategy,
+      session: '',
+      session_id: sessionId,
+      direction: t.direction,
+      result: t.result,
+      entry_time: t.entry_time || null,
+      exit_time: t.exit_time || null,
+      entry_price: t.entry_price,
+      stop_loss: t.stop_loss,
+      take_profit: t.take_profit,
+      rr_planned: t.rr_planned ?? 0,
+      pnl: t.pnl,
+      notes: t.notes || '',
+      custom_metrics: {},
+      // El riesgo se guarda siempre, también cuando el Excel no lo traía y sale de la estrategia:
+      // es lo que permite que las estadísticas en R salgan bien desde el primer momento.
+      risk_eur: t.risk_used ?? t.risk_eur ?? 0,
+      // A cuántas R equivale el resultado. Se calcula aquí con el riesgo que ya conocemos y no
+      // con getBacktestingTradeRValue, porque esa función lo busca en la sesión y en las
+      // estrategias cargadas, y al crear una sesión nueva todavía no está en la lista: saldría 0.
+      rr_result: t.risk_used > 0 ? t.pnl / t.risk_used : 0,
+    }));
+
+    const result = await api.addBacktestTradesBulk(payloads);
+
+    if (!result?.success) {
+      const yaEntraron = Number(result?.inserted) || 0;
+      showToast(
+        yaEntraron
+          ? `Se importaron ${yaEntraron} y falló el resto. Revísalo antes de volver a intentarlo.`
+          : 'No se pudo importar. No se ha guardado ninguna operación.',
+        'error'
+      );
+      return;
+    }
+
+    showToast(
+      `${result.inserted} ${result.inserted === 1 ? 'operación importada' : 'operaciones importadas'}`,
+      'success'
+    );
+
+    closeBtImportModal();
+
+    await loadBacktestingSessions();
+    const recargadas = await api.getBacktestTrades();
+    cachedBacktestingTrades = Array.isArray(recargadas) ? recargadas : [];
+    populateBacktestingSelects();
+    renderBacktestingSettings();
+    rerenderBacktestingLocal();
+    renderBacktestingSessionCards();
+    await refreshBacktestingView({ skipTradeFetch: true });
+  } catch (error) {
+    console.error('❌ Error importando operaciones:', error);
+    showToast(String(error?.message || error), 'error');
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      renderBtImportPreview();
+    }
+  }
+}
+
+async function downloadBacktestTemplate() {
+  const api = getBackendApi();
+  if (!api?.downloadBacktestTemplate) {
+    showToast('Esta versión no puede generar la plantilla. Reinicia la aplicación.', 'error');
+    return;
+  }
+  const boton = document.getElementById('btDownloadTemplateBtn');
+  if (boton) boton.disabled = true;
+  try {
+    const result = await api.downloadBacktestTemplate();
+    if (result?.cancelled) return;
+    if (!result?.success) {
+      showToast(`No se pudo guardar la plantilla: ${result?.error || 'error desconocido'}`, 'error');
+      return;
+    }
+    showToast('Plantilla guardada', 'success');
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
+function initBacktestImportUi() {
+  document.getElementById('btImportExcelBtn')?.addEventListener('click', () => {
+    void (async () => {
+      await loadBacktestingSettings();
+      await loadBacktestingSessions();
+      openBtImportModal();
+    })();
+  });
+  document.getElementById('btImportModalClose')?.addEventListener('click', closeBtImportModal);
+  document.getElementById('btImportCancelBtn')?.addEventListener('click', closeBtImportModal);
+  document.getElementById('btImportModalOverlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'btImportModalOverlay') closeBtImportModal();
+  });
+  document.getElementById('btDownloadTemplateBtn')?.addEventListener('click', () => {
+    void downloadBacktestTemplate();
+  });
+  document.querySelectorAll('input[name="btImportTarget"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      refreshBtImportTargetFields();
+      setBtImportMessage('');
+    });
+  });
+  document.getElementById('btImportPickFileBtn')?.addEventListener('click', () => {
+    void pickBtImportFile();
+  });
+  document.getElementById('btImportBackBtn')?.addEventListener('click', () => {
+    btImportPreview = null;
+    showBtImportStep('pick');
+  });
+  document.getElementById('btImportConfirmBtn')?.addEventListener('click', () => {
+    void confirmBtImport();
+  });
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   if (window.__tradingJournalInitialized) return;
   window.__tradingJournalInitialized = true;
@@ -19071,6 +19504,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initExpensesUI();
   initManagementTabs();
   initBacktestingViewTabs();
+  initBacktestImportUi();
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
@@ -19163,19 +19597,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('btClearBacktestForm')?.addEventListener('click', () => clearBacktestForm());
   document.getElementById('btRecalcOpen')?.addEventListener('click', () => openBacktestRecalcModal());
-  // --- Etiquetas de sesión (modal crear/editar, mismo patrón que estrategias) ---
-  document.getElementById('openBtSessionTagModalBtn')?.addEventListener('click', () => {
-    openBtSessionTagModal(null);
-  });
-  document.getElementById('closeBtSessionTagModal')?.addEventListener('click', closeBtSessionTagModal);
-  document.getElementById('cancelBtSessionTagBtn')?.addEventListener('click', closeBtSessionTagModal);
-  document.getElementById('btSessionTagModalOverlay')?.addEventListener('click', (e) => {
-    if (e.target.id === 'btSessionTagModalOverlay') closeBtSessionTagModal();
-  });
-  document.getElementById('addBtSession')?.addEventListener('click', () => {
-    void saveBtSessionTagFromModal();
-  });
-
   // --- Métricas personalizadas (modal crear/editar) ---
   document.getElementById('openBtMetricModalBtn')?.addEventListener('click', () => {
     openBtMetricModal(null);
@@ -19324,7 +19745,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       date: document.getElementById('btDate')?.value || '',
       asset: assetVal,
       strategy: document.getElementById('btStrategy')?.value || '',
-      session: document.getElementById('btSession')?.value || '',
+      // Campo retirado del formulario: se devuelve el valor que ya tuviera la operación.
+      session: editingBacktestingTradeLegacySession || '',
       session_id,
       custom_metrics: {
         ...collectBacktestingCustomMetrics(),

@@ -5693,6 +5693,203 @@
         margin-top: var(--space-sm);
         min-height: 8px;
       }
+      /* ---------------------------------------- Importar operaciones desde Excel ----------
+         El cuadro vive colgado del body, fuera de #backtestingView, asi que las reglas de
+         ancho de esa vista no le afectan y no hace falta contrarrestarlas. */
+      .bt-import-modal {
+        max-width: 720px;
+        width: min(720px, 94vw);
+      }
+      .bt-import-body {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-height: min(64vh, 560px);
+        overflow-y: auto;
+      }
+      .bt-import-template {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(56, 189, 248, 0.06);
+      }
+      .bt-import-template p {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .bt-import-block {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bt-import-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+      .bt-import-choice {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+      .bt-import-radio {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+      }
+      .bt-import-radio:hover {
+        border-color: rgba(56, 189, 248, 0.45);
+      }
+      /* Sin esto la casilla se estira: dentro de un contenedor flex a lo ancho, un control sin
+         tamano propio ocupa lo que puede y empuja el texto fuera. */
+      .bt-import-radio input[type='radio'] {
+        width: 16px;
+        min-width: 16px;
+        max-width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 2px 0 0;
+        cursor: pointer;
+      }
+      .bt-import-radio span {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .bt-import-radio small {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .bt-import-radio:has(input:checked) {
+        border-color: rgba(56, 189, 248, 0.6);
+        background: rgba(56, 189, 248, 0.08);
+      }
+      .bt-import-file {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+        word-break: break-all;
+      }
+      .bt-import-counts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+      }
+      .bt-import-count {
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .bt-import-count strong {
+        font-size: 26px;
+        line-height: 1;
+      }
+      .bt-import-count span {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .bt-import-count.is-ok {
+        border-color: rgba(34, 197, 94, 0.45);
+        background: rgba(34, 197, 94, 0.06);
+      }
+      .bt-import-count.is-bad {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.06);
+      }
+      .bt-import-errors,
+      .bt-import-new-strategies {
+        margin-top: 16px;
+      }
+      .bt-import-errors h4,
+      .bt-import-new-strategies h4 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      .bt-import-new-strategies p {
+        margin: 0 0 8px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .bt-import-errors-scroll {
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .bt-import-errors-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .bt-import-errors-table th,
+      .bt-import-errors-table td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .bt-import-errors-table th:first-child,
+      .bt-import-errors-table td:first-child {
+        width: 56px;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .bt-import-errors-table tr:last-child td {
+        border-bottom: none;
+      }
+      .bt-import-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .bt-import-chip {
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .bt-import-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .bt-sessions-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      /* Un `display` declarado en la hoja de estilos gana al `[hidden]` del navegador, que solo
+         vale `display:none` sin selector. Sin estas dos reglas, los bloques y los botones que se
+         ocultan con `hidden` seguirian viendose: los dos pasos a la vez, y los tres botones del
+         pie al mismo tiempo. Es el mismo caso que ya corrigen las pestanas de Configuracion y
+         las de Gestion mas arriba. */
+      .bt-import-block[hidden] {
+        display: none;
+      }
+      .bt-import-footer .btn[hidden] {
+        display: none;
+      }
+      @media (max-width: 700px) {
+        .bt-import-template {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+
       .config-chip {
         display: inline-flex;
         align-items: center;
@@ -8320,7 +8517,10 @@
                   <h3>Sesiones</h3>
                   <p>Gestiona y filtra tus sesiones de prueba.</p>
                 </div>
-                <button type="button" id="btNewSessionBtn" class="btn btn-primary">Nueva sesión</button>
+                <div class="bt-sessions-actions">
+                  <button type="button" id="btImportExcelBtn" class="btn btn-secondary">Importar desde Excel</button>
+                  <button type="button" id="btNewSessionBtn" class="btn btn-primary">Nueva sesión</button>
+                </div>
               </div>
               <div id="backtestingSessionsCards" class="bt-sessions-grid backtesting-session-cards"></div>
 
@@ -8653,7 +8853,10 @@
                         <p id="btTradeScheduleNotice" class="form-hint trade-schedule-notice field-full" hidden></p>
                         <p id="btTradeScheduleWarning" class="form-hint trade-schedule-warning field-full" hidden></p>
                         <select id="btAccount" class="input native-select-hidden" style="display:none" aria-hidden="true" tabindex="-1"></select>
-                        <div class="field"><label for="btSession" data-i18n="schedule">Horario</label><select id="btSession" class="input"><option value="">—</option></select></div>
+                        <!-- El campo "Horario" (etiquetas tipo Londres/NY) se retiro: las horas de
+                             entrada y salida de arriba ya dicen lo mismo con mas detalle. El dato
+                             de las operaciones antiguas se conserva en la base de datos y no se
+                             pierde al editarlas. -->
                         <div class="field field-full">
                           <label class="bt-direction-label" data-i18n="direction">Dirección</label>
                           <select id="btDirection" class="input native-select-hidden" style="display:none" aria-hidden="true" tabindex="-1"><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select>
@@ -8966,18 +9169,9 @@
               </div>
             </div>
 
-            <div class="bt-config-section pro-section">
-              <div class="pro-card">
-              <div class="section-header">
-                <div>
-                  <h3>Sesiones rápidas</h3>
-                  <p>Etiquetas para la columna «Franja» del formulario (ej. Londres).</p>
-                </div>
-                <button type="button" id="openBtSessionTagModalBtn" class="button primary compact">Nueva etiqueta</button>
-              </div>
-              <div id="btSessionsList" class="chips-list"></div>
-              </div>
-            </div>
+            <!-- Aqui habia un bloque "Sesiones rapidas" para etiquetar cada operacion con una
+                 franja (Londres, NY...). Se retiro porque las horas de entrada y salida ya
+                 cubren esa informacion. Las etiquetas guardadas siguen en la base de datos. -->
 
             <div class="bt-config-section pro-section" id="btMetricsConfigBlock">
               <div class="pro-card">
@@ -9037,28 +9231,6 @@
         <div class="app-modal-footer modal-footer">
           <button type="button" id="cancelBtMetricBtn" class="btn btn-secondary">Cancelar</button>
           <button type="button" id="btMetricAddBtn" class="btn btn-primary full">Guardar métrica</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="btSessionTagModalOverlay" class="modal-overlay app-modal-overlay">
-      <div class="modal app-modal bt-strategy-modal" role="dialog" aria-modal="true" aria-labelledby="btSessionTagModalTitle">
-        <div class="app-modal-header modal-header">
-          <h2 id="btSessionTagModalTitle">Nueva etiqueta</h2>
-          <button type="button" id="closeBtSessionTagModal" class="app-modal-close modal-close" aria-label="Cerrar">Cerrar</button>
-        </div>
-        <div class="app-modal-body modal-body">
-          <input type="hidden" id="btSessionTagOriginal" />
-          <div class="form-grid">
-            <label class="field field-full">
-              <span>Nombre de la franja</span>
-              <input id="btSessionInput" class="input" placeholder="Ej: Londres, NY, Asia" />
-            </label>
-          </div>
-        </div>
-        <div class="app-modal-footer modal-footer">
-          <button type="button" id="cancelBtSessionTagBtn" class="btn btn-secondary">Cancelar</button>
-          <button type="button" id="addBtSession" class="btn btn-primary full">Guardar etiqueta</button>
         </div>
       </div>
     </div>
@@ -9218,6 +9390,95 @@
         </div>
         <div class="pro-modal-footer">
           <button type="button" class="button button-save" id="btScheduleSimCloseFooter">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Importar operaciones desde Excel. Dos pasos dentro del mismo cuadro: primero se elige
+         destino y archivo, y despues se muestra lo que se va a guardar y lo que se descarta.
+         No se escribe nada hasta que el usuario confirma en el segundo paso. -->
+    <div id="btImportModalOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal bt-import-modal" role="dialog" aria-modal="true" aria-labelledby="btImportModalTitle">
+        <div class="app-modal-header modal-header">
+          <h2 id="btImportModalTitle">Importar operaciones desde Excel</h2>
+          <button type="button" id="btImportModalClose" class="app-modal-close modal-close" aria-label="Cerrar">Cerrar</button>
+        </div>
+
+        <div class="app-modal-body modal-body bt-import-body">
+          <div id="btImportStepPick">
+            <div class="bt-import-template">
+              <div>
+                <strong>¿Es la primera vez?</strong>
+                <p>Descarga la plantilla: trae las columnas explicadas y los pares en un desplegable.</p>
+              </div>
+              <button type="button" id="btDownloadTemplateBtn" class="button secondary compact">Descargar plantilla</button>
+            </div>
+
+            <div class="bt-import-block">
+              <span class="bt-import-label">¿Dónde van las operaciones?</span>
+              <div class="bt-import-choice">
+                <label class="bt-import-radio">
+                  <input type="radio" name="btImportTarget" value="new" checked />
+                  <span>
+                    <strong>En una sesión nueva</strong>
+                    <small>Se crea al importar</small>
+                  </span>
+                </label>
+                <label class="bt-import-radio">
+                  <input type="radio" name="btImportTarget" value="existing" />
+                  <span>
+                    <strong>En una sesión que ya tengo</strong>
+                    <small>Se añaden a las que ya hay</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="bt-import-block" id="btImportNewFields">
+              <div class="form-grid">
+                <label class="field">
+                  <span>Nombre de la sesión</span>
+                  <input id="btImportNewName" class="input" type="text" placeholder="Ej: EURUSD enero 2026" />
+                </label>
+                <label class="field">
+                  <span>Capital de la cuenta (€)</span>
+                  <input id="btImportNewCapital" class="input" type="number" step="0.01" placeholder="Ej: 50000" />
+                </label>
+              </div>
+            </div>
+
+            <div class="bt-import-block" id="btImportExistingFields" hidden>
+              <label class="field">
+                <span>Sesión de destino</span>
+                <select id="btImportExistingSession" class="input"></select>
+              </label>
+            </div>
+
+            <p id="btImportPickMsg" class="form-hint" hidden></p>
+          </div>
+
+          <div id="btImportStepPreview" hidden>
+            <div class="bt-import-summary" id="btImportSummary"></div>
+            <div class="bt-import-errors" id="btImportErrors" hidden>
+              <h4 id="btImportErrorsTitle">Filas que no se pueden importar</h4>
+              <div class="bt-import-errors-scroll">
+                <table class="bt-import-errors-table">
+                  <thead>
+                    <tr><th>Fila</th><th>Motivo</th></tr>
+                  </thead>
+                  <tbody id="btImportErrorsBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="bt-import-new-strategies" id="btImportNewStrategies" hidden></div>
+          </div>
+        </div>
+
+        <div class="app-modal-footer modal-footer bt-import-footer">
+          <button type="button" id="btImportCancelBtn" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="btImportBackBtn" class="btn btn-secondary" hidden>Atrás</button>
+          <button type="button" id="btImportPickFileBtn" class="btn btn-primary">Elegir archivo…</button>
+          <button type="button" id="btImportConfirmBtn" class="btn btn-primary" hidden>Importar</button>
         </div>
       </div>
     </div>

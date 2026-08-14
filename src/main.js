@@ -17,6 +17,8 @@ const db = require('./database');
 const { supabase } = require('./services/supabaseClient');
 const tradesService = require('./services/tradesService');
 const backtestingService = require('./services/backtestingService');
+const backtestTemplateWriter = require('./services/backtestTemplateWriter');
+const backtestImportReader = require('./services/backtestImportReader');
 const backtestingSettingsService = require('./services/backtestingSettingsService');
 const backtestingSessionsService = require('./services/backtestingSessionsService');
 const backtestingMetricsService = require('./services/backtestingMetricsService');
@@ -4345,6 +4347,66 @@ ipcMain.handle('set-title-bar-theme', async (_event, theme) => {
 
 ipcMain.handle('add-backtest-trade', async (event, trade) => {
   return backtestingService.addBacktestTrade(trade || {});
+});
+
+ipcMain.handle('add-backtest-trades-bulk', async (event, trades) => {
+  return backtestingService.addBacktestTradesBulk(Array.isArray(trades) ? trades : []);
+});
+
+/**
+ * Guarda en disco la plantilla de Excel para importar operaciones de backtesting.
+ * El diálogo se abre aquí porque solo el proceso principal puede mostrarlo.
+ */
+ipcMain.handle('download-backtest-template', async () => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Guardar plantilla de importación',
+      defaultPath: path.join(app.getPath('documents'), 'Plantilla operaciones backtesting.xlsx'),
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, cancelled: true };
+    }
+
+    await backtestTemplateWriter.writeBacktestTemplate(result.filePath);
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    console.error('❌ Error generando la plantilla de backtesting:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
+});
+
+/**
+ * Lee un Excel de operaciones y devuelve lo que se podría importar y lo que no.
+ * Importante: aquí NO se guarda nada. Solo se lee y se valida, para que la pantalla de vista
+ * previa pueda enseñar los errores y que sea el usuario quien decida si sigue adelante.
+ */
+ipcMain.handle('read-backtest-import-file', async (event, options) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Elegir el Excel con las operaciones',
+      properties: ['openFile'],
+      filters: [{ name: 'Excel', extensions: ['xlsx', 'xlsm'] }],
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return { success: false, cancelled: true };
+    }
+
+    const filePath = result.filePaths[0];
+    const parsed = await backtestImportReader.readBacktestImportFile(filePath, {
+      strategies: Array.isArray(options?.strategies) ? options.strategies : [],
+      capital: Number(options?.capital) || 0,
+      defaultRisk: Number(options?.defaultRisk) || 0,
+      defaultRr: Number(options?.defaultRr) || 0,
+    });
+
+    return { ...parsed, fileName: path.basename(filePath) };
+  } catch (error) {
+    console.error('❌ Error leyendo el Excel de operaciones:', error);
+    return { success: false, error: String(error?.message || error) };
+  }
 });
 
 ipcMain.handle('get-backtest-trades', async () => {

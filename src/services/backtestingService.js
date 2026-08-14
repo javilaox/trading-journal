@@ -140,6 +140,44 @@ async function addBacktestTrade(trade) {
   return { success: true, data };
 }
 
+/**
+ * Inserta varias operaciones de una vez. Es para la importación desde Excel: hacerlo de una en
+ * una significaría cientos de idas y venidas al servidor para un solo archivo.
+ *
+ * Se manda por tandas porque un envío con miles de filas puede pasarse del tamaño máximo de
+ * petición. Si una tanda falla, se corta ahí y se informa de cuántas habían entrado ya, en vez
+ * de seguir insertando y dejar el resultado a medias sin decirlo.
+ */
+async function addBacktestTradesBulk(trades) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return { success: false, error: 'NO_AUTH', inserted: 0 };
+  }
+
+  const list = Array.isArray(trades) ? trades : [];
+  if (!list.length) return { success: true, inserted: 0, data: [] };
+
+  const CHUNK = 200;
+  const inserted = [];
+
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list
+      .slice(i, i + CHUNK)
+      .map((trade) => normalizeBacktestingTradePayload(trade, userId));
+
+    const { data, error } = await supabase.from('backtesting_trades').insert(chunk).select('*');
+
+    if (error) {
+      console.error('❌ Error addBacktestTradesBulk:', error);
+      return { success: false, error, inserted: inserted.length, data: inserted };
+    }
+
+    (data || []).forEach((row) => inserted.push(normalizeRow(row)));
+  }
+
+  return { success: true, inserted: inserted.length, data: inserted };
+}
+
 async function getBacktestTrades() {
   const userId = await getCurrentUserId();
   console.log('Current user id:', userId);
@@ -229,6 +267,7 @@ async function deleteBacktestTrade(id) {
 
 module.exports = {
   addBacktestTrade,
+  addBacktestTradesBulk,
   getBacktestTrades,
   updateBacktestTrade,
   deleteBacktestTrade
