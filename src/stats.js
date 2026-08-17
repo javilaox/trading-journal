@@ -2149,9 +2149,12 @@ async function renderStrategyMetricStats(trades) {
     return;
   }
 
+  // Se ensena la media por operacion junto al total: el total depende de cuantas operaciones
+  // tenga cada grupo, y es la media la que se puede comparar entre los dos.
   const cell = (s) =>
     s.n
-      ? `<strong class="${statsPnlClass(s.pnl)}">${statsMoney(s.pnl)}</strong><span class="bt-metric-sub">${s.n} ${s.n === 1 ? 'op' : 'ops'} · ${statsPct(s.winrate)} ${t('stats_metrics_hit', 'acierto')}</span>`
+      ? `<strong class="${statsPnlClass(s.pnl)}">${statsMoney(s.pnl)}</strong>` +
+        `<span class="bt-metric-sub">${s.n} ${s.n === 1 ? 'op' : 'ops'} · ${statsMoney(s.avgPnl)}/op · ${statsPct(s.winrate)} ${t('stats_metrics_hit', 'acierto')}</span>`
       : '<span class="muted">—</span>';
 
   groupsEl.innerHTML = groups
@@ -2169,16 +2172,21 @@ async function renderStrategyMetricStats(trades) {
             // La conclusion mira dos cosas, no una: cuanto dinero cambia y cuanto cambia el
             // ratio de aciertos. Una metrica puede subir el acierto y aun asi dejar menos
             // dinero (o al reves), y con un solo numero eso no se ve.
+            // Se compara la media POR OPERACION, no el total. Comparar totales enganaba: si
+            // cumples la metrica en 4 operaciones y no la cumples en 2, el primer grupo suma
+            // mas dinero por tener el doble de operaciones, y salia «mejor cumpliendola»
+            // aunque cada operacion dejara menos.
             const wrDiff = Number(row.yes.winrate || 0) - Number(row.no.winrate || 0);
-            const detalle = `${statsMoney(row.pnlDiff)} · ${wrDiff >= 0 ? '+' : ''}${wrDiff.toFixed(1)} pts ${t('stats_metrics_hit', 'acierto')}`;
+            const avgDiff = Number(row.avgPnlDiff || 0);
+            const detalle = `${statsMoney(avgDiff)} ${t('stats_metrics_per_trade', 'por operación')} · ${wrDiff >= 0 ? '+' : ''}${wrDiff.toFixed(1)} pts ${t('stats_metrics_hit', 'acierto')}`;
             // Con menos de 5 operaciones a cada lado la diferencia puede ser casualidad: se
             // dice, en vez de presentarlo como una conclusion firme.
             const pocas = row.yes.n < 5 || row.no.n < 5;
             const aviso = pocas ? ` · ${t('stats_metrics_low_sample', 'pocos datos aún')}` : '';
             verdict =
-              row.pnlDiff > 0
+              avgDiff > 0
                 ? `<span class="bt-metric-verdict ${pocas ? '' : 'good'}">${t('stats_metrics_better', 'Mejor cumpliéndola')} (${detalle}${aviso})</span>`
-                : row.pnlDiff < 0
+                : avgDiff < 0
                   ? `<span class="bt-metric-verdict ${pocas ? '' : 'bad'}">${t('stats_metrics_worse', 'Peor cumpliéndola')} (${detalle}${aviso})</span>`
                   : `<span class="muted">${t('stats_metrics_tie', 'Sin diferencia')}</span>`;
           } else if (row.yes.n && !row.no.n) {

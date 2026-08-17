@@ -291,15 +291,19 @@ function buildStatsReport({
           metric: row.metric,
           yes_n: row.yes.n,
           yes_pnl: row.yes.pnl,
+          yes_avg: row.yes.n ? row.yes.avgPnl : null,
           no_n: row.no.n,
           no_pnl: row.no.pnl,
-          diff: row.evaluated ? row.pnlDiff : null,
+          no_avg: row.no.n ? row.no.avgPnl : null,
+          // La diferencia se da por operación, no en total: comparar totales engaña cuando un
+          // grupo tiene más operaciones que el otro (ver tradeBreakdownStats.js).
+          diff: row.evaluated ? row.avgPnlDiff : null,
           verdict: !row.evaluated
             ? 'Sin datos todavía'
             : row.comparable
-              ? row.pnlDiff > 0
+              ? row.avgPnlDiff > 0
                 ? 'Mejor cumpliéndola'
-                : row.pnlDiff < 0
+                : row.avgPnlDiff < 0
                   ? 'Peor cumpliéndola'
                   : 'Sin diferencia'
               : row.yes.n
@@ -315,9 +319,11 @@ function buildStatsReport({
         COL('metric', 'Métrica'),
         COL('yes_n', 'Ops cumpliéndola', 'number'),
         COL('yes_pnl', 'PnL cumpliéndola', 'money'),
+        COL('yes_avg', 'Media/op cumpliéndola', 'money'),
         COL('no_n', 'Ops sin cumplirla', 'number'),
         COL('no_pnl', 'PnL sin cumplirla', 'money'),
-        COL('diff', 'Diferencia', 'money'),
+        COL('no_avg', 'Media/op sin cumplirla', 'money'),
+        COL('diff', 'Diferencia por operación', 'money'),
         COL('verdict', 'Conclusión'),
       ],
       rows,

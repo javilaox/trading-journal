@@ -544,5 +544,6 @@
   "stats_pf_good": "Por encima de 1: ganas más de lo que pierdes",
   "stats_pf_bad": "Por debajo de 1: pierdes más de lo que ganas",
   "stats_per_trade": "por operación",
-  "stats_metrics_low_sample": "pocos datos aún"
+  "stats_metrics_low_sample": "pocos datos aún",
+  "stats_metrics_per_trade": "por operación"
 }

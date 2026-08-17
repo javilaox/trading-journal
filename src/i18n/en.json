@@ -544,5 +544,6 @@
   "stats_pf_good": "Above 1: you win more than you lose",
   "stats_pf_bad": "Below 1: you lose more than you win",
   "stats_per_trade": "per trade",
-  "stats_metrics_low_sample": "few data points yet"
+  "stats_metrics_low_sample": "few data points yet",
+  "stats_metrics_per_trade": "per trade"
 }

@@ -158,7 +158,14 @@ function buildStrategyMetricStats(trades, strategyByName) {
         no: noStats,
         evaluated: yesStats.n + noStats.n,
         comparable: yesStats.n > 0 && noStats.n > 0,
+        // Diferencia de totales. NO sirve para comparar: si cumples la métrica en 4 operaciones
+        // y no la cumples en 2, el primer grupo suma más dinero por tener el doble de
+        // operaciones, no por la métrica. Se conserva porque la exportación ya lo usaba.
         pnlDiff: yesStats.pnl - noStats.pnl,
+        // Esta es la que sí se puede comparar: cuánto deja de media CADA operación en un grupo
+        // frente al otro. Al dividir entre el número de operaciones, el tamaño de los grupos
+        // deja de influir.
+        avgPnlDiff: yesStats.avgPnl - noStats.avgPnl,
       };
     });
     groups.push({ strategy: name, trades: strategyTrades.length, rows });
