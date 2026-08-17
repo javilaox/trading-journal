@@ -19564,7 +19564,8 @@ function stRenderFields(side) {
         <label class="st-field">
           <span>${escapeHtmlChipText(t('st_entry_weight', 'Peso (%)'))}</span>
           <input type="number" class="input" data-st-side="${side}" data-st-entry-field="weight"
-                 data-st-entry-index="${i}" value="${stFormatNumber(e.weight)}" step="5" min="0" />
+                 data-st-entry-index="${i}" value="${stFormatNumber(e.weight)}" step="5" min="0" max="100"
+                 ${(config.entries || []).length <= 1 ? 'disabled' : ''} />
         </label>
         <label class="st-field">
           <span>${escapeHtmlChipText(t('st_entry_rr', 'RR objetivo'))}</span>
@@ -19585,7 +19586,7 @@ function stRenderFields(side) {
         <div>
           <span class="st-block-label">${escapeHtmlChipText(t('st_entries_title', 'Entradas de la posición'))}</span>
           <p class="st-block-hint">${escapeHtmlChipText(
-            t('st_entries_hint', 'Reparte el riesgo entre varias entradas con su propio RR. Los pesos son proporciones: 50 y 50 es lo mismo que 1 y 1.')
+            t('st_entries_hint', 'Reparte el 100% del riesgo entre varias entradas, cada una con su RR. Al cambiar un peso, los demás se ajustan solos para que siempre sume 100.')
           )}</p>
         </div>
         <button type="button" class="button secondary compact" data-st-add-entry="${side}">${escapeHtmlChipText(
@@ -19602,6 +19603,87 @@ function stFormatNumber(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '0';
   return String(Math.round(n * 100) / 100);
+}
+
+
+/* ---------------------------------------------------------------- reparto de los pesos
+ * Los pesos de las entradas reparten el 100% del riesgo de la posición, así que siempre suman
+ * 100. Antes eran proporciones libres (50 y 50 valía igual que 1 y 1) y era matemáticamente
+ * correcto, pero al escribir 100 en una y 50 en otra costaba ver que eso era en realidad un
+ * 67/33. Con el reparto sujeto a 100, lo que se lee es lo que hay.
+ */
+
+/** Reparte el 100% a partes iguales. Es lo que se hace al añadir una entrada. */
+function stDistributeEven(entries) {
+  const n = entries.length;
+  if (!n) return;
+  const parte = 100 / n;
+  entries.forEach((e) => {
+    e.weight = Math.round(parte * 100) / 100;
+  });
+  stFixRounding(entries);
+}
+
+/**
+ * El usuario ha cambiado el peso de UNA entrada: las demás absorben la diferencia para que el
+ * total siga siendo 100.
+ *
+ * El reparto entre las demás es proporcional a lo que tuvieran, para no descolocar el equilibrio
+ * que el usuario ya había montado entre ellas. Si todas estaban a cero no hay proporción de la
+ * que tirar y se reparte a partes iguales.
+ */
+function stRebalanceWeights(entries, changedIndex) {
+  if (entries.length <= 1) {
+    if (entries.length === 1) entries[0].weight = 100;
+    return;
+  }
+
+  const cambiada = entries[changedIndex];
+  cambiada.weight = Math.min(100, Math.max(0, Number(cambiada.weight) || 0));
+
+  const restante = 100 - cambiada.weight;
+  const otras = entries.filter((_, i) => i !== changedIndex);
+  const sumaOtras = otras.reduce((sum, e) => sum + (Number(e.weight) || 0), 0);
+
+  otras.forEach((e) => {
+    const proporcion = sumaOtras > 0 ? (Number(e.weight) || 0) / sumaOtras : 1 / otras.length;
+    e.weight = Math.round(restante * proporcion * 100) / 100;
+  });
+
+  stFixRounding(entries, changedIndex);
+}
+
+/**
+ * Corrige el descuadre de los redondeos. Con tres entradas, 100/3 son 33,33 cada una y suman
+ * 99,99: ese céntimo se le da a una de las que el usuario no está tocando, para que la suma
+ * cuadre exactamente sin que se le mueva el número que acaba de escribir.
+ */
+function stFixRounding(entries, protectedIndex = -1) {
+  const suma = entries.reduce((sum, e) => sum + (Number(e.weight) || 0), 0);
+  const desvio = Math.round((100 - suma) * 100) / 100;
+  if (!desvio) return;
+  const destino = entries.findIndex((_, i) => i !== protectedIndex);
+  if (destino >= 0) {
+    entries[destino].weight = Math.round((entries[destino].weight + desvio) * 100) / 100;
+  }
+}
+
+/**
+ * Refresca en pantalla los pesos que ha movido el reparto, sin volver a pintar el bloque entero.
+ * Repintarlo mientras se escribe haría perder el foco y la posición del cursor en mitad del
+ * número.
+ */
+function stSyncWeightInputs(side, exceptIndex) {
+  const config = stState[side];
+  if (!config) return;
+  document
+    .querySelectorAll(`[data-st-side="${side}"][data-st-entry-field="weight"]`)
+    .forEach((input) => {
+      const i = Number(input.dataset.stEntryIndex);
+      if (i === exceptIndex) return;
+      const entrada = config.entries[i];
+      if (entrada) input.value = stFormatNumber(entrada.weight);
+    });
 }
 
 /* ------------------------------------------------------------------------- resultados */
@@ -19894,10 +19976,13 @@ function initStrategyTester() {
     if (el.dataset.stEntryField) {
       const i = Number(el.dataset.stEntryIndex);
       const entrada = stState[side].entries[i];
-      if (entrada) {
-        entrada[el.dataset.stEntryField] = stReadNumber(el);
-        stRecalculate();
+      if (!entrada) return;
+      entrada[el.dataset.stEntryField] = stReadNumber(el);
+      if (el.dataset.stEntryField === 'weight') {
+        stRebalanceWeights(stState[side].entries, i);
+        stSyncWeightInputs(side, i);
       }
+      stRecalculate();
     }
   });
 
@@ -19907,7 +19992,8 @@ function initStrategyTester() {
       const side = add.dataset.stAddEntry;
       const config = stState[side];
       if (config) {
-        config.entries = [...(config.entries || []), { weight: 50, rr: 2 }];
+        config.entries = [...(config.entries || []), { weight: 0, rr: 2 }];
+        stDistributeEven(config.entries);
         stRenderFields(side);
         stRecalculate();
       }
@@ -19920,6 +20006,9 @@ function initStrategyTester() {
       const config = stState[side];
       if (config && config.entries.length > 1) {
         config.entries.splice(i, 1);
+        // El peso que deja libre la entrada borrada se reparte entre las que quedan,
+        // manteniendo la proporción que tenían entre ellas.
+        stRebalanceWeights(config.entries, 0);
         stRenderFields(side);
         stRecalculate();
       }

@@ -566,7 +566,7 @@
   "st_field_weeks": "Semanas",
   "st_field_commissionR": "Comisión por operación (en R)",
   "st_entries_title": "Entradas de la posición",
-  "st_entries_hint": "Reparte el riesgo entre varias entradas con su propio RR. Los pesos son proporciones: 50 y 50 es lo mismo que 1 y 1.",
+  "st_entries_hint": "Reparte el 100% del riesgo entre varias entradas, cada una con su RR. Al cambiar un peso, los demás se ajustan solos para que siempre sume 100.",
   "st_entry_add": "Añadir entrada",
   "st_entry_remove": "Quitar entrada",
   "st_entry_weight": "Peso (%)",

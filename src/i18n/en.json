@@ -566,7 +566,7 @@
   "st_field_weeks": "Weeks",
   "st_field_commissionR": "Commission per trade (in R)",
   "st_entries_title": "Position entries",
-  "st_entries_hint": "Split the risk across entries with their own RR. Weights are proportions: 50 and 50 is the same as 1 and 1.",
+  "st_entries_hint": "Split 100% of the risk across entries, each with its own RR. When you change one weight, the others adjust so it always adds up to 100.",
   "st_entry_add": "Add entry",
   "st_entry_remove": "Remove entry",
   "st_entry_weight": "Weight (%)",
