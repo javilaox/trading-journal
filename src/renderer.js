@@ -19398,6 +19398,9 @@ function stDefaultConfig() {
     startingCapital: 10000,
     riskPercent: 1,
     winRate: 50,
+    // Arranca igual que el acierto general: hasta que el usuario lo baje, el resultado es el
+    // mismo que antes de existir este campo.
+    winRateAveraged: 50,
     beRate: 0,
     commissionR: 0,
     tradesPerWeek: 5,
@@ -19520,7 +19523,10 @@ function stApplyStrategy(side, key) {
       // el interés compuesto.
       config.riskPercent = (estrategia.riskValue / config.startingCapital) * 100;
     }
-    if (estrategia.winRate != null) config.winRate = estrategia.winRate;
+    if (estrategia.winRate != null) {
+      config.winRate = estrategia.winRate;
+      config.winRateAveraged = estrategia.winRate;
+    }
     if (estrategia.beRate != null) config.beRate = estrategia.beRate;
   }
 
@@ -19535,6 +19541,16 @@ const ST_FIELDS = [
   { key: 'startingCapital', label: 'Capital inicial (€)', step: '100', min: '0' },
   { key: 'riskPercent', label: 'Riesgo por operación (%)', step: '0.1', min: '0' },
   { key: 'winRate', label: 'Acierto (%)', step: '1', min: '0', max: '100' },
+  // Solo tiene sentido si la posición se construye por partes: es el acierto de las operaciones
+  // en las que el precio se fue en contra y hubo que promediar.
+  {
+    key: 'winRateAveraged',
+    label: 'Acierto promediando (%)',
+    step: '1',
+    min: '0',
+    max: '100',
+    onlyMultiEntry: true,
+  },
   { key: 'beRate', label: 'Operaciones en BE (%)', step: '1', min: '0', max: '100' },
   { key: 'tradesPerWeek', label: 'Operaciones por semana', step: '1', min: '0' },
   { key: 'weeks', label: 'Semanas', step: '1', min: '0' },
@@ -19546,7 +19562,8 @@ function stRenderFields(side) {
   if (!host) return;
   const config = stState[side] || stDefaultConfig();
 
-  const campos = ST_FIELDS.map(
+  const variasEntradas = (config.entries || []).length > 1;
+  const campos = ST_FIELDS.filter((f) => !f.onlyMultiEntry || variasEntradas).map(
     (f) => `
       <label class="st-field">
         <span>${escapeHtmlChipText(t(`st_field_${f.key}`, f.label))}</span>
@@ -19852,6 +19869,18 @@ function stRenderSummary(a, b) {
       tone: (r) => (r.projection.profit > 0 ? 'positive' : r.projection.profit < 0 ? 'negative' : 'neutral'),
     },
     {
+      label: t('st_res_averaged', 'Acaban promediando'),
+      value: (r) => `${((r.averagedRate ?? 0) * 100).toFixed(0)}%`,
+      sub: (r) =>
+        `${t('st_res_averaged_sub', 'acierto')} ${(r.winRate * 100).toFixed(1)}% ${t(
+          'st_res_averaged_sub_2',
+          'de media, juntando los dos casos'
+        )}`,
+      tone: () => 'neutral',
+      // Solo se enseña si la posición se construye por partes.
+      onlyMultiEntry: true,
+    },
+    {
       label: t('st_res_trades', 'Operaciones del periodo'),
       value: (r) => String(r.totalTrades),
       sub: (r) => `${r.tradesPerWeek}/${t('st_res_week', 'semana')} · ${r.weeks} ${t('st_res_weeks', 'semanas')}`,
@@ -19878,7 +19907,9 @@ function stRenderSummary(a, b) {
       <small>${escapeHtmlChipText(fila.sub(r))}</small>
     </div>`;
 
+  const variasEntradas = (a.escenarios || []).length > 1 || (b && (b.escenarios || []).length > 1);
   host.innerHTML = filas
+    .filter((fila) => !fila.onlyMultiEntry || variasEntradas)
     .map(
       (fila) => `
       <div class="st-metric-row">
@@ -20047,6 +20078,9 @@ function initStrategyTester() {
       if (config) {
         config.entries = [...(config.entries || []), { weight: 0, rr: 2, fillRate: 60 }];
         stDistributeEven(config.entries);
+        // El campo aparece ahora por primera vez: se iguala al acierto general para no meter un
+        // número que el usuario no ha decidido.
+        if (config.winRateAveraged == null) config.winRateAveraged = config.winRate;
         stRenderFields(side);
         stRecalculate();
       }

@@ -606,5 +606,9 @@
   "st_combined_rr_full": "if all filled",
   "st_deployed": "on average you risk",
   "st_deployed_2": "of what was planned",
-  "st_res_one_r_partial": "on average it fills"
+  "st_res_one_r_partial": "on average it fills",
+  "st_field_winRateAveraged": "Win rate when averaging (%)",
+  "st_res_averaged": "End up averaged",
+  "st_res_averaged_sub": "win rate",
+  "st_res_averaged_sub_2": "on average, both cases together"
 }

@@ -606,5 +606,9 @@
   "st_combined_rr_full": "si se activaran todas",
   "st_deployed": "de media se arriesga el",
   "st_deployed_2": "de lo previsto",
-  "st_res_one_r_partial": "de media entra el"
+  "st_res_one_r_partial": "de media entra el",
+  "st_field_winRateAveraged": "Acierto promediando (%)",
+  "st_res_averaged": "Acaban promediando",
+  "st_res_averaged_sub": "acierto",
+  "st_res_averaged_sub_2": "de media, juntando los dos casos"
 }

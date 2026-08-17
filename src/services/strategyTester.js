@@ -66,6 +66,70 @@ function combineEntries(entries) {
   };
 }
 
+/**
+ * Escenarios posibles de una operación, según hasta dónde se llegue a construir la posición.
+ *
+ * Las entradas se activan en orden: la segunda solo tiene sentido si ya estás dentro, y la
+ * tercera solo si entró la segunda. Así que los casos son «solo la primera», «primera y
+ * segunda», «las tres»... cada uno con su probabilidad.
+ *
+ * Lo importante: promediar no es un suceso neutro. Si la segunda entrada se activa es porque el
+ * precio se fue en tu contra, y esas operaciones no aciertan lo mismo que las que se van a favor
+ * desde el principio. Por eso cada escenario lleva su propio acierto: `winRate` para las que no
+ * promedian y `winRateAveraged` para las que sí. Meterlas todas en el mismo saco con un solo
+ * acierto es lo que hace que estos cálculos salgan demasiado bonitos.
+ */
+function buildScenarios(entries, { winRate, winRateAveraged, beRate }) {
+  const list = (Array.isArray(entries) ? entries : [])
+    .map((e, i) => ({
+      weight: Math.max(0, Number(e?.weight) || 0),
+      rr: Math.max(0, Number(e?.rr) || 0),
+      fillRate: i === 0 ? 1 : clampRate(e?.fillRate === undefined ? 100 : e.fillRate),
+    }))
+    .filter((e) => e.weight > 0);
+
+  if (!list.length) return [];
+
+  const totalWeight = list.reduce((sum, e) => sum + e.weight, 0);
+  const winSolo = clampRate(winRate);
+  const winAvg = winRateAveraged == null ? winSolo : clampRate(winRateAveraged);
+  const be = clampRate(beRate);
+
+  const escenarios = [];
+  let probAcumulada = 1; // probabilidad de haber llegado hasta la entrada k
+
+  for (let k = 0; k < list.length; k += 1) {
+    if (k > 0) probAcumulada *= list[k].fillRate;
+    // Probabilidad de quedarse EXACTAMENTE en esta entrada: haber llegado hasta aquí y que la
+    // siguiente no se active.
+    const siguiente = k + 1 < list.length ? list[k + 1].fillRate : 0;
+    const prob = probAcumulada * (1 - siguiente);
+    if (prob <= 0) continue;
+
+    const usadas = list.slice(0, k + 1);
+    const peso = usadas.reduce((sum, e) => sum + e.weight, 0) / totalWeight;
+    const rr = peso > 0
+      ? usadas.reduce((sum, e) => sum + (e.weight / totalWeight) * e.rr, 0) / peso
+      : 0;
+
+    const win = k === 0 ? winSolo : winAvg;
+    const beAjustado = Math.min(be, Math.max(0, 1 - win));
+
+    escenarios.push({
+      entriesFilled: k + 1,
+      averaged: k > 0,
+      prob,
+      deployedShare: peso,
+      rr,
+      winRate: win,
+      beRate: beAjustado,
+      lossRate: Math.max(0, 1 - win - beAjustado),
+    });
+  }
+
+  return escenarios;
+}
+
 /* --------------------------------------------------------------------------- por operación */
 
 /**
@@ -204,31 +268,62 @@ function estimatedDrawdownPct({ riskPercent, streak }) {
  */
 function runStrategyTest(config = {}) {
   const entries = combineEntries(config.entries);
-  // Si no se detalla la posición por entradas, se usa el RR suelto.
-  const rr = entries.entries.length ? entries.rr : Math.max(0, Number(config.rr) || 0);
-  // Proporción del riesgo previsto que de media se llega a arriesgar.
-  const deployed = entries.entries.length ? entries.deployed : 1;
+  const escenarios = buildScenarios(config.entries, {
+    winRate: config.winRate,
+    winRateAveraged: config.winRateAveraged,
+    beRate: config.beRate,
+  });
 
   const tradesPerWeek = Math.max(0, Number(config.tradesPerWeek) || 0);
   const weeks = Math.max(0, Number(config.weeks) || 0);
   const totalTrades = Math.round(tradesPerWeek * weeks);
 
-  const perTrade = expectancyPerTrade({
-    winRate: config.winRate,
-    rr,
-    beRate: config.beRate,
-    // La comisión se descuenta después, sobre el resultado ya escalado: se paga entera aunque
-    // la posición se haya montado a medias.
-    commissionR: 0,
-  });
-
-  // El resultado se escala por lo que de verdad se arriesga. Con media posición puesta, tanto la
-  // ganancia como la pérdida son la mitad.
   const commission = Math.max(0, Number(config.commissionR) || 0);
-  const expectancyR = perTrade.expectancyR * deployed - commission;
-
   const riskPercent = Math.max(0, Number(config.riskPercent) || 0);
   const startingCapital = Math.max(0, Number(config.startingCapital) || 0);
+
+  let expectancyR;
+  let deployed;
+  let rr;
+  let winRate;
+  let beRate;
+  let lossRate;
+
+  if (escenarios.length) {
+    // Cada escenario aporta lo suyo, ponderado por lo probable que sea. El riesgo de cada uno se
+    // escala por la parte de la posición que llegó a montarse.
+    expectancyR =
+      escenarios.reduce(
+        (sum, e) => sum + e.prob * e.deployedShare * (e.winRate * e.rr - e.lossRate),
+        0
+      ) - commission;
+
+    deployed = escenarios.reduce((sum, e) => sum + e.prob * e.deployedShare, 0);
+
+    // RR medio de lo que de verdad se arriesga, para poder enseñarlo.
+    const recompensa = escenarios.reduce((sum, e) => sum + e.prob * e.deployedShare * e.rr, 0);
+    rr = deployed > 0 ? recompensa / deployed : 0;
+
+    // Estas tres se ponderan por probabilidad del escenario (no por riesgo): lo que miden es
+    // cada cuántas operaciones se gana o se pierde, que es lo que necesita la racha.
+    winRate = escenarios.reduce((sum, e) => sum + e.prob * e.winRate, 0);
+    beRate = escenarios.reduce((sum, e) => sum + e.prob * e.beRate, 0);
+    lossRate = escenarios.reduce((sum, e) => sum + e.prob * e.lossRate, 0);
+  } else {
+    // Sin entradas detalladas: una posición normal con el RR suelto.
+    rr = Math.max(0, Number(config.rr) || 0);
+    deployed = 1;
+    const perTrade = expectancyPerTrade({
+      winRate: config.winRate,
+      rr,
+      beRate: config.beRate,
+      commissionR: 0,
+    });
+    expectancyR = perTrade.expectancyR - commission;
+    winRate = perTrade.winRate;
+    beRate = perTrade.beRate;
+    lossRate = perTrade.lossRate;
+  }
 
   const projection = projectCompound({
     startingCapital,
@@ -239,11 +334,7 @@ function runStrategyTest(config = {}) {
     pointEvery: Math.max(1, Math.ceil(totalTrades / 120)),
   });
 
-  const streak = expectedLosingStreak({
-    winRate: perTrade.winRate,
-    beRate: perTrade.beRate,
-    trades: totalTrades,
-  });
+  const streak = expectedLosingStreak({ winRate, beRate, trades: totalTrades });
 
   return {
     rr,
@@ -251,6 +342,9 @@ function runStrategyTest(config = {}) {
     nominalRr: entries.entries.length ? entries.nominalRr : rr,
     deployed,
     entries: entries.entries,
+    escenarios,
+    // Con cuánta frecuencia la posición acaba promediada.
+    averagedRate: escenarios.filter((e) => e.averaged).reduce((sum, e) => sum + e.prob, 0),
     totalTrades,
     tradesPerWeek,
     weeks,
@@ -258,9 +352,9 @@ function runStrategyTest(config = {}) {
     // Lo que deja de media una operación, en R y en dinero sobre el capital de partida.
     expectancyR,
     expectancyMoney: startingCapital * (riskPercent / 100) * expectancyR,
-    winRate: perTrade.winRate,
-    beRate: perTrade.beRate,
-    lossRate: perTrade.lossRate,
+    winRate,
+    beRate,
+    lossRate,
     breakEvenWinRate: breakEvenWinRate(rr),
     profitable: expectancyR > 0,
     projection,
@@ -268,6 +362,7 @@ function runStrategyTest(config = {}) {
     estimatedDrawdownPct: estimatedDrawdownPct({ riskPercent: riskPercent * deployed, streak }),
   };
 }
+
 
 /* -------------------------------------------------------------------------------- utilidad */
 
@@ -281,6 +376,7 @@ function clampRate(value) {
 
 module.exports = {
   combineEntries,
+  buildScenarios,
   expectancyPerTrade,
   breakEvenWinRate,
   projectCompound,
