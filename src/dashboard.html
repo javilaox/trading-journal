@@ -5991,6 +5991,21 @@
       .st-tag-a { background: rgba(34, 197, 94, 0.16); color: var(--green, #22c55e); }
       .st-tag-b { background: rgba(56, 189, 248, 0.16); color: #38bdf8; }
       .st-column-head .custom-select { flex: 1 1 220px; min-width: 0; }
+      /* Cabecera de un grupo dentro de un desplegable de la aplicacion. No es pulsable: solo
+         separa y da nombre a los bloques de opciones. */
+      .select-group-label {
+        padding: 8px 12px 4px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        pointer-events: none;
+      }
+      .select-options .select-group-label:not(:first-child) {
+        border-top: 1px solid var(--border);
+        margin-top: 4px;
+      }
       .st-metric-pick {
         display: flex;
         align-items: center;

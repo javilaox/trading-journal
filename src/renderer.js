@@ -5653,7 +5653,23 @@ function refreshCustomSelectForNative(nativeSelect) {
   }
 
   optionsContainer.innerHTML = '';
+  // Los grupos (<optgroup>) se pintan como una cabecera no pulsable. Antes se recorria
+  // `nativeSelect.options`, que devuelve las opciones en plano y sin decir a que grupo
+  // pertenecen: los titulos se perdian y todas las opciones aparecian mezcladas. Los
+  // desplegables que no usan grupos no cambian en nada.
+  let grupoActual = null;
   Array.from(nativeSelect.options).forEach((option) => {
+    const grupo = option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : null;
+    if (grupo && grupo !== grupoActual) {
+      grupoActual = grupo;
+      const cabecera = document.createElement('div');
+      cabecera.className = 'select-group-label';
+      cabecera.textContent = grupo;
+      optionsContainer.appendChild(cabecera);
+    } else if (!grupo) {
+      grupoActual = null;
+    }
+
     const optionElement = document.createElement('div');
     optionElement.className = 'select-option';
     optionElement.dataset.value = option.value;
@@ -19419,7 +19435,24 @@ function stDefaultConfig() {
 function stCollectStrategies() {
   const lista = [];
 
+  // Operaciones de backtesting agrupadas por estrategia. Antes no se contaban y esas estrategias
+  // salian sin numero de operaciones ni acierto medido, como si no tuvieran datos detras: si has
+  // hecho 200 operaciones de backtest, ese acierto es tan util como el de las reales.
+  const backtestPorEstrategia = new Map();
+  (Array.isArray(cachedBacktestingTrades) ? cachedBacktestingTrades : []).forEach((t) => {
+    const nombre = String(t?.strategy || '').trim();
+    if (!nombre) return;
+    if (!backtestPorEstrategia.has(nombre)) backtestPorEstrategia.set(nombre, []);
+    backtestPorEstrategia.get(nombre).push(t);
+  });
+
+  const proporcion = (ops, resultado) =>
+    ops.length
+      ? (ops.filter((t) => String(t.result).toUpperCase() === resultado).length / ops.length) * 100
+      : null;
+
   getBacktestingStrategies().forEach((s) => {
+    const ops = backtestPorEstrategia.get(s.name) || [];
     lista.push({
       key: `bt:${s.name}`,
       name: s.name,
@@ -19427,8 +19460,9 @@ function stCollectStrategies() {
       rr: Number(s.rr) || 0,
       riskUnit: s.risk_unit === 'percent' ? 'percent' : 'eur',
       riskValue: Number(s.risk_value ?? s.risk ?? s.risk_per_trade) || 0,
-      winRate: null,
-      trades: 0,
+      winRate: proporcion(ops, 'TP'),
+      beRate: proporcion(ops, 'BE'),
+      trades: ops.length,
     });
   });
 
@@ -19488,10 +19522,11 @@ function stFillStrategySelect(side) {
     delGrupo.forEach((s) => {
       const op = document.createElement('option');
       op.value = s.key;
-      op.textContent =
-        s.origen === 'real' && s.trades
-          ? `${s.name} (${s.trades} ${s.trades === 1 ? 'op' : 'ops'})`
-          : s.name;
+      const origen = s.origen === 'real' ? t('st_tag_real', 'real') : t('st_tag_backtest', 'backtest');
+      const cuenta = s.trades
+        ? `, ${s.trades} ${s.trades === 1 ? t('st_op_one', 'operación') : t('st_op_many', 'operaciones')}`
+        : `, ${t('st_no_ops', 'sin operaciones')}`;
+      op.textContent = `${s.name} · ${origen}${cuenta}`;
       grupo.appendChild(op);
     });
     select.appendChild(grupo);
@@ -20323,6 +20358,22 @@ function initStrategyTester() {
 async function refreshStrategyTesterView() {
   initStrategyTester();
   await loadBacktestingSettings();
+
+  // Las operaciones de backtesting hacen falta para contar cuántas tiene cada estrategia y medir
+  // su acierto. Solo se piden si aún no están cargadas: entrar aquí no tiene por qué costar una
+  // consulta si ya se ha pasado por Backtesting.
+  if (!Array.isArray(cachedBacktestingTrades) || !cachedBacktestingTrades.length) {
+    const backend = getBackendApi();
+    if (backend?.getBacktestTrades) {
+      try {
+        const lista = await backend.getBacktestTrades();
+        cachedBacktestingTrades = Array.isArray(lista) ? lista : [];
+      } catch (error) {
+        console.warn('No se pudieron cargar las operaciones de backtesting:', error);
+      }
+    }
+  }
+
   stFillStrategySelect('a');
   stFillStrategySelect('b');
   stFillMetricSelect('a');

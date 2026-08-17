@@ -451,7 +451,22 @@ function refreshCustomSelectForNative(nativeSelect) {
   }
 
   optionsContainer.innerHTML = '';
+  let grupoActual = null;
   Array.from(nativeSelect.options).forEach((option) => {
+    // Los grupos (<optgroup>) se pintan como cabecera no pulsable. Hoy ningún desplegable de
+    // Estadísticas usa grupos, pero recorrer `options` los pierde en silencio, así que se
+    // contempla aquí igual que en el resto de la aplicación para que no vuelva a pasar.
+    const grupo = option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : null;
+    if (grupo && grupo !== grupoActual) {
+      grupoActual = grupo;
+      const cabecera = document.createElement('div');
+      cabecera.className = 'select-group-label';
+      cabecera.textContent = grupo;
+      optionsContainer.appendChild(cabecera);
+    } else if (!grupo) {
+      grupoActual = null;
+    }
+
     const optionElement = document.createElement('div');
     optionElement.className = 'select-option';
     optionElement.dataset.value = option.value;

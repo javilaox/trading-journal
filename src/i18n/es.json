@@ -620,5 +620,8 @@
   "st_metric_win_solo": "acierto sin promediar",
   "st_metric_win_avg": "promediando",
   "st_metric_few": "son pocas operaciones: tómalo como una primera referencia",
-  "st_metric_no_data": "Ninguna operación de esta estrategia tiene esa métrica contestada, así que no hay nada que medir."
+  "st_metric_no_data": "Ninguna operación de esta estrategia tiene esa métrica contestada, así que no hay nada que medir.",
+  "st_tag_real": "real",
+  "st_tag_backtest": "backtest",
+  "st_no_ops": "sin operaciones"
 }

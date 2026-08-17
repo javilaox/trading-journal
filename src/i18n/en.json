@@ -620,5 +620,8 @@
   "st_metric_win_solo": "win rate without averaging",
   "st_metric_win_avg": "averaging",
   "st_metric_few": "few trades: take it as a first reference",
-  "st_metric_no_data": "No trade of this strategy has that metric answered, so there is nothing to measure."
+  "st_metric_no_data": "No trade of this strategy has that metric answered, so there is nothing to measure.",
+  "st_tag_real": "real",
+  "st_tag_backtest": "backtest",
+  "st_no_ops": "no trades"
 }
