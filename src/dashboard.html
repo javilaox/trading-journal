@@ -5991,6 +5991,37 @@
       .st-tag-a { background: rgba(34, 197, 94, 0.16); color: var(--green, #22c55e); }
       .st-tag-b { background: rgba(56, 189, 248, 0.16); color: #38bdf8; }
       .st-column-head .custom-select { flex: 1 1 220px; min-width: 0; }
+      .st-metric-pick {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .st-metric-pick[hidden] { display: none; }
+      .st-metric-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+      .st-metric-pick .custom-select { flex: 1 1 200px; min-width: 0; }
+      .st-metric-note {
+        margin: 0;
+        font-size: 11px;
+        line-height: 1.4;
+        color: var(--text-muted);
+        padding: 8px 10px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.16);
+      }
+      .st-metric-note[hidden] { display: none; }
+      .st-metric-note.is-warn {
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.07);
+        color: #fbbf24;
+      }
+      body.light .st-metric-note { background: rgba(148, 163, 184, 0.08); }
       .st-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -9502,6 +9533,13 @@
                     <span class="st-column-tag st-tag-a" data-i18n="st_config_a">Configuración A</span>
                     <select id="stStrategyA" class="input st-strategy-select"></select>
                   </div>
+                  <!-- Si en cada operacion se marca una metrica del tipo «activo la segunda
+                       entrada», se puede medir con ella en vez de estimarlo a ojo. -->
+                  <div class="st-metric-pick" data-st-metric-wrap="a" hidden>
+                    <span class="st-metric-label" data-i18n="st_metric_pick">Medir con la métrica</span>
+                    <select id="stMetricA" class="input"></select>
+                  </div>
+                  <p class="st-metric-note" data-st-metric-note="a" hidden></p>
                   <div class="st-fields" data-st-fields="a"></div>
                 </div>
 
@@ -9510,6 +9548,13 @@
                     <span class="st-column-tag st-tag-b" data-i18n="st_config_b">Configuración B</span>
                     <select id="stStrategyB" class="input st-strategy-select"></select>
                   </div>
+                  <!-- Si en cada operacion se marca una metrica del tipo «activo la segunda
+                       entrada», se puede medir con ella en vez de estimarlo a ojo. -->
+                  <div class="st-metric-pick" data-st-metric-wrap="b" hidden>
+                    <span class="st-metric-label" data-i18n="st_metric_pick">Medir con la métrica</span>
+                    <select id="stMetricB" class="input"></select>
+                  </div>
+                  <p class="st-metric-note" data-st-metric-note="b" hidden></p>
                   <div class="st-fields" data-st-fields="b"></div>
                 </div>
               </div>

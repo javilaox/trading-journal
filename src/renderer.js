@@ -19535,6 +19535,192 @@ function stApplyStrategy(side, key) {
   stRecalculate();
 }
 
+
+/* ------------------------------------------------------- medir con una métrica de la estrategia
+ * Si en cada operación se marca una métrica del tipo «activó la segunda entrada», ese campo deja
+ * de ser una estimación: se puede contar. Y no solo cuántas veces pasa, sino algo más útil, que
+ * es cómo acaban esas operaciones comparadas con las demás.
+ *
+ * De ahí salen los tres números que más cuesta acertar a ojo:
+ *   - cada cuánto se activa la segunda entrada,
+ *   - qué acierto tienen las operaciones que NO promedian,
+ *   - qué acierto tienen las que SÍ.
+ */
+
+/** Métricas definidas en una estrategia real, para ofrecerlas en el desplegable. */
+function stMetricsForStrategy(strategyName) {
+  try {
+    return getStrategyMetricsByName(strategyName) || [];
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Cuenta las operaciones de esa estrategia separándolas por si la métrica estaba marcada.
+ * Devuelve null si no hay nada que medir.
+ */
+function stMeasureMetric(strategyName, metricName) {
+  const nombre = String(strategyName || '').trim();
+  const metrica = String(metricName || '').trim();
+  if (!nombre || !metrica) return null;
+
+  const todos = Array.isArray(window.cachedTrades) ? window.cachedTrades : cachedTrades || [];
+  const deLaEstrategia = todos.filter((t) => String(t?.strategy || '').trim() === nombre);
+
+  const conMetrica = [];
+  const sinMetrica = [];
+  deLaEstrategia.forEach((t) => {
+    const valor = parseTradeCustomMetrics(t)[metrica];
+    // Solo cuentan las operaciones en las que la métrica está contestada. Las anteriores a
+    // crearla no valen ni como sí ni como no, y meterlas en el saco del «no» inventaría un dato.
+    if (valor === true) conMetrica.push(t);
+    else if (valor === false) sinMetrica.push(t);
+  });
+
+  const evaluadas = conMetrica.length + sinMetrica.length;
+  if (!evaluadas) return { evaluadas: 0, conMetrica: 0, sinMetrica: 0 };
+
+  const acierto = (lista) =>
+    lista.length
+      ? (lista.filter((t) => String(t.result).toUpperCase() === 'TP').length / lista.length) * 100
+      : null;
+  const empates = (lista) =>
+    lista.length
+      ? (lista.filter((t) => String(t.result).toUpperCase() === 'BE').length / lista.length) * 100
+      : null;
+
+  return {
+    evaluadas,
+    conMetrica: conMetrica.length,
+    sinMetrica: sinMetrica.length,
+    fillRate: (conMetrica.length / evaluadas) * 100,
+    winRateSolo: acierto(sinMetrica),
+    winRateAveraged: acierto(conMetrica),
+    beRate: empates(deLaEstrategia),
+  };
+}
+
+/** Rellena el desplegable de métricas de una columna, o lo esconde si no hay ninguna. */
+function stFillMetricSelect(side) {
+  const wrap = document.querySelector(`[data-st-metric-wrap="${side}"]`);
+  const select = document.getElementById(side === 'b' ? 'stMetricB' : 'stMetricA');
+  if (!wrap || !select) return;
+
+  const config = stState[side] || {};
+  const key = String(config.strategyKey || '');
+  // Solo tiene sentido con una estrategia real: es la única que tiene operaciones que contar.
+  const esReal = key.startsWith('real:');
+  const metricas = esReal ? stMetricsForStrategy(key.slice(5)) : [];
+
+  if (!metricas.length) {
+    wrap.hidden = true;
+    select.innerHTML = '';
+    stRenderMetricNote(side, null);
+    return;
+  }
+
+  wrap.hidden = false;
+  const previo = select.value;
+  select.innerHTML = '';
+  const vacia = document.createElement('option');
+  vacia.value = '';
+  vacia.textContent = t('st_metric_none', 'No medir con ninguna métrica');
+  select.appendChild(vacia);
+  metricas.forEach((m) => {
+    const op = document.createElement('option');
+    op.value = m;
+    op.textContent = m;
+    select.appendChild(op);
+  });
+  const guardada = config.metricKey || previo;
+  if ([...select.options].some((o) => o.value === guardada)) select.value = guardada;
+  refreshCustomSelectForNative(select);
+}
+
+/**
+ * Aplica lo medido a la configuración. Solo toca lo que la medición sabe: si un grupo se queda
+ * sin operaciones, ese acierto no se cambia, porque no hay dato del que sacarlo.
+ */
+function stApplyMetric(side, metricName) {
+  const config = stState[side];
+  if (!config) return;
+
+  config.metricKey = metricName || '';
+  if (!metricName) {
+    stRenderMetricNote(side, null);
+    stRenderFields(side);
+    stRecalculate();
+    return;
+  }
+
+  const medida = stMeasureMetric(String(config.strategyKey || '').slice(5), metricName);
+  stRenderMetricNote(side, medida);
+  if (!medida || !medida.evaluadas) {
+    stRenderFields(side);
+    stRecalculate();
+    return;
+  }
+
+  // La métrica describe la segunda entrada, así que hace falta que exista. Si solo hay una, se
+  // añade repartiendo el riesgo a partes iguales; el RR se deja igual y el usuario lo ajusta.
+  if ((config.entries || []).length < 2) {
+    config.entries = [...(config.entries || [{ weight: 100, rr: 2, fillRate: 100 }])];
+    config.entries.push({ weight: 0, rr: config.entries[0]?.rr || 2, fillRate: 100 });
+    stDistributeEven(config.entries);
+  }
+  config.entries[1].fillRate = medida.fillRate;
+
+  if (medida.winRateSolo != null) config.winRate = medida.winRateSolo;
+  if (medida.winRateAveraged != null) config.winRateAveraged = medida.winRateAveraged;
+  if (medida.beRate != null) config.beRate = medida.beRate;
+
+  stRenderFields(side);
+  stRecalculate();
+}
+
+/** Explica qué se ha medido y con cuántas operaciones, para que el número no salga de la nada. */
+function stRenderMetricNote(side, medida) {
+  const el = document.querySelector(`[data-st-metric-note="${side}"]`);
+  if (!el) return;
+
+  if (!medida) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+
+  if (!medida.evaluadas) {
+    el.hidden = false;
+    el.className = 'st-metric-note is-warn';
+    el.textContent = t(
+      'st_metric_no_data',
+      'Ninguna operación de esta estrategia tiene esa métrica contestada, así que no hay nada que medir.'
+    );
+    return;
+  }
+
+  const partes = [
+    `${t('st_metric_measured', 'Medido con')} ${medida.evaluadas} ${
+      medida.evaluadas === 1 ? t('st_op_one', 'operación') : t('st_op_many', 'operaciones')
+    }`,
+    `${t('st_metric_fill', 'se activa el')} ${medida.fillRate.toFixed(0)}% (${medida.conMetrica})`,
+  ];
+  if (medida.winRateSolo != null) {
+    partes.push(`${t('st_metric_win_solo', 'acierto sin promediar')} ${medida.winRateSolo.toFixed(0)}% (${medida.sinMetrica})`);
+  }
+  if (medida.winRateAveraged != null) {
+    partes.push(`${t('st_metric_win_avg', 'promediando')} ${medida.winRateAveraged.toFixed(0)}% (${medida.conMetrica})`);
+  }
+
+  // Con muy pocas operaciones a un lado, el porcentaje se mueve enteros con una sola operación
+  // más. Se dice, en vez de presentarlo como un dato firme.
+  const pocas = medida.conMetrica < 10 || medida.sinMetrica < 10;
+  el.hidden = false;
+  el.className = pocas ? 'st-metric-note is-warn' : 'st-metric-note';
+  el.textContent = partes.join(' · ') + (pocas ? ` · ${t('st_metric_few', 'son pocas operaciones: tómalo como una primera referencia')}` : '');
+}
+
 /* ------------------------------------------------------------------------- formulario */
 
 const ST_FIELDS = [
@@ -20106,6 +20292,9 @@ function initStrategyTester() {
     document
       .getElementById(side === 'b' ? 'stStrategyB' : 'stStrategyA')
       ?.addEventListener('change', (event) => stApplyStrategy(side, event.target.value));
+    document
+      .getElementById(side === 'b' ? 'stMetricB' : 'stMetricA')
+      ?.addEventListener('change', (event) => stApplyMetric(side, event.target.value));
   });
 
   document.getElementById('stCompare')?.addEventListener('change', (event) => {
@@ -20136,6 +20325,8 @@ async function refreshStrategyTesterView() {
   await loadBacktestingSettings();
   stFillStrategySelect('a');
   stFillStrategySelect('b');
+  stFillMetricSelect('a');
+  stFillMetricSelect('b');
   stRecalculate();
   void refreshLucideIcons();
 }

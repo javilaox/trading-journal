@@ -610,5 +610,15 @@
   "st_field_winRateAveraged": "Acierto promediando (%)",
   "st_res_averaged": "Acaban promediando",
   "st_res_averaged_sub": "acierto",
-  "st_res_averaged_sub_2": "de media, juntando los dos casos"
+  "st_res_averaged_sub_2": "de media, juntando los dos casos",
+  "st_metric_pick": "Medir con la métrica",
+  "st_metric_none": "No medir con ninguna métrica",
+  "st_metric_measured": "Medido con",
+  "st_op_one": "operación",
+  "st_op_many": "operaciones",
+  "st_metric_fill": "se activa el",
+  "st_metric_win_solo": "acierto sin promediar",
+  "st_metric_win_avg": "promediando",
+  "st_metric_few": "son pocas operaciones: tómalo como una primera referencia",
+  "st_metric_no_data": "Ninguna operación de esta estrategia tiene esa métrica contestada, así que no hay nada que medir."
 }
