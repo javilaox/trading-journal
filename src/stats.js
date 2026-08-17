@@ -1462,6 +1462,19 @@ async function loadFilters() {
 
   const accountPlaceholder = t('all_accounts', 'Todas las cuentas');
   const strategyPlaceholder = t('all_strategies', 'Todas las estrategias');
+  // Se recuerda lo que hubiera elegido el usuario ANTES de vaciar los desplegables. Al
+  // reconstruirlos se pierde la seleccion, y como los filtros se recargan cada vez que se entra
+  // en Estadisticas (y tambien al cambiar el tipo de cuenta), sin esto el filtro de Cuenta o de
+  // Estrategia se volvia a «Todas» a espaldas del usuario.
+  const seleccionCuenta =
+    document.getElementById('filterAccount')?.value ||
+    document.getElementById('filterCuenta')?.value ||
+    '';
+  const seleccionEstrategia =
+    document.getElementById('filterStrategy')?.value ||
+    document.getElementById('filterEstrategia')?.value ||
+    '';
+
   const accountSelect = clearSelect('filterAccount', accountPlaceholder)
     || clearSelect('filterCuenta', accountPlaceholder);
   const strategySelect = clearSelect('filterStrategy', strategyPlaceholder)
@@ -1469,6 +1482,20 @@ async function loadFilters() {
 
   appendOptions(accountSelect, accounts);
   appendOptions(strategySelect, strategies);
+
+  // Se devuelve la seleccion solo si esa opcion sigue existiendo. Si ya no esta (por ejemplo la
+  // cuenta no pertenece al tipo que se acaba de elegir), se queda en «Todas», que es lo honesto:
+  // dejar escrito un filtro que no se puede aplicar enseñaria unos numeros que no le
+  // corresponden.
+  const restaurar = (select, valor) => {
+    if (!select || !valor) return;
+    if ([...select.options].some((o) => o.value === valor)) {
+      select.value = valor;
+      refreshCustomSelectForNative(select);
+    }
+  };
+  restaurar(accountSelect, seleccionCuenta);
+  restaurar(strategySelect, seleccionEstrategia);
 }
 
 function getFilteredTrades() {
@@ -2959,10 +2986,19 @@ async function mountStatsView(container) {
 
   try {
     await bindStatsEventsOnce();
-    if (!statsInitialized) {
-      await loadStatsTrades();
-      statsInitialized = true;
-    }
+    // Se recargan los trades CADA vez que se entra en Estadísticas.
+    //
+    // Antes solo se cargaban la primera vez y la lista se quedaba congelada durante toda la
+    // sesión: si editabas un trade en el panel, las estadísticas seguían enseñando los datos
+    // viejos hasta cerrar y volver a abrir la aplicación. Por ejemplo, corregir la hora de una
+    // operación y que siguiera contando como «sin hora registrada».
+    //
+    // Se hace así, y no avisando desde cada sitio que cambia un trade, porque los sitios que
+    // pueden modificar uno son muchos (crear, editar, borrar, deshacer un borrado, importar,
+    // sincronizar) y basta con olvidarse de uno para volver a tener el mismo problema, otra vez
+    // sin ningún aviso. Recargar al entrar no se puede olvidar.
+    await loadStatsTrades();
+    statsInitialized = true;
     await applyFilters();
     refreshLucideIcons();
   } catch (error) {
