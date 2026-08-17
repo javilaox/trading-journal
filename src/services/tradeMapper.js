@@ -4,8 +4,34 @@ const {
   parsePositionLegs,
 } = require('./positionLegsUtils');
 
+/** Dirección: solo LONG (compra) o SHORT (venta); cualquier otra cosa queda a null. */
+function normalizeDirection(value) {
+  const v = String(value || '').trim().toUpperCase();
+  return v === 'LONG' || v === 'SHORT' ? v : null;
+}
+
+/** Checklist de la estrategia. Siempre un objeto plano (nunca array ni null). */
+function normalizeCustomMetrics(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return { ...value };
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 /**
  * Normaliza un trade al shape de columnas Supabase (sin renombrar columnas).
+ *
+ * OJO: lo que no aparezca en el objeto que se devuelve se pierde. Esta función es la que usa la
+ * creación de un trade con conexión, y le faltaban `direction` y `custom_metrics`: el trade se
+ * guardaba en Supabase sin ellas y, al volver, la copia local se quedaba igual. Por eso al editar
+ * un trade recién creado había que indicar otra vez si era compra o venta. Al crear sin conexión
+ * no pasaba, porque ese camino usa otra función que sí las incluía.
  */
 function mapTrade(raw) {
   const legsRaw = raw.position_legs ?? raw.positionLegs ?? [];
@@ -34,6 +60,8 @@ function mapTrade(raw) {
     image_after: raw.image_after || null,
     entry_time: raw.entry_time || null,
     exit_time: raw.exit_time || null,
+    direction: normalizeDirection(raw.direction),
+    custom_metrics: normalizeCustomMetrics(raw.custom_metrics),
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: positionLegsForStorage(applied.position_legs),
     user_id: raw.user_id,
