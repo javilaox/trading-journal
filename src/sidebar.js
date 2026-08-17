@@ -3,7 +3,16 @@
  */
 const { navigateTo } = require('./navigation.js');
 
-const SPA_VIEWS = new Set(['dashboard', 'trade', 'stats', 'management', 'config', 'backtesting', 'backtestingConfig']);
+const SPA_VIEWS = new Set([
+  'dashboard',
+  'trade',
+  'stats',
+  'management',
+  'config',
+  'backtesting',
+  'backtestingConfig',
+  'strategyTester',
+]);
 
 const NAV_ITEMS = [
   { id: 'btnDashboard', view: 'dashboard', icon: 'layout-dashboard', i18n: 'dashboard', label: 'Dashboard' },
@@ -18,6 +27,13 @@ const NAV_ITEMS = [
     icon: 'sliders-horizontal',
     i18n: '',
     label: 'Config. Backtesting'
+  },
+  {
+    id: 'btnStrategyTester',
+    view: 'strategyTester',
+    icon: 'calculator',
+    i18n: 'nav_strategy_tester',
+    label: 'Probador de estrategia'
   }
 ];
 
@@ -190,7 +206,11 @@ function normalizeSidebarStructure(activeView = '') {
 
 function setSidebarActiveView(activeView) {
   const normalized =
-    activeView === 'backtestingconfig' ? 'backtestingConfig' : String(activeView || 'dashboard');
+    activeView === 'backtestingconfig'
+      ? 'backtestingConfig'
+      : activeView === 'strategytester'
+        ? 'strategyTester'
+        : String(activeView || 'dashboard');
   NAV_ITEMS.forEach(({ id, view }) => {
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -289,7 +309,7 @@ function initSidebar({
     btn.addEventListener('click', () => {
       if (mode === 'spa' && typeof onSpaView === 'function') {
         if (view === 'stats' || SPA_VIEWS.has(view)) {
-          onSpaView(view === 'backtestingConfig' ? 'backtestingConfig' : view);
+          onSpaView(view);
           setSidebarActiveView(view);
           return;
         }
@@ -302,7 +322,7 @@ function initSidebar({
         navigateTo('stats');
         return;
       }
-      navigateTo(view === 'backtestingConfig' ? 'backtestingconfig' : view);
+      navigateTo(view === 'backtestingConfig' ? 'backtestingconfig' : view === 'strategyTester' ? 'strategytester' : view);
     });
   });
 

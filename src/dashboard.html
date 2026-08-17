@@ -5947,6 +5947,255 @@
         }
       }
 
+
+      /* ---------------------------------------------- Probador de estrategia -------------
+         Vive fuera de #backtestingView, asi que las reglas de ancho de aquella vista no le
+         afectan. Reutiliza las tarjetas y los botones de la aplicacion. */
+      #strategyTesterView .strategy-tester {
+        display: flex;
+        flex-direction: column;
+        gap: var(--section-gap, 16px);
+      }
+      .st-columns {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      .st-columns:has([data-st-side="b"]:not([hidden])) {
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      }
+      .st-column {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      /* Sin esto, la columna B seguiria viendose al ocultarla: el display de arriba le gana al
+         [hidden] del navegador. */
+      .st-column[hidden] { display: none; }
+      .st-column-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .st-column-tag {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .st-tag-a { background: rgba(34, 197, 94, 0.16); color: var(--green, #22c55e); }
+      .st-tag-b { background: rgba(56, 189, 248, 0.16); color: #38bdf8; }
+      .st-column-head .custom-select { flex: 1 1 220px; min-width: 0; }
+      .st-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 10px 14px;
+      }
+      .st-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .st-field > span {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+      .st-entries-block {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(15, 23, 42, 0.16);
+      }
+      body.light .st-entries-block { background: rgba(148, 163, 184, 0.08); }
+      .st-entries-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .st-block-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+      .st-block-hint {
+        margin: 3px 0 0;
+        font-size: 11px;
+        color: var(--text-muted);
+        max-width: 46ch;
+      }
+      .st-entries {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .st-entry {
+        display: grid;
+        grid-template-columns: 22px 1fr 1fr 30px;
+        align-items: end;
+        gap: 8px;
+      }
+      .st-entry-num {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        padding-bottom: 9px;
+      }
+      .st-entry-remove {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-muted);
+        border-radius: 8px;
+        height: 34px;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .st-entry-remove:hover:not(:disabled) {
+        border-color: rgba(239, 68, 68, 0.5);
+        color: #f87171;
+      }
+      .st-entry-remove:disabled { opacity: 0.35; cursor: default; }
+      .st-entries-rr {
+        margin: 10px 0 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--green, #22c55e);
+      }
+      .st-entries-rr:empty { display: none; }
+      .st-compare-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      .st-compare-toggle {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .st-compare-toggle input {
+        width: 16px;
+        min-width: 16px;
+        max-width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 0;
+        cursor: pointer;
+      }
+      .st-verdict {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+      .st-verdict-line {
+        font-size: 13px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      .st-verdict-line.is-good {
+        border-color: rgba(34, 197, 94, 0.4);
+        background: rgba(34, 197, 94, 0.07);
+      }
+      .st-verdict-line.is-bad {
+        border-color: rgba(239, 68, 68, 0.4);
+        background: rgba(239, 68, 68, 0.07);
+      }
+      .st-verdict-compare {
+        font-size: 13px;
+        font-weight: 600;
+        padding: 4px 2px;
+      }
+      .st-summary {
+        display: flex;
+        flex-direction: column;
+      }
+      .st-metric-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 11px 2px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .st-metric-row:last-child { border-bottom: none; }
+      .st-metric-label {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .st-metric-values {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+      }
+      .st-metric {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 1px;
+        min-width: 110px;
+      }
+      .st-metric-tag {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 999px;
+        margin-bottom: 2px;
+      }
+      .st-metric strong {
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+      }
+      .st-metric strong.positive { color: var(--green, #22c55e); }
+      .st-metric strong.negative { color: var(--red, #ef4444); }
+      .st-metric small {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .st-warnings {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+      }
+      .st-warnings[hidden] { display: none; }
+      .st-warning {
+        font-size: 12px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+        color: #fbbf24;
+      }
+      .st-chart-wrap {
+        height: 300px;
+        margin-top: 12px;
+      }
+      @media (max-width: 700px) {
+        .st-metric-row { align-items: flex-start; }
+        .st-entry { grid-template-columns: 18px 1fr 1fr 30px; }
+      }
+
       .config-chip {
         display: inline-flex;
         align-items: center;
@@ -9228,6 +9477,65 @@
             </div>
 
             </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- Probador de estrategia: ver que cabe esperar de una forma de operar antes de
+             operarla. No guarda nada ni toca ningun dato; es todo calculo sobre lo que se
+             escriba en pantalla. -->
+        <section id="strategyTesterView" style="display:none;">
+          <div class="strategy-tester">
+            <div class="pro-panel">
+              <h2 class="section-title title-with-icon">
+                <i data-lucide="calculator"></i><span data-i18n="nav_strategy_tester">Probador de estrategia</span>
+              </h2>
+              <p class="backtesting-intro" data-i18n="st_intro">
+                Cambia los números y mira qué pasa. Sirve para comparar planteamientos entre sí, no para saber lo que vas a ganar.
+              </p>
+            </div>
+
+            <section class="card panel-card st-setup">
+              <div class="st-columns">
+                <div class="st-column" data-st-side="a">
+                  <div class="st-column-head">
+                    <span class="st-column-tag st-tag-a" data-i18n="st_config_a">Configuración A</span>
+                    <select id="stStrategyA" class="input st-strategy-select"></select>
+                  </div>
+                  <div class="st-fields" data-st-fields="a"></div>
+                </div>
+
+                <div class="st-column" data-st-side="b" hidden>
+                  <div class="st-column-head">
+                    <span class="st-column-tag st-tag-b" data-i18n="st_config_b">Configuración B</span>
+                    <select id="stStrategyB" class="input st-strategy-select"></select>
+                  </div>
+                  <div class="st-fields" data-st-fields="b"></div>
+                </div>
+              </div>
+
+              <div class="st-compare-row">
+                <label class="st-compare-toggle" for="stCompare">
+                  <input type="checkbox" id="stCompare" />
+                  <span data-i18n="st_compare">Comparar con una segunda configuración</span>
+                </label>
+                <button type="button" id="stReset" class="button secondary compact" data-i18n="st_reset">Volver a los valores de la estrategia</button>
+              </div>
+            </section>
+
+            <section class="card panel-card st-results">
+              <h3 class="section-title" data-i18n="st_results_title">Qué cabe esperar</h3>
+              <div id="stVerdict" class="st-verdict"></div>
+              <div id="stSummary" class="st-summary"></div>
+              <div id="stWarnings" class="st-warnings" hidden></div>
+            </section>
+
+            <section class="card panel-card st-chart-card">
+              <h3 class="section-title" data-i18n="st_curve_title">Crecimiento del capital</h3>
+              <p class="muted small" data-i18n="st_curve_hint">
+                Tendencia media, sin altibajos. Los altibajos reales los cubren la racha y la caída de arriba.
+              </p>
+              <div class="st-chart-wrap"><canvas id="stCurveChart"></canvas></div>
             </section>
           </div>
         </section>

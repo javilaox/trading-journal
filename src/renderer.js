@@ -3112,6 +3112,7 @@ async function checkAuth() {
 
 console.log('Renderer cargado');
 const { Chart: ChartJS, registerables } = require('chart.js');
+const { runStrategyTest } = require('./services/strategyTester.js');
 const {
   loadLanguage,
   t,
@@ -10353,6 +10354,7 @@ function updateWinrateInfoLabel() {
 function getViewFromHash() {
   const hash = (window.location.hash || '').replace('#', '').toLowerCase();
   if (hash === 'backtestingconfig') return 'backtestingConfig';
+  if (hash === 'strategytester') return 'strategyTester';
   // Alias retrocompatible: enlaces/hash antiguos a #withdrawals siguen llevando a Gestión.
   if (hash === 'withdrawals') return 'management';
   if (
@@ -10369,7 +10371,7 @@ function getViewFromHash() {
 }
 
 function showView(viewId) {
-  const views = ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig'];
+  const views = ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig', 'strategyTester'];
   const previousView = currentView;
   currentView = views.includes(viewId) ? viewId : (viewId === 'withdrawals' ? 'management' : 'dashboard');
 
@@ -10381,7 +10383,7 @@ function showView(viewId) {
   setSidebarActiveView(currentView);
   if (currentView !== 'dashboard') closeTradePanel();
 
-  ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig'].forEach((v) => {
+  ['dashboard', 'trade', 'config', 'stats', 'management', 'backtesting', 'backtestingConfig', 'strategyTester'].forEach((v) => {
     const el = document.getElementById(`${v}View`);
     if (el) el.style.display = v === currentView ? 'block' : 'none';
   });
@@ -10390,6 +10392,10 @@ function showView(viewId) {
     console.log('SPA navigate to stats');
     const statsRoot = document.getElementById('statsView');
     void mountStatsView(statsRoot).catch(console.error);
+  }
+
+  if (currentView === 'strategyTester') {
+    void refreshStrategyTesterView().catch(console.error);
   }
 
   if (currentView === 'dashboard') renderDashboard();
@@ -19366,6 +19372,596 @@ function initBacktestImportUi() {
   document.getElementById('btImportConfirmBtn')?.addEventListener('click', () => {
     void confirmBtImport();
   });
+}
+
+/* ============================== Probador de estrategia ==============================
+ * Ver qué cabe esperar de una forma de operar antes de operarla: esperanza por operación,
+ * capital proyectado con interés compuesto, racha de pérdidas y caída esperables.
+ *
+ * No guarda nada ni toca ningún dato. Todo se calcula sobre lo que hay escrito en pantalla, así
+ * que se puede trastear con total libertad. Los cálculos viven en services/strategyTester.js.
+ */
+
+/** Valores de las dos columnas. La B solo se usa si el usuario activa la comparación. */
+const stState = {
+  a: null,
+  b: null,
+  compare: false,
+};
+
+let stCurveChart = null;
+
+/** Punto de partida cuando no se ha elegido ninguna estrategia. */
+function stDefaultConfig() {
+  return {
+    strategyKey: '',
+    startingCapital: 10000,
+    riskPercent: 1,
+    winRate: 50,
+    beRate: 0,
+    commissionR: 0,
+    tradesPerWeek: 5,
+    weeks: 52,
+    entries: [{ weight: 100, rr: 2 }],
+  };
+}
+
+/**
+ * Estrategias que se pueden cargar, de los dos sitios donde hay.
+ *
+ * De las de backtesting salen el riesgo y el RR ya configurados. De las reales, además, se mide
+ * el acierto con las operaciones registradas: es el dato más valioso del probador, porque es el
+ * único que no se está inventando el usuario.
+ */
+function stCollectStrategies() {
+  const lista = [];
+
+  getBacktestingStrategies().forEach((s) => {
+    lista.push({
+      key: `bt:${s.name}`,
+      name: s.name,
+      origen: 'backtesting',
+      rr: Number(s.rr) || 0,
+      riskUnit: s.risk_unit === 'percent' ? 'percent' : 'eur',
+      riskValue: Number(s.risk_value ?? s.risk ?? s.risk_per_trade) || 0,
+      winRate: null,
+      trades: 0,
+    });
+  });
+
+  // Estrategias reales: el acierto se mide con los trades del usuario.
+  const trades = Array.isArray(window.cachedTrades) ? window.cachedTrades : cachedTrades || [];
+  const porEstrategia = new Map();
+  trades.forEach((t) => {
+    const nombre = String(t?.strategy || '').trim();
+    if (!nombre) return;
+    if (!porEstrategia.has(nombre)) porEstrategia.set(nombre, []);
+    porEstrategia.get(nombre).push(t);
+  });
+
+  porEstrategia.forEach((ops, nombre) => {
+    const tp = ops.filter((t) => String(t.result).toUpperCase() === 'TP').length;
+    const be = ops.filter((t) => String(t.result).toUpperCase() === 'BE').length;
+    lista.push({
+      key: `real:${nombre}`,
+      name: nombre,
+      origen: 'real',
+      rr: 0,
+      riskUnit: 'eur',
+      riskValue: 0,
+      winRate: ops.length ? (tp / ops.length) * 100 : null,
+      beRate: ops.length ? (be / ops.length) * 100 : 0,
+      trades: ops.length,
+    });
+  });
+
+  return lista;
+}
+
+/** Rellena el desplegable de estrategias de una columna. */
+function stFillStrategySelect(side) {
+  const select = document.getElementById(side === 'b' ? 'stStrategyB' : 'stStrategyA');
+  if (!select) return;
+
+  const previo = select.value;
+  const estrategias = stCollectStrategies();
+
+  select.innerHTML = '';
+  const vacia = document.createElement('option');
+  vacia.value = '';
+  vacia.textContent = t('st_no_strategy', 'Sin estrategia (valores a mano)');
+  select.appendChild(vacia);
+
+  const grupos = [
+    ['backtesting', t('st_from_backtesting', 'De backtesting')],
+    ['real', t('st_from_real', 'De tus operaciones reales')],
+  ];
+
+  grupos.forEach(([origen, etiqueta]) => {
+    const delGrupo = estrategias.filter((s) => s.origen === origen);
+    if (!delGrupo.length) return;
+    const grupo = document.createElement('optgroup');
+    grupo.label = etiqueta;
+    delGrupo.forEach((s) => {
+      const op = document.createElement('option');
+      op.value = s.key;
+      op.textContent =
+        s.origen === 'real' && s.trades
+          ? `${s.name} (${s.trades} ${s.trades === 1 ? 'op' : 'ops'})`
+          : s.name;
+      grupo.appendChild(op);
+    });
+    select.appendChild(grupo);
+  });
+
+  if ([...select.options].some((o) => o.value === previo)) select.value = previo;
+  refreshCustomSelectForNative(select);
+}
+
+/**
+ * Lleva los datos de una estrategia guardada a la configuración de una columna.
+ *
+ * Solo se rellena lo que la estrategia sabe de verdad: si no tiene acierto medido, se deja el que
+ * hubiera puesto el usuario en vez de inventarse uno. Un número inventado presentado como dato de
+ * la estrategia es peor que no rellenar nada.
+ */
+function stApplyStrategy(side, key) {
+  const config = stState[side] || stDefaultConfig();
+  const estrategia = stCollectStrategies().find((s) => s.key === key);
+
+  config.strategyKey = key || '';
+
+  if (estrategia) {
+    if (estrategia.rr > 0) config.entries = [{ weight: 100, rr: estrategia.rr }];
+    if (estrategia.riskUnit === 'percent' && estrategia.riskValue > 0) {
+      config.riskPercent = estrategia.riskValue;
+    } else if (estrategia.riskUnit === 'eur' && estrategia.riskValue > 0 && config.startingCapital > 0) {
+      // El riesgo estaba en euros: se pasa a % sobre el capital de partida, que es como trabaja
+      // el interés compuesto.
+      config.riskPercent = (estrategia.riskValue / config.startingCapital) * 100;
+    }
+    if (estrategia.winRate != null) config.winRate = estrategia.winRate;
+    if (estrategia.beRate != null) config.beRate = estrategia.beRate;
+  }
+
+  stState[side] = config;
+  stRenderFields(side);
+  stRecalculate();
+}
+
+/* ------------------------------------------------------------------------- formulario */
+
+const ST_FIELDS = [
+  { key: 'startingCapital', label: 'Capital inicial (€)', step: '100', min: '0' },
+  { key: 'riskPercent', label: 'Riesgo por operación (%)', step: '0.1', min: '0' },
+  { key: 'winRate', label: 'Acierto (%)', step: '1', min: '0', max: '100' },
+  { key: 'beRate', label: 'Operaciones en BE (%)', step: '1', min: '0', max: '100' },
+  { key: 'tradesPerWeek', label: 'Operaciones por semana', step: '1', min: '0' },
+  { key: 'weeks', label: 'Semanas', step: '1', min: '0' },
+  { key: 'commissionR', label: 'Comisión por operación (en R)', step: '0.01', min: '0' },
+];
+
+function stRenderFields(side) {
+  const host = document.querySelector(`[data-st-fields="${side}"]`);
+  if (!host) return;
+  const config = stState[side] || stDefaultConfig();
+
+  const campos = ST_FIELDS.map(
+    (f) => `
+      <label class="st-field">
+        <span>${escapeHtmlChipText(t(`st_field_${f.key}`, f.label))}</span>
+        <input type="number" class="input" data-st-side="${side}" data-st-key="${f.key}"
+               value="${stFormatNumber(config[f.key])}" step="${f.step}" min="${f.min}"
+               ${f.max ? `max="${f.max}"` : ''} />
+      </label>`
+  ).join('');
+
+  const entradas = (config.entries || [])
+    .map(
+      (e, i) => `
+      <div class="st-entry" data-st-entry="${i}">
+        <span class="st-entry-num">${i + 1}</span>
+        <label class="st-field">
+          <span>${escapeHtmlChipText(t('st_entry_weight', 'Peso (%)'))}</span>
+          <input type="number" class="input" data-st-side="${side}" data-st-entry-field="weight"
+                 data-st-entry-index="${i}" value="${stFormatNumber(e.weight)}" step="5" min="0" />
+        </label>
+        <label class="st-field">
+          <span>${escapeHtmlChipText(t('st_entry_rr', 'RR objetivo'))}</span>
+          <input type="number" class="input" data-st-side="${side}" data-st-entry-field="rr"
+                 data-st-entry-index="${i}" value="${stFormatNumber(e.rr)}" step="0.1" min="0" />
+        </label>
+        <button type="button" class="st-entry-remove" data-st-side="${side}" data-st-remove-entry="${i}"
+                aria-label="${escapeHtmlChipText(t('st_entry_remove', 'Quitar entrada'))}"
+                ${(config.entries || []).length <= 1 ? 'disabled' : ''}>×</button>
+      </div>`
+    )
+    .join('');
+
+  host.innerHTML = `
+    <div class="st-grid">${campos}</div>
+    <div class="st-entries-block">
+      <div class="st-entries-head">
+        <div>
+          <span class="st-block-label">${escapeHtmlChipText(t('st_entries_title', 'Entradas de la posición'))}</span>
+          <p class="st-block-hint">${escapeHtmlChipText(
+            t('st_entries_hint', 'Reparte el riesgo entre varias entradas con su propio RR. Los pesos son proporciones: 50 y 50 es lo mismo que 1 y 1.')
+          )}</p>
+        </div>
+        <button type="button" class="button secondary compact" data-st-add-entry="${side}">${escapeHtmlChipText(
+          t('st_entry_add', 'Añadir entrada')
+        )}</button>
+      </div>
+      <div class="st-entries">${entradas}</div>
+      <p class="st-entries-rr" data-st-entry-rr="${side}"></p>
+    </div>`;
+}
+
+/** Los números se escriben con hasta dos decimales, sin ceros de relleno. */
+function stFormatNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0';
+  return String(Math.round(n * 100) / 100);
+}
+
+/* ------------------------------------------------------------------------- resultados */
+
+function stRecalculate() {
+  const resultadoA = runStrategyTest(stState.a || stDefaultConfig());
+  const resultadoB = stState.compare ? runStrategyTest(stState.b || stDefaultConfig()) : null;
+
+  stRenderEntryRr('a', resultadoA);
+  if (resultadoB) stRenderEntryRr('b', resultadoB);
+
+  stRenderVerdict(resultadoA, resultadoB);
+  stRenderSummary(resultadoA, resultadoB);
+  stRenderWarnings(resultadoA, resultadoB);
+  stRenderCurve(resultadoA, resultadoB);
+}
+
+function stRenderEntryRr(side, resultado) {
+  const el = document.querySelector(`[data-st-entry-rr="${side}"]`);
+  if (!el) return;
+  const config = stState[side] || {};
+  if ((config.entries || []).length <= 1) {
+    el.textContent = '';
+    return;
+  }
+  el.textContent = `${t('st_combined_rr', 'RR combinado de la posición')}: ${resultado.rr.toFixed(2)}`;
+}
+
+function stMoney(value) {
+  const n = Number(value) || 0;
+  return `${n >= 0 ? '+' : ''}${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`;
+}
+
+function stCapital(value) {
+  const n = Number(value) || 0;
+  return `${n.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€`;
+}
+
+/** La conclusión de una línea: si el planteamiento gana o pierde, y por qué. */
+function stRenderVerdict(a, b) {
+  const host = document.getElementById('stVerdict');
+  if (!host) return;
+
+  const texto = (r) => {
+    const minimo = (r.breakEvenWinRate * 100).toFixed(1);
+    if (r.expectancyR > 0) {
+      return `${t('st_verdict_good', 'Planteamiento ganador')}: ${r.expectancyR.toFixed(
+        2
+      )}R ${t('st_verdict_per_trade', 'por operación')}. ${t(
+        'st_verdict_need',
+        'Con RR'
+      )} ${r.rr.toFixed(2)} ${t('st_verdict_need_2', 'necesitas acertar más del')} ${minimo}%.`;
+    }
+    if (r.expectancyR === 0) {
+      return `${t('st_verdict_flat', 'Planteamiento neutro')}: ni ganas ni pierdes. ${t(
+        'st_verdict_need',
+        'Con RR'
+      )} ${r.rr.toFixed(2)} ${t('st_verdict_need_2', 'necesitas acertar más del')} ${minimo}%.`;
+    }
+    return `${t('st_verdict_bad', 'Planteamiento perdedor')}: ${r.expectancyR.toFixed(2)}R ${t(
+      'st_verdict_per_trade',
+      'por operación'
+    )}. ${t('st_verdict_need', 'Con RR')} ${r.rr.toFixed(2)} ${t(
+      'st_verdict_need_2',
+      'necesitas acertar más del'
+    )} ${minimo}%.`;
+  };
+
+  const clase = (r) => (r.expectancyR > 0 ? 'is-good' : r.expectancyR < 0 ? 'is-bad' : '');
+
+  if (!b) {
+    host.innerHTML = `<div class="st-verdict-line ${clase(a)}">${escapeHtmlChipText(texto(a))}</div>`;
+    return;
+  }
+
+  const mejor =
+    a.projection.finalCapital > b.projection.finalCapital
+      ? 'A'
+      : b.projection.finalCapital > a.projection.finalCapital
+        ? 'B'
+        : null;
+
+  host.innerHTML = `
+    <div class="st-verdict-line ${clase(a)}"><strong>A</strong> ${escapeHtmlChipText(texto(a))}</div>
+    <div class="st-verdict-line ${clase(b)}"><strong>B</strong> ${escapeHtmlChipText(texto(b))}</div>
+    ${
+      mejor
+        ? `<div class="st-verdict-compare">${escapeHtmlChipText(
+            `${t('st_compare_winner', 'Con estos números renta más la configuración')} ${mejor} (${stCapital(
+              Math.abs(a.projection.finalCapital - b.projection.finalCapital)
+            )} ${t('st_compare_diff', 'de diferencia al final del periodo')}).`
+          )}</div>`
+        : ''
+    }`;
+}
+
+function stRenderSummary(a, b) {
+  const host = document.getElementById('stSummary');
+  if (!host) return;
+
+  const filas = [
+    {
+      label: t('st_res_expectancy', 'Media por operación'),
+      value: (r) => `${r.expectancyR.toFixed(2)}R`,
+      sub: (r) => stMoney(r.expectancyMoney),
+      tone: (r) => (r.expectancyR > 0 ? 'positive' : r.expectancyR < 0 ? 'negative' : 'neutral'),
+    },
+    {
+      label: t('st_res_final', 'Capital al final'),
+      value: (r) => stCapital(r.projection.finalCapital),
+      sub: (r) =>
+        `${stMoney(r.projection.profit)} · ${r.projection.profitPct >= 0 ? '+' : ''}${r.projection.profitPct.toFixed(1)}%`,
+      tone: (r) => (r.projection.profit > 0 ? 'positive' : r.projection.profit < 0 ? 'negative' : 'neutral'),
+    },
+    {
+      label: t('st_res_trades', 'Operaciones del periodo'),
+      value: (r) => String(r.totalTrades),
+      sub: (r) => `${r.tradesPerWeek}/${t('st_res_week', 'semana')} · ${r.weeks} ${t('st_res_weeks', 'semanas')}`,
+      tone: () => 'neutral',
+    },
+    {
+      label: t('st_res_streak', 'Racha de pérdidas esperable'),
+      value: (r) => `${Math.round(r.expectedLosingStreak)}`,
+      sub: () => t('st_res_streak_sub', 'seguidas, en algún momento del periodo'),
+      tone: () => 'neutral',
+    },
+    {
+      label: t('st_res_drawdown', 'Caída que provocaría'),
+      value: (r) => `-${r.estimatedDrawdownPct.toFixed(1)}%`,
+      sub: () => t('st_res_drawdown_sub', 'sobre el capital que hubiera en ese momento'),
+      tone: () => 'negative',
+    },
+  ];
+
+  const celda = (fila, r, etiqueta) => `
+    <div class="st-metric">
+      ${etiqueta ? `<span class="st-metric-tag st-tag-${etiqueta.toLowerCase()}">${etiqueta}</span>` : ''}
+      <strong class="${fila.tone(r)}">${escapeHtmlChipText(fila.value(r))}</strong>
+      <small>${escapeHtmlChipText(fila.sub(r))}</small>
+    </div>`;
+
+  host.innerHTML = filas
+    .map(
+      (fila) => `
+      <div class="st-metric-row">
+        <span class="st-metric-label">${escapeHtmlChipText(fila.label)}</span>
+        <div class="st-metric-values">
+          ${celda(fila, a, b ? 'A' : '')}
+          ${b ? celda(fila, b, 'B') : ''}
+        </div>
+      </div>`
+    )
+    .join('');
+}
+
+/**
+ * Avisos. No son errores: son cosas que el número solo no cuenta y que cambian la lectura.
+ */
+function stRenderWarnings(a, b) {
+  const host = document.getElementById('stWarnings');
+  if (!host) return;
+
+  const avisos = [];
+  const revisar = (r, etiqueta) => {
+    const prefijo = etiqueta ? `${etiqueta}: ` : '';
+    if (r.estimatedDrawdownPct >= 20) {
+      avisos.push(
+        `${prefijo}${t(
+          'st_warn_drawdown',
+          'la racha esperable te haría perder más de un 20% de la cuenta. Con la mayoría de prop firms eso es quedarte fuera.'
+        )}`
+      );
+    }
+    if (r.riskPercent > 3) {
+      avisos.push(
+        `${prefijo}${t('st_warn_risk', 'arriesgar más de un 3% por operación deja muy poco margen para una mala racha.')}`
+      );
+    }
+    if (r.projection.ruined) {
+      avisos.push(`${prefijo}${t('st_warn_ruined', 'con estos números la cuenta se queda a cero antes de terminar el periodo.')}`);
+    }
+    if (r.totalTrades === 0) {
+      avisos.push(`${prefijo}${t('st_warn_no_trades', 'no hay operaciones en el periodo: revisa las operaciones por semana y las semanas.')}`);
+    }
+  };
+
+  revisar(a, b ? 'A' : '');
+  if (b) revisar(b, 'B');
+
+  if (!avisos.length) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  host.hidden = false;
+  host.innerHTML = avisos.map((texto) => `<div class="st-warning">${escapeHtmlChipText(texto)}</div>`).join('');
+}
+
+function stRenderCurve(a, b) {
+  const canvas = document.getElementById('stCurveChart');
+  if (!canvas || !window.Chart) return;
+
+  if (stCurveChart) {
+    stCurveChart.destroy();
+    stCurveChart = null;
+  }
+
+  const etiquetas = a.projection.points.map((p) => p.trade);
+  const datasets = [
+    {
+      label: b ? 'A' : t('st_curve_label', 'Capital proyectado'),
+      data: a.projection.points.map((p) => p.capital),
+      borderColor: '#22c55e',
+      backgroundColor: 'rgba(34,197,94,.12)',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.25,
+      fill: true,
+    },
+  ];
+
+  if (b) {
+    datasets.push({
+      label: 'B',
+      data: b.projection.points.map((p) => p.capital),
+      borderColor: '#38bdf8',
+      backgroundColor: 'rgba(56,189,248,.10)',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.25,
+      fill: true,
+    });
+  }
+
+  stCurveChart = new window.Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: etiquetas, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: Boolean(b), labels: { color: '#94a3b8' } },
+        tooltip: {
+          callbacks: {
+            title: (items) => `${t('st_curve_trade', 'Operación')} ${items[0].label}`,
+            label: (ctx) => `${ctx.dataset.label}: ${stCapital(ctx.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: getChartGridColor() } },
+        y: {
+          ticks: { color: '#94a3b8', callback: (v) => stCapital(v) },
+          grid: { color: getChartGridColor() },
+        },
+      },
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------------- arranque */
+
+function stReadNumber(input) {
+  const n = Number(String(input.value).replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function initStrategyTester() {
+  const view = document.getElementById('strategyTesterView');
+  if (!view || view.dataset.stBound === 'true') return;
+  view.dataset.stBound = 'true';
+
+  stState.a = stDefaultConfig();
+  stState.b = stDefaultConfig();
+
+  // Un solo escuchador para toda la vista: los campos se vuelven a pintar al añadir o quitar
+  // entradas, así que enganchar uno a uno obligaría a re-enganchar en cada repintado.
+  view.addEventListener('input', (event) => {
+    const el = event.target;
+    if (!el?.matches?.('input[type="number"]')) return;
+    const side = el.dataset.stSide;
+    if (!side || !stState[side]) return;
+
+    if (el.dataset.stKey) {
+      stState[side][el.dataset.stKey] = stReadNumber(el);
+      stRecalculate();
+      return;
+    }
+    if (el.dataset.stEntryField) {
+      const i = Number(el.dataset.stEntryIndex);
+      const entrada = stState[side].entries[i];
+      if (entrada) {
+        entrada[el.dataset.stEntryField] = stReadNumber(el);
+        stRecalculate();
+      }
+    }
+  });
+
+  view.addEventListener('click', (event) => {
+    const add = event.target.closest('[data-st-add-entry]');
+    if (add) {
+      const side = add.dataset.stAddEntry;
+      const config = stState[side];
+      if (config) {
+        config.entries = [...(config.entries || []), { weight: 50, rr: 2 }];
+        stRenderFields(side);
+        stRecalculate();
+      }
+      return;
+    }
+    const remove = event.target.closest('[data-st-remove-entry]');
+    if (remove) {
+      const side = remove.dataset.stSide;
+      const i = Number(remove.dataset.stRemoveEntry);
+      const config = stState[side];
+      if (config && config.entries.length > 1) {
+        config.entries.splice(i, 1);
+        stRenderFields(side);
+        stRecalculate();
+      }
+    }
+  });
+
+  ['a', 'b'].forEach((side) => {
+    document
+      .getElementById(side === 'b' ? 'stStrategyB' : 'stStrategyA')
+      ?.addEventListener('change', (event) => stApplyStrategy(side, event.target.value));
+  });
+
+  document.getElementById('stCompare')?.addEventListener('change', (event) => {
+    stState.compare = Boolean(event.target.checked);
+    const columnaB = document.querySelector('[data-st-side="b"]');
+    if (columnaB) columnaB.hidden = !stState.compare;
+    stRecalculate();
+  });
+
+  document.getElementById('stReset')?.addEventListener('click', () => {
+    ['a', 'b'].forEach((side) => {
+      const key = stState[side]?.strategyKey || '';
+      stState[side] = stDefaultConfig();
+      stState[side].strategyKey = key;
+      if (key) stApplyStrategy(side, key);
+      else stRenderFields(side);
+    });
+    stRecalculate();
+  });
+
+  stRenderFields('a');
+  stRenderFields('b');
+}
+
+/** Se llama al entrar en la vista: las estrategias pueden haber cambiado desde la última vez. */
+async function refreshStrategyTesterView() {
+  initStrategyTester();
+  await loadBacktestingSettings();
+  stFillStrategySelect('a');
+  stFillStrategySelect('b');
+  stRecalculate();
+  void refreshLucideIcons();
 }
 
 window.addEventListener('DOMContentLoaded', async () => {

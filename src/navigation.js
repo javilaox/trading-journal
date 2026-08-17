@@ -36,7 +36,8 @@ function navigateTo(page) {
         target === 'withdrawals' ||
         target === 'config' ||
         target === 'backtesting' ||
-        target === 'backtestingconfig'
+        target === 'backtestingconfig' ||
+        target === 'strategytester'
       ) {
         const fragment = target === 'backtestingconfig' ? 'backtestingconfig' : target;
         window.location.href = resolveMainWindowUrl(fragment);
@@ -75,7 +76,8 @@ function navigateTo(page) {
     target === 'withdrawals' ||
     target === 'config' ||
     target === 'backtesting' ||
-    target === 'backtestingconfig'
+    target === 'backtestingconfig' ||
+    target === 'strategytester'
   ) {
     const fragment = target === 'backtestingconfig' ? 'backtestingconfig' : target;
     window.location.href = `${window.location.origin}/main_window#${fragment}`;
