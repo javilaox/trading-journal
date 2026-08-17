@@ -594,5 +594,9 @@
   "st_warn_ruined": "with these numbers the account hits zero before the period ends.",
   "st_warn_no_trades": "no trades in the period: check trades per week and weeks.",
   "st_curve_label": "Projected capital",
-  "st_curve_trade": "Trade"
+  "st_curve_trade": "Trade",
+  "st_res_one_r": "What you risk (1R)",
+  "st_res_one_r_win": "you win",
+  "st_res_one_r_loss": "you lose",
+  "st_res_in_be": "at BE"
 }

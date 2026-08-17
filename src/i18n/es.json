@@ -594,5 +594,9 @@
   "st_warn_ruined": "con estos números la cuenta se queda a cero antes de terminar el periodo.",
   "st_warn_no_trades": "no hay operaciones en el periodo: revisa las operaciones por semana y las semanas.",
   "st_curve_label": "Capital proyectado",
-  "st_curve_trade": "Operación"
+  "st_curve_trade": "Operación",
+  "st_res_one_r": "Cuánto arriesgas (1R)",
+  "st_res_one_r_win": "ganas",
+  "st_res_one_r_loss": "pierdes",
+  "st_res_in_be": "en BE"
 }

@@ -19784,11 +19784,35 @@ function stRenderSummary(a, b) {
   const host = document.getElementById('stSummary');
   if (!host) return;
 
+  // Cuánto vale 1R al capital de partida. Va la primera porque sin ella la media por operación
+  // se lee mal: con 2% de 100.000, una operación ganadora a RR 0,5 deja 1.000€, pero la MEDIA
+  // sale 100€ porque también entran las perdedoras. Sin ver el 1R al lado, ese 100€ parece un
+  // error de cálculo.
+  const unaR = (r) => r.projection.startingCapital * (r.riskPercent / 100);
+
   const filas = [
+    {
+      label: t('st_res_one_r', 'Cuánto arriesgas (1R)'),
+      value: (r) => stCapital(unaR(r)),
+      sub: (r) =>
+        `${t('st_res_one_r_win', 'ganas')} ${stCapital(unaR(r) * r.rr)} · ${t(
+          'st_res_one_r_loss',
+          'pierdes'
+        )} ${stCapital(unaR(r))}`,
+      tone: () => 'neutral',
+    },
     {
       label: t('st_res_expectancy', 'Media por operación'),
       value: (r) => `${r.expectancyR.toFixed(2)}R`,
-      sub: (r) => stMoney(r.expectancyMoney),
+      // Se escribe la cuenta entera. Sin ella, ver «0,05R» debajo de un RR de 0,5 parece un
+      // error de tecleo, cuando son dos cosas distintas: el RR es lo que paga una operación
+      // ganadora, y la media reparte eso entre las ganadoras y las perdedoras.
+      sub: (r) => {
+        const pctGana = (r.winRate * 100).toFixed(0);
+        const pctPierde = (r.lossRate * 100).toFixed(0);
+        const be = r.beRate > 0 ? ` · ${(r.beRate * 100).toFixed(0)}% ${t('st_res_in_be', 'en BE')}` : '';
+        return `${stMoney(r.expectancyMoney)} · ${pctGana}% × ${r.rr.toFixed(2)}R − ${pctPierde}% × 1R${be}`;
+      },
       tone: (r) => (r.expectancyR > 0 ? 'positive' : r.expectancyR < 0 ? 'negative' : 'neutral'),
     },
     {
