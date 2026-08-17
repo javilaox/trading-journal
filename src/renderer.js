@@ -10519,6 +10519,23 @@ function computeRealBeAnalysisMetrics(trades) {
   return { beTrades, beToTP, beToSL, beUnknown, beResolved, beUsefulRate, beMissedRate, pnlWithoutBE };
 }
 
+/**
+ * Análisis BE dentro de la página de Estadísticas.
+ *
+ * Este bloque se crea desde código y se añade a #statsView. Antes se colgaba sin mas, fuera del
+ * sistema de pestañas, y por eso salía en las cinco a la vez. Ahora se declara como un panel más
+ * de la pestaña Resumen (`stats-tab-panel` + `data-stats-tab`), que es lo que mira la función que
+ * cambia de pestaña.
+ *
+ * Como se crea sobre la marcha, puede nacer estando el usuario en otra pestaña: por eso su
+ * visibilidad se fija tambien aquí, en vez de esperar al siguiente cambio de pestaña.
+ *
+ * Los estilos salen de las clases de la página (mismas tarjetas que el resto de Estadísticas) en
+ * lugar de estar escritos a mano en cada elemento, que era lo que hacía que este bloque se viera
+ * distinto de todos los demás.
+ */
+const BE_ANALYSIS_TAB = 'summary';
+
 function renderRealBeAnalysisSection(trades) {
   const host = document.getElementById('statsView');
   if (!host) return;
@@ -10527,67 +10544,54 @@ function renderRealBeAnalysisSection(trades) {
   if (!block) {
     block = document.createElement('section');
     block.id = blockId;
-    block.className = 'card';
-    block.style.marginTop = '14px';
-    block.style.padding = '16px';
-    block.style.border = '1px solid rgba(148,163,184,.14)';
-    block.style.background = 'rgba(15,23,42,.48)';
-    block.style.borderRadius = '14px';
+    block.className = 'card panel-card stats-tab-panel';
+    block.setAttribute('data-stats-tab', BE_ANALYSIS_TAB);
     host.appendChild(block);
   }
+
+  const activeTab =
+    document.querySelector('#statsView .stats-tab-btn.active')?.getAttribute('data-stats-tab') ||
+    BE_ANALYSIS_TAB;
+  block.hidden = activeTab !== BE_ANALYSIS_TAB;
+
+  const cabecera = `
+    <h2 class="section-title title-with-icon">
+      <i data-lucide="shield-half"></i>
+      <span>Análisis BE</span>
+    </h2>
+    <p class="muted small">Evalúa si mover operaciones a break even está protegiendo capital o limitando beneficios.</p>`;
 
   const m = computeRealBeAnalysisMetrics(trades);
   if (!m.beTrades.length) {
     block.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <h3 style="margin:0;font-size:16px;">Análisis BE</h3>
-        <p class="muted" style="margin:0 0 4px;">Evalúa si mover operaciones a break even está protegiendo capital o limitando beneficios.</p>
-        <div class="muted" style="padding:10px 0;">No hay operaciones BE suficientes para analizar.</div>
-        <div class="muted" style="font-size:12px;">Cuando registres trades BE y marques si después fueron a TP o SL, aparecerá el análisis.</div>
-      </div>
-    `;
+      ${cabecera}
+      <div class="empty-state">
+        No hay operaciones BE suficientes para analizar. Cuando registres trades BE y marques si
+        después fueron a TP o SL, aparecerá el análisis.
+      </div>`;
+    void refreshLucideIcons();
     return;
   }
 
   const money = `${m.pnlWithoutBE >= 0 ? '+' : ''}${m.pnlWithoutBE.toFixed(2)}€`;
+  const tarjeta = (titulo, valor, tono, pie) => `
+    <div class="stat-box">
+      <span>${titulo}</span>
+      <h2 class="${tono}">${valor}</h2>
+      <small class="stat-box-sub">${pie}</small>
+    </div>`;
+
   block.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
-      <h3 style="margin:0;font-size:16px;">Análisis BE</h3>
-      <p class="muted" style="margin:0;">Evalúa si mover operaciones a break even está protegiendo capital o limitando beneficios.</p>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:10px;">
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE → TP</div>
-        <div style="font-size:20px;font-weight:800;color:#fb7185;">${m.beToTP}</div>
-        <div class="muted" style="font-size:11px;">Operaciones que habrían llegado a TP</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE → SL</div>
-        <div style="font-size:20px;font-weight:800;color:#4ade80;">${m.beToSL}</div>
-        <div class="muted" style="font-size:11px;">Pérdidas evitadas por BE</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE útil</div>
-        <div style="font-size:20px;font-weight:800;color:#4ade80;">${m.beUsefulRate.toFixed(1)}%</div>
-        <div class="muted" style="font-size:11px;">Sobre BE con resultado posterior</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">Beneficio limitado</div>
-        <div style="font-size:20px;font-weight:800;color:#fb7185;">${m.beMissedRate.toFixed(1)}%</div>
-        <div class="muted" style="font-size:11px;">BE que habría terminado en TP</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE sin resolver</div>
-        <div style="font-size:20px;font-weight:800;color:#93c5fd;">${m.beUnknown}</div>
-        <div class="muted" style="font-size:11px;">Sin TP/SL posterior registrado</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">PnL hipotético sin BE</div>
-        <div style="font-size:20px;font-weight:800;${m.pnlWithoutBE >= 0 ? 'color:#4ade80;' : 'color:#f87171;'}">${money}</div>
-        <div class="muted" style="font-size:11px;">Estimación basada en el PnL bruto registrado</div>
-      </div>
-    </div>
-  `;
+    ${cabecera}
+    <div class="top-stats">
+      ${tarjeta('BE → TP', m.beToTP, 'negative', 'Operaciones que habrían llegado a TP')}
+      ${tarjeta('BE → SL', m.beToSL, 'positive', 'Pérdidas evitadas por BE')}
+      ${tarjeta('BE útil', `${m.beUsefulRate.toFixed(1)}%`, 'positive', 'Sobre BE con resultado posterior')}
+      ${tarjeta('Beneficio limitado', `${m.beMissedRate.toFixed(1)}%`, 'negative', 'BE que habría terminado en TP')}
+      ${tarjeta('BE sin resolver', m.beUnknown, 'neutral', 'Sin TP/SL posterior registrado')}
+      ${tarjeta('PnL hipotético sin BE', money, m.pnlWithoutBE >= 0 ? 'positive' : 'negative', 'Estimación basada en el PnL bruto registrado')}
+    </div>`;
+  void refreshLucideIcons();
 }
 
 function computeBeAdvancedMetrics(trades) {
@@ -10607,14 +10611,21 @@ function computeBeAdvancedMetrics(trades) {
   return { beTP, beSL, beTotal, beSuccessRate, hypotheticalPnL };
 }
 
-function renderBeAdvancedStatsCard({ hostId, blockId, title, subtitle, trades }) {
+/**
+ * Tarjeta de BE avanzado. Igual que el análisis BE de Estadísticas, se crea desde código y se
+ * añade al final de la vista; hay que declararla como panel de una pestaña concreta o saldría en
+ * todas. Aquí pertenece a la pestaña «Estadísticas» de Backtesting.
+ *
+ * `panelClass` es la clase que mira switchBacktestingViewTab() para decidir qué se ve.
+ */
+function renderBeAdvancedStatsCard({ hostId, blockId, title, subtitle, trades, panelClass }) {
   const host = document.getElementById(hostId);
   if (!host) return;
   let block = document.getElementById(blockId);
   if (!block) {
     block = document.createElement('div');
     block.id = blockId;
-    block.className = 'card';
+    block.className = panelClass ? `card bt-tab-panel ${panelClass}` : 'card';
     block.style.marginTop = '14px';
     block.style.padding = '16px';
     block.style.border = '1px solid rgba(148,163,184,.14)';
@@ -10622,6 +10633,9 @@ function renderBeAdvancedStatsCard({ hostId, blockId, title, subtitle, trades })
     block.style.borderRadius = '14px';
     host.appendChild(block);
   }
+  // Se crea sobre la marcha, y puede nacer con el usuario en otra pestaña: su visibilidad se
+  // fija aquí en vez de esperar al siguiente cambio de pestaña.
+  if (panelClass) block.hidden = !block.classList.contains(BT_VIEW_TAB_CLASSES[backtestingViewActiveTab]);
   const m = computeBeAdvancedMetrics(trades);
   const hasBeData = m.beTotal > 0;
   if (!hasBeData) {
@@ -13479,6 +13493,8 @@ function renderBacktestingMetrics(filtered) {
     hostId: 'backtestingView',
     blockId: 'beAdvancedStatsBacktesting',
     title: 'BE Avanzado (Backtesting)',
+    // Pertenece a la pestaña «Estadísticas»; sin esto salía también en Trades y en Challenges.
+    panelClass: BT_VIEW_TAB_CLASSES.stats,
     trades: (Array.isArray(filtered) ? filtered : []).map((tr) => ({
       ...tr,
       pnl: getBacktestingTradePnlEuros(tr)
