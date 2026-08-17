@@ -10537,7 +10537,10 @@ function computeRealBeAnalysisMetrics(trades) {
 const BE_ANALYSIS_TAB = 'summary';
 
 function renderRealBeAnalysisSection(trades) {
-  const host = document.getElementById('statsView');
+  // Dentro de .stats-page, no de #statsView. La página es la que reparte el espacio entre
+  // secciones (es una columna con separación fija); colgando el bloque de #statsView quedaba
+  // fuera de ese reparto y se veía pegado al resto y sin los márgenes de las demás tarjetas.
+  const host = document.querySelector('#statsView .stats-page') || document.getElementById('statsView');
   if (!host) return;
   const blockId = 'beAnalysisStatsReal';
   let block = document.getElementById(blockId);
