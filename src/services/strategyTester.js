@@ -23,19 +23,44 @@
  */
 function combineEntries(entries) {
   const list = (Array.isArray(entries) ? entries : [])
-    .map((e) => ({
+    .map((e, i) => ({
       weight: Math.max(0, Number(e?.weight) || 0),
       rr: Math.max(0, Number(e?.rr) || 0),
+      // Con qué frecuencia se llega a activar esa entrada. La primera es la que abre la
+      // operación: si no se activa no hay trade, así que dentro de las operaciones que se
+      // toman siempre está. Las siguientes son las que a veces no llegan a entrar porque el
+      // precio no vuelve a buscarlas.
+      fillRate: i === 0 ? 1 : clampRate(e?.fillRate === undefined ? 100 : e.fillRate),
     }))
     .filter((e) => e.weight > 0);
 
-  if (!list.length) return { rr: 0, entries: [], totalWeight: 0 };
+  if (!list.length) {
+    return { rr: 0, entries: [], totalWeight: 0, deployed: 0, nominalRr: 0 };
+  }
 
   const totalWeight = list.reduce((sum, e) => sum + e.weight, 0);
-  const rr = list.reduce((sum, e) => sum + (e.weight / totalWeight) * e.rr, 0);
+
+  // Parte del riesgo previsto que de media se llega a poner sobre la mesa. Si la segunda entrada
+  // pesa la mitad y solo se activa el 60% de las veces, de media se arriesga 0,5 + 0,5×0,6 = 0,8
+  // de lo previsto, no 1. Ignorar esto hincha tanto las ganancias como las pérdidas.
+  const deployed = list.reduce((sum, e) => sum + (e.weight / totalWeight) * e.fillRate, 0);
+
+  // RR de la posición contando solo lo que de verdad entra. Si la entrada buena (la de RR alto)
+  // es justo la que muchas veces no se activa, el RR real es bastante peor que el previsto, y
+  // eso es lo que hay que ver.
+  const rewardShare = list.reduce(
+    (sum, e) => sum + (e.weight / totalWeight) * e.fillRate * e.rr,
+    0
+  );
+  const rr = deployed > 0 ? rewardShare / deployed : 0;
+
+  // El RR que saldría si se activaran todas, para poder comparar con el de arriba.
+  const nominalRr = list.reduce((sum, e) => sum + (e.weight / totalWeight) * e.rr, 0);
 
   return {
     rr,
+    nominalRr,
+    deployed,
     totalWeight,
     entries: list.map((e) => ({ ...e, share: e.weight / totalWeight })),
   };
@@ -181,6 +206,8 @@ function runStrategyTest(config = {}) {
   const entries = combineEntries(config.entries);
   // Si no se detalla la posición por entradas, se usa el RR suelto.
   const rr = entries.entries.length ? entries.rr : Math.max(0, Number(config.rr) || 0);
+  // Proporción del riesgo previsto que de media se llega a arriesgar.
+  const deployed = entries.entries.length ? entries.deployed : 1;
 
   const tradesPerWeek = Math.max(0, Number(config.tradesPerWeek) || 0);
   const weeks = Math.max(0, Number(config.weeks) || 0);
@@ -190,8 +217,15 @@ function runStrategyTest(config = {}) {
     winRate: config.winRate,
     rr,
     beRate: config.beRate,
-    commissionR: config.commissionR,
+    // La comisión se descuenta después, sobre el resultado ya escalado: se paga entera aunque
+    // la posición se haya montado a medias.
+    commissionR: 0,
   });
+
+  // El resultado se escala por lo que de verdad se arriesga. Con media posición puesta, tanto la
+  // ganancia como la pérdida son la mitad.
+  const commission = Math.max(0, Number(config.commissionR) || 0);
+  const expectancyR = perTrade.expectancyR * deployed - commission;
 
   const riskPercent = Math.max(0, Number(config.riskPercent) || 0);
   const startingCapital = Math.max(0, Number(config.startingCapital) || 0);
@@ -199,7 +233,7 @@ function runStrategyTest(config = {}) {
   const projection = projectCompound({
     startingCapital,
     riskPercent,
-    expectancyR: perTrade.expectancyR,
+    expectancyR,
     trades: totalTrades,
     // Como mucho 120 puntos en la curva: de sobra para verla y sin cargar la gráfica.
     pointEvery: Math.max(1, Math.ceil(totalTrades / 120)),
@@ -213,22 +247,25 @@ function runStrategyTest(config = {}) {
 
   return {
     rr,
+    // RR que saldría si se activaran todas las entradas, para poder compararlo con el de arriba.
+    nominalRr: entries.entries.length ? entries.nominalRr : rr,
+    deployed,
     entries: entries.entries,
     totalTrades,
     tradesPerWeek,
     weeks,
     riskPercent,
     // Lo que deja de media una operación, en R y en dinero sobre el capital de partida.
-    expectancyR: perTrade.expectancyR,
-    expectancyMoney: startingCapital * (riskPercent / 100) * perTrade.expectancyR,
+    expectancyR,
+    expectancyMoney: startingCapital * (riskPercent / 100) * expectancyR,
     winRate: perTrade.winRate,
     beRate: perTrade.beRate,
     lossRate: perTrade.lossRate,
     breakEvenWinRate: breakEvenWinRate(rr),
-    profitable: perTrade.expectancyR > 0,
+    profitable: expectancyR > 0,
     projection,
     expectedLosingStreak: streak,
-    estimatedDrawdownPct: estimatedDrawdownPct({ riskPercent, streak }),
+    estimatedDrawdownPct: estimatedDrawdownPct({ riskPercent: riskPercent * deployed, streak }),
   };
 }
 

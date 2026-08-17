@@ -19402,7 +19402,7 @@ function stDefaultConfig() {
     commissionR: 0,
     tradesPerWeek: 5,
     weeks: 52,
-    entries: [{ weight: 100, rr: 2 }],
+    entries: [{ weight: 100, rr: 2, fillRate: 100 }],
   };
 }
 
@@ -19512,7 +19512,7 @@ function stApplyStrategy(side, key) {
   config.strategyKey = key || '';
 
   if (estrategia) {
-    if (estrategia.rr > 0) config.entries = [{ weight: 100, rr: estrategia.rr }];
+    if (estrategia.rr > 0) config.entries = [{ weight: 100, rr: estrategia.rr, fillRate: 100 }];
     if (estrategia.riskUnit === 'percent' && estrategia.riskValue > 0) {
       config.riskPercent = estrategia.riskValue;
     } else if (estrategia.riskUnit === 'eur' && estrategia.riskValue > 0 && config.startingCapital > 0) {
@@ -19571,6 +19571,19 @@ function stRenderFields(side) {
           <span>${escapeHtmlChipText(t('st_entry_rr', 'RR objetivo'))}</span>
           <input type="number" class="input" data-st-side="${side}" data-st-entry-field="rr"
                  data-st-entry-index="${i}" value="${stFormatNumber(e.rr)}" step="0.1" min="0" />
+        </label>
+        <label class="st-field">
+          <span>${escapeHtmlChipText(
+            i === 0 ? t('st_entry_fill_first', 'Se activa (%)') : t('st_entry_fill', 'Se activa (%)')
+          )}</span>
+          <input type="number" class="input" data-st-side="${side}" data-st-entry-field="fillRate"
+                 data-st-entry-index="${i}" value="${stFormatNumber(i === 0 ? 100 : e.fillRate ?? 100)}"
+                 step="5" min="0" max="100" ${i === 0 ? 'disabled' : ''}
+                 title="${escapeHtmlChipText(
+                   i === 0
+                     ? t('st_entry_fill_first_hint', 'La primera entrada es la que abre la operación: si no se activa, no hay trade.')
+                     : t('st_entry_fill_hint', 'Cuántas veces de cada 100 el precio llega a buscar esta entrada.')
+                 )}" />
         </label>
         <button type="button" class="st-entry-remove" data-st-side="${side}" data-st-remove-entry="${i}"
                 aria-label="${escapeHtmlChipText(t('st_entry_remove', 'Quitar entrada'))}"
@@ -19709,7 +19722,14 @@ function stRenderEntryRr(side, resultado) {
     el.textContent = '';
     return;
   }
-  el.textContent = `${t('st_combined_rr', 'RR combinado de la posición')}: ${resultado.rr.toFixed(2)}`;
+  // Cuando alguna entrada no se activa siempre, el RR real y el riesgo medio dejan de ser los
+  // previstos: se dicen los dos para que se vea cuánto se pierde por el camino.
+  const parcial = resultado.deployed < 0.9999;
+  el.textContent = parcial
+    ? `${t('st_combined_rr', 'RR combinado de la posición')}: ${resultado.rr.toFixed(2)} · ` +
+      `${t('st_combined_rr_full', 'si se activaran todas')}: ${resultado.nominalRr.toFixed(2)} · ` +
+      `${t('st_deployed', 'de media se arriesga el')} ${(resultado.deployed * 100).toFixed(0)}% ${t('st_deployed_2', 'de lo previsto')}`
+    : `${t('st_combined_rr', 'RR combinado de la posición')}: ${resultado.rr.toFixed(2)}`;
 }
 
 function stMoney(value) {
@@ -19788,17 +19808,26 @@ function stRenderSummary(a, b) {
   // se lee mal: con 2% de 100.000, una operación ganadora a RR 0,5 deja 1.000€, pero la MEDIA
   // sale 100€ porque también entran las perdedoras. Sin ver el 1R al lado, ese 100€ parece un
   // error de cálculo.
+  // 1R es el riesgo previsto; lo que de media se arriesga puede ser menos si alguna entrada no
+  // se activa siempre.
   const unaR = (r) => r.projection.startingCapital * (r.riskPercent / 100);
+  const riesgoMedio = (r) => unaR(r) * (r.deployed ?? 1);
 
   const filas = [
     {
       label: t('st_res_one_r', 'Cuánto arriesgas (1R)'),
       value: (r) => stCapital(unaR(r)),
-      sub: (r) =>
-        `${t('st_res_one_r_win', 'ganas')} ${stCapital(unaR(r) * r.rr)} · ${t(
+      sub: (r) => {
+        const base = `${t('st_res_one_r_win', 'ganas')} ${stCapital(riesgoMedio(r) * r.rr)} · ${t(
           'st_res_one_r_loss',
           'pierdes'
-        )} ${stCapital(unaR(r))}`,
+        )} ${stCapital(riesgoMedio(r))}`;
+        // Si parte de la posición no siempre entra, se dice: el riesgo previsto y el que de
+        // media se acaba poniendo no son el mismo número.
+        return (r.deployed ?? 1) < 0.9999
+          ? `${base} · ${t('st_res_one_r_partial', 'de media entra el')} ${((r.deployed ?? 1) * 100).toFixed(0)}%`
+          : base;
+      },
       tone: () => 'neutral',
     },
     {
@@ -20016,7 +20045,7 @@ function initStrategyTester() {
       const side = add.dataset.stAddEntry;
       const config = stState[side];
       if (config) {
-        config.entries = [...(config.entries || []), { weight: 0, rr: 2 }];
+        config.entries = [...(config.entries || []), { weight: 0, rr: 2, fillRate: 60 }];
         stDistributeEven(config.entries);
         stRenderFields(side);
         stRecalculate();

@@ -598,5 +598,13 @@
   "st_res_one_r": "Cuánto arriesgas (1R)",
   "st_res_one_r_win": "ganas",
   "st_res_one_r_loss": "pierdes",
-  "st_res_in_be": "en BE"
+  "st_res_in_be": "en BE",
+  "st_entry_fill": "Se activa (%)",
+  "st_entry_fill_first": "Se activa (%)",
+  "st_entry_fill_hint": "Cuántas veces de cada 100 el precio llega a buscar esta entrada.",
+  "st_entry_fill_first_hint": "La primera entrada es la que abre la operación: si no se activa, no hay trade.",
+  "st_combined_rr_full": "si se activaran todas",
+  "st_deployed": "de media se arriesga el",
+  "st_deployed_2": "de lo previsto",
+  "st_res_one_r_partial": "de media entra el"
 }

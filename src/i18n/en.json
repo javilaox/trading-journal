@@ -598,5 +598,13 @@
   "st_res_one_r": "What you risk (1R)",
   "st_res_one_r_win": "you win",
   "st_res_one_r_loss": "you lose",
-  "st_res_in_be": "at BE"
+  "st_res_in_be": "at BE",
+  "st_entry_fill": "Fills (%)",
+  "st_entry_fill_first": "Fills (%)",
+  "st_entry_fill_hint": "How many times out of 100 price comes back to this entry.",
+  "st_entry_fill_first_hint": "The first entry is the one that opens the trade: if it does not fill, there is no trade.",
+  "st_combined_rr_full": "if all filled",
+  "st_deployed": "on average you risk",
+  "st_deployed_2": "of what was planned",
+  "st_res_one_r_partial": "on average it fills"
 }
