@@ -623,5 +623,6 @@
   "st_metric_no_data": "Ninguna operación de esta estrategia tiene esa métrica contestada, así que no hay nada que medir.",
   "st_tag_real": "real",
   "st_tag_backtest": "backtest",
-  "st_no_ops": "sin operaciones"
+  "st_no_ops": "sin operaciones",
+  "st_averaged_hint": "Si la segunda entrada se activa es porque el precio se fue en contra. Esas operaciones no suelen acertar lo mismo que las que van a favor desde el principio."
 }

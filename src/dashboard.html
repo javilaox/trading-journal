@@ -6053,6 +6053,14 @@
         font-weight: 600;
         color: var(--text-muted);
       }
+      /* La rejilla de campos y el bloque de entradas son hermanos dentro de este contenedor, que
+         no repartia ningun espacio entre ellos: el recuadro quedaba pegado a los campos de
+         arriba, sin el aire que tiene todo lo demas. */
+      .st-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
       .st-entries-block {
         border: 1px solid var(--border);
         border-radius: 12px;
@@ -6113,6 +6121,19 @@
         color: #f87171;
       }
       .st-entry-remove:disabled { opacity: 0.35; cursor: default; }
+      .st-entries-extra {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 420px;
+      }
+      .st-entries-extra .st-block-hint {
+        margin: 0;
+        max-width: none;
+      }
       .st-entries-rr {
         margin: 10px 0 0;
         font-size: 12px;

@@ -19762,16 +19762,9 @@ const ST_FIELDS = [
   { key: 'startingCapital', label: 'Capital inicial (€)', step: '100', min: '0' },
   { key: 'riskPercent', label: 'Riesgo por operación (%)', step: '0.1', min: '0' },
   { key: 'winRate', label: 'Acierto (%)', step: '1', min: '0', max: '100' },
-  // Solo tiene sentido si la posición se construye por partes: es el acierto de las operaciones
-  // en las que el precio se fue en contra y hubo que promediar.
-  {
-    key: 'winRateAveraged',
-    label: 'Acierto promediando (%)',
-    step: '1',
-    min: '0',
-    max: '100',
-    onlyMultiEntry: true,
-  },
+  // Nota: 'winRateAveraged' NO está aquí. Solo tiene sentido cuando la posición se construye por
+  // partes, y ahí es donde se pinta: dentro del bloque de entradas, junto al «Se activa (%)» que
+  // lo provoca. Arriba, entre el capital y las semanas, quedaba descolgado de lo que explica.
   { key: 'beRate', label: 'Operaciones en BE (%)', step: '1', min: '0', max: '100' },
   { key: 'tradesPerWeek', label: 'Operaciones por semana', step: '1', min: '0' },
   { key: 'weeks', label: 'Semanas', step: '1', min: '0' },
@@ -19784,7 +19777,7 @@ function stRenderFields(side) {
   const config = stState[side] || stDefaultConfig();
 
   const variasEntradas = (config.entries || []).length > 1;
-  const campos = ST_FIELDS.filter((f) => !f.onlyMultiEntry || variasEntradas).map(
+  const campos = ST_FIELDS.map(
     (f) => `
       <label class="st-field">
         <span>${escapeHtmlChipText(t(`st_field_${f.key}`, f.label))}</span>
@@ -19845,6 +19838,23 @@ function stRenderFields(side) {
         )}</button>
       </div>
       <div class="st-entries">${entradas}</div>
+      ${
+        variasEntradas
+          ? `<div class="st-entries-extra">
+               <label class="st-field">
+                 <span>${escapeHtmlChipText(t('st_field_winRateAveraged', 'Acierto promediando (%)'))}</span>
+                 <input type="number" class="input" data-st-side="${side}" data-st-key="winRateAveraged"
+                        value="${stFormatNumber(config.winRateAveraged)}" step="1" min="0" max="100" />
+               </label>
+               <p class="st-block-hint">${escapeHtmlChipText(
+                 t(
+                   'st_averaged_hint',
+                   'Si la segunda entrada se activa es porque el precio se fue en contra. Esas operaciones no suelen acertar lo mismo que las que van a favor desde el principio.'
+                 )
+               )}</p>
+             </div>`
+          : ''
+      }
       <p class="st-entries-rr" data-st-entry-rr="${side}"></p>
     </div>`;
 }

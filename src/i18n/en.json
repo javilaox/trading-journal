@@ -623,5 +623,6 @@
   "st_metric_no_data": "No trade of this strategy has that metric answered, so there is nothing to measure.",
   "st_tag_real": "real",
   "st_tag_backtest": "backtest",
-  "st_no_ops": "no trades"
+  "st_no_ops": "no trades",
+  "st_averaged_hint": "If the second entry fills it is because price went against you. Those trades do not usually win as often as the ones that go your way from the start."
 }
