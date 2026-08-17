@@ -8,6 +8,15 @@ let datePickerStart = null;
 let datePickerEnd = null;
 let datePickerViewMonth = new Date();
 let datePickerSelecting = 'start';
+/**
+ * Atajo de periodo elegido: 'month' | 'lastMonth' | 'year' | 'all' | 'custom'.
+ *
+ * Se guarda junto al rango porque hace falta al volver a abrir la aplicación. Si solo se
+ * guardaran las fechas, un rango elegido en julio con el atajo «Este mes» seguiría mostrando
+ * julio en agosto. Con el atajo apuntado, todo lo que no sea un rango elegido a mano se vuelve
+ * a calcular con el calendario en la mano.
+ */
+let dateRangePreset = 'month';
 const { Chart: ChartJS, registerables } = require('chart.js');
 const {
   loadLanguage,
@@ -614,6 +623,75 @@ function pnlByStrategy(trades) {
     labels: Object.keys(map),
     data: Object.values(map).map((value) => Number(value.toFixed(2)))
   };
+}
+
+/**
+ * Pinta el color y la linea de apoyo de las cinco tarjetas de arriba.
+ *
+ * Una cifra sola no dice gran cosa: un 60% de aciertos no significa lo mismo con 5 operaciones
+ * que con 300, y un PnL en verde tampoco se lee igual sin saber cuantas operaciones lo han
+ * producido. La linea de debajo da ese contexto, y el color deja claro de un vistazo si la
+ * cifra suma o resta.
+ */
+function renderStatBoxContext(trades, stats, results, totalCommissions) {
+  const list = Array.isArray(trades) ? trades : [];
+  const [tp = 0, sl = 0, be = 0] = Array.isArray(results) ? results : [];
+  const total = list.length;
+
+  const setSub = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text || '';
+  };
+  const setTone = (id, tone) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('positive', 'negative', 'neutral');
+    el.classList.add(tone);
+  };
+
+  const ops = (n) => `${n} ${n === 1 ? t('stats_op_one', 'operación') : t('stats_op_many', 'operaciones')}`;
+
+  const pnl = Number(stats?.pnl) || 0;
+  setTone('statPnL', pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral');
+  setSub('statPnLSub', total ? ops(total) : t('stats_no_trades_range', 'Sin operaciones en este periodo'));
+
+  // Sin operaciones no hay nada que juzgar: un 0% en rojo daría a entender que se ha ido mal,
+  // cuando lo que pasa es que no hay datos en ese periodo.
+  setTone('statWinrate', !total ? 'neutral' : Number(stats?.winrate) >= 50 ? 'positive' : 'negative');
+  setSub(
+    'statWinrateSub',
+    total
+      ? `${tp} TP · ${sl} SL${be ? ` · ${be} BE` : ''}`
+      : ''
+  );
+
+  const returns = Number(stats?.returns) || 0;
+  setTone('statReturns', returns > 0 ? 'positive' : returns < 0 ? 'negative' : 'neutral');
+  setSub('statReturnsSub', total ? t('stats_returns_sub', 'Sobre el capital de las cuentas') : '');
+
+  // El factor de beneficio se lee con una referencia: por encima de 1 se gana.
+  const pf = stats?.pf;
+  if (pf == null) {
+    setTone('statPF', 'neutral');
+    setSub('statPFSub', stats?.pfHasProfitNoLoss ? t('stats_pf_no_losses', 'Aún sin pérdidas') : '');
+  } else {
+    setTone('statPF', Number(pf) >= 1 ? 'positive' : 'negative');
+    setSub(
+      'statPFSub',
+      Number(pf) >= 1
+        ? t('stats_pf_good', 'Por encima de 1: ganas más de lo que pierdes')
+        : t('stats_pf_bad', 'Por debajo de 1: pierdes más de lo que ganas')
+    );
+  }
+
+  const com = Number(totalCommissions) || 0;
+  setTone('statCommissions', com > 0 ? 'negative' : 'neutral');
+  setSub(
+    'statCommissionsSub',
+    com > 0 && total
+      ? `${(com / total).toFixed(2)}€ ${t('stats_per_trade', 'por operación')}`
+      : ''
+  );
 }
 
 function resultDistribution(trades) {
@@ -1247,6 +1325,9 @@ function resetSummary() {
   if (statReturnsEl) statReturnsEl.textContent = '0%';
   if (statPfEl) statPfEl.textContent = '0';
   if (statCommissionsEl) statCommissionsEl.textContent = '0.00€';
+  // Sin datos no hay contexto que dar: se limpian las lineas de apoyo y los colores, para que
+  // no se queden los del periodo anterior.
+  renderStatBoxContext([], { pnl: 0, winrate: 0, returns: 0, pf: null }, [0, 0, 0], 0);
   const maxWinStreakEl = document.getElementById('statMaxWinStreak');
   const maxLossStreakEl = document.getElementById('statMaxLossStreak');
   const bestTradeEl = document.getElementById('statBestTrade');
@@ -1481,16 +1562,39 @@ function hasActiveDateFilter() {
 
 function updateDatePickerLabel() {
   const { label } = getDatePickerElements();
-  if (!label) return;
-  if (!datePickerStart && !datePickerEnd) {
-    label.textContent = t('select_dates', 'Seleccionar fechas');
-    return;
+  if (label) {
+    if (!datePickerStart && !datePickerEnd) {
+      label.textContent = t('stats_range_all', 'Todo el historial');
+    } else if (datePickerStart && !datePickerEnd) {
+      label.textContent = formatDateFilterLabel(datePickerStart);
+    } else {
+      label.textContent = formatDateFilterRangeLabel(datePickerStart, datePickerEnd);
+    }
   }
-  if (datePickerStart && !datePickerEnd) {
-    label.textContent = formatDateFilterLabel(datePickerStart);
-    return;
-  }
-  label.textContent = formatDateFilterRangeLabel(datePickerStart, datePickerEnd);
+  updateRangePresetButtons();
+}
+
+/** Marca el atajo que corresponde al rango que hay puesto. */
+function updateRangePresetButtons() {
+  document.querySelectorAll('[data-range-preset]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-range-preset') === dateRangePreset);
+  });
+}
+
+/** Aplica un atajo de periodo y refresca la pagina. */
+function applyRangePreset(preset) {
+  const range = getRangeForPreset(preset);
+  dateRangePreset = preset;
+  datePickerStart = range.start;
+  datePickerEnd = range.end;
+  datePickerSelecting = 'start';
+  datePickerViewMonth = datePickerStart
+    ? new Date(datePickerStart.getFullYear(), datePickerStart.getMonth(), 1)
+    : new Date();
+  updateDatePickerLabel();
+  renderDatePickerCalendar();
+  saveDateFilterState();
+  applyFilters();
 }
 
 function setDatePickerOpen(isOpen) {
@@ -1499,15 +1603,34 @@ function setDatePickerOpen(isOpen) {
   dropdown.classList.toggle('hidden', !isOpen);
 }
 
-function getDefaultDateRange() {
+/** Fechas de cada atajo. 'all' devuelve el rango vacío, que significa «sin filtrar». */
+function getRangeForPreset(preset) {
   const today = startOfDay(new Date());
-  const startOfMonth = today
-    ? new Date(today.getFullYear(), today.getMonth(), 1)
-    : null;
-  return {
-    start: startOfMonth,
-    end: today
-  };
+  if (!today) return { start: null, end: null };
+  const y = today.getFullYear();
+  const m = today.getMonth();
+
+  if (preset === 'all') return { start: null, end: null };
+  if (preset === 'lastMonth') {
+    return { start: new Date(y, m - 1, 1), end: new Date(y, m, 0) };
+  }
+  if (preset === 'year') return { start: new Date(y, 0, 1), end: today };
+  // 'month' y cualquier valor desconocido: el mes en curso, hasta hoy.
+  return { start: new Date(y, m, 1), end: today };
+}
+
+/** Devuelve el atajo cuyo rango coincide con el dado, o 'custom' si no coincide ninguno. */
+function detectRangePreset(start, end) {
+  const iso = (d) => toIsoDate(d) || '';
+  for (const preset of ['month', 'lastMonth', 'year', 'all']) {
+    const r = getRangeForPreset(preset);
+    if (iso(r.start) === iso(start) && iso(r.end) === iso(end)) return preset;
+  }
+  return 'custom';
+}
+
+function getDefaultDateRange() {
+  return getRangeForPreset('month');
 }
 
 function shiftDatePickerMonth(offset) {
@@ -1539,6 +1662,9 @@ function handleDateSelection(dayDate) {
     datePickerEnd = tmp;
   }
   datePickerSelecting = 'start';
+  // Fechas elegidas a mano: deja de seguir a ningun atajo, y por tanto no se recalculan al
+  // volver a abrir la aplicacion.
+  dateRangePreset = detectRangePreset(datePickerStart, datePickerEnd);
   updateDatePickerLabel();
   renderDatePickerCalendar();
   saveDateFilterState();
@@ -1606,7 +1732,8 @@ function saveDateFilterState() {
     JSON.stringify({
       startDate: toIsoDate(datePickerStart),
       endDate: toIsoDate(datePickerEnd),
-      viewMonth: toIsoDate(datePickerViewMonth)
+      viewMonth: toIsoDate(datePickerViewMonth),
+      preset: dateRangePreset
     })
   );
 }
@@ -1617,13 +1744,30 @@ function loadDateFilterState() {
     const parsed = raw ? JSON.parse(raw) : {};
     const savedStart = parseIsoDate(parsed?.startDate || '');
     const savedEnd = parseIsoDate(parsed?.endDate || '');
-    if (savedStart || savedEnd) {
+    const savedPreset = parsed?.preset;
+
+    if (savedPreset && savedPreset !== 'custom') {
+      // Atajo: se vuelve a calcular con la fecha de hoy. Asi «Este mes» sigue siendo el mes en
+      // curso aunque la ultima vez que se abrio la aplicacion fuera el mes pasado.
+      dateRangePreset = savedPreset;
+      const range = getRangeForPreset(savedPreset);
+      datePickerStart = range.start;
+      datePickerEnd = range.end;
+    } else if (savedStart || savedEnd) {
+      // Rango elegido a mano: se respeta tal cual.
       datePickerStart = savedStart;
       datePickerEnd = savedEnd;
+      dateRangePreset = savedPreset || detectRangePreset(savedStart, savedEnd);
+    } else if (savedPreset === 'custom') {
+      // Rango a mano vacio, es decir «todo».
+      datePickerStart = null;
+      datePickerEnd = null;
+      dateRangePreset = 'custom';
     } else {
       const defaults = getDefaultDateRange();
       datePickerStart = defaults.start;
       datePickerEnd = defaults.end;
+      dateRangePreset = 'month';
     }
     datePickerViewMonth = parseIsoDate(parsed?.viewMonth || '')
       || datePickerStart
@@ -2022,11 +2166,20 @@ async function renderStrategyMetricStats(trades) {
           }
           let verdict = `<span class="muted">${t('stats_metrics_few_data', 'Pocos datos')}</span>`;
           if (row.comparable) {
+            // La conclusion mira dos cosas, no una: cuanto dinero cambia y cuanto cambia el
+            // ratio de aciertos. Una metrica puede subir el acierto y aun asi dejar menos
+            // dinero (o al reves), y con un solo numero eso no se ve.
+            const wrDiff = Number(row.yes.winrate || 0) - Number(row.no.winrate || 0);
+            const detalle = `${statsMoney(row.pnlDiff)} · ${wrDiff >= 0 ? '+' : ''}${wrDiff.toFixed(1)} pts ${t('stats_metrics_hit', 'acierto')}`;
+            // Con menos de 5 operaciones a cada lado la diferencia puede ser casualidad: se
+            // dice, en vez de presentarlo como una conclusion firme.
+            const pocas = row.yes.n < 5 || row.no.n < 5;
+            const aviso = pocas ? ` · ${t('stats_metrics_low_sample', 'pocos datos aún')}` : '';
             verdict =
               row.pnlDiff > 0
-                ? `<span class="bt-metric-verdict good">${t('stats_metrics_better', 'Mejor cumpliéndola')} (${statsMoney(row.pnlDiff)})</span>`
+                ? `<span class="bt-metric-verdict ${pocas ? '' : 'good'}">${t('stats_metrics_better', 'Mejor cumpliéndola')} (${detalle}${aviso})</span>`
                 : row.pnlDiff < 0
-                  ? `<span class="bt-metric-verdict bad">${t('stats_metrics_worse', 'Peor cumpliéndola')} (${statsMoney(row.pnlDiff)})</span>`
+                  ? `<span class="bt-metric-verdict ${pocas ? '' : 'bad'}">${t('stats_metrics_worse', 'Peor cumpliéndola')} (${detalle}${aviso})</span>`
                   : `<span class="muted">${t('stats_metrics_tie', 'Sin diferencia')}</span>`;
           } else if (row.yes.n && !row.no.n) {
             verdict = `<span class="muted">${t('stats_metrics_always', 'Siempre la cumples: no hay con qué comparar')}</span>`;
@@ -2215,6 +2368,8 @@ function renderAllCharts(trades, compareEnabled = compareMode) {
   }
   const totalCommissions = calculateTotalCommissions(sortedTrades);
   if (statCommissionsEl) statCommissionsEl.textContent = `-${totalCommissions.toFixed(2)}€`;
+
+  renderStatBoxContext(sortedTrades, stats, results, totalCommissions);
   if (statMaxWinStreakEl) statMaxWinStreakEl.textContent = String(advanced.maxWinStreak);
   if (statMaxLossStreakEl) statMaxLossStreakEl.textContent = String(advanced.maxLossStreak);
   if (statBestTradeEl) statBestTradeEl.textContent = `${advanced.bestTrade > 0 ? '+' : ''}${advanced.bestTrade.toFixed(2)}€`;
@@ -2701,6 +2856,7 @@ async function bindStatsEventsOnce() {
   });
   clearDatesBtn?.addEventListener('click', () => {
     const defaults = getDefaultDateRange();
+    dateRangePreset = 'month';
     datePickerStart = defaults.start;
     datePickerEnd = defaults.end;
     datePickerSelecting = 'start';
@@ -2716,6 +2872,9 @@ async function bindStatsEventsOnce() {
     saveDateFilterState();
     setDatePickerOpen(false);
     applyFilters();
+  });
+  document.querySelectorAll('[data-range-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => applyRangePreset(btn.getAttribute('data-range-preset')));
   });
   applyFiltersBtn?.addEventListener('click', applyFilters);
   if (compareToggle) {

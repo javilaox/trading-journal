@@ -8210,54 +8210,84 @@
       ></div>
       <h1 class="page-title title-with-icon"><i data-lucide="bar-chart-3"></i><span data-i18n="stats_title">Estadísticas</span></h1>
 
-      <div class="filters filters-row">
-        <select id="filterAccountType" class="input-base">
-          <option value="" data-i18n="filter_all_account_types">Todos los tipos</option>
-          <option value="challenge" data-i18n="account_type_challenge">Challenge</option>
-          <option value="funded" data-i18n="account_type_funded">Fondeada</option>
-          <option value="own_capital" data-i18n="account_type_own_capital">Capital propio</option>
-        </select>
-        <select id="filterAccount" class="input-base">
-          <option value="" data-i18n="all_accounts">Todas las cuentas</option>
-        </select>
-        <select id="filterStrategy" class="input-base">
-          <option value="" data-i18n="all_strategies">Todas las estrategias</option>
-        </select>
-        <div class="date-picker-wrapper">
-          <button id="datePickerBtn" class="date-picker-btn" type="button">
-            <span id="datePickerLabel" data-i18n="select_dates">Seleccionar fechas</span>
-          </button>
-          <div id="datePickerDropdown" class="date-picker-dropdown hidden">
-            <div id="calendarContainer"></div>
-            <div class="date-actions">
-              <button id="clearDates" class="btn-ghost" type="button" data-i18n="clear">Limpiar</button>
-              <button id="applyDates" class="btn-primary" type="button" data-i18n="apply">Aplicar</button>
+      <!-- Barra de filtros. Antes eran controles sueltos uno detras de otro, sin etiquetas y
+           sin ninguna pista de sobre que periodo se estaba mirando. Ahora hay tres bloques
+           claros: el periodo (con atajos), los filtros con su etiqueta, y los ajustes. -->
+      <div class="stats-toolbar">
+        <div class="stats-toolbar-block stats-toolbar-period">
+          <span class="stats-toolbar-label" data-i18n="stats_period">Periodo</span>
+          <div class="stats-period-controls">
+            <div class="stats-range-presets" role="group" aria-label="Periodo">
+              <button type="button" class="stats-range-btn" data-range-preset="month" data-i18n="stats_range_month">Este mes</button>
+              <button type="button" class="stats-range-btn" data-range-preset="lastMonth" data-i18n="stats_range_last_month">Mes pasado</button>
+              <button type="button" class="stats-range-btn" data-range-preset="year" data-i18n="stats_range_year">Este año</button>
+              <button type="button" class="stats-range-btn" data-range-preset="all" data-i18n="stats_range_all">Todo</button>
+            </div>
+            <div class="date-picker-wrapper">
+              <button id="datePickerBtn" class="date-picker-btn" type="button">
+                <span id="datePickerLabel" data-i18n="select_dates">Seleccionar fechas</span>
+              </button>
+              <div id="datePickerDropdown" class="date-picker-dropdown hidden">
+                <div id="calendarContainer"></div>
+                <div class="date-actions">
+                  <button id="clearDates" class="btn-ghost" type="button" data-i18n="clear">Limpiar</button>
+                  <button id="applyDates" class="btn-primary" type="button" data-i18n="apply">Aplicar</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <button id="applyFilters" class="btn-apply" type="button" onclick="applyFilters()" data-i18n="apply">Aplicar</button>
-      </div>
-      <div class="compare-toggle">
-        <div class="toggle-row">
-          <label class="switch" for="compareMode">
-            <input type="checkbox" id="compareMode" />
-            <span class="slider"></span>
-          </label>
-          <span class="toggle-label" data-i18n="compare">Comparar</span>
+
+        <div class="stats-toolbar-block stats-toolbar-filters filters filters-row">
+          <div class="stats-filter">
+            <span class="stats-filter-label" data-i18n="stats_filter_account_type">Tipo de cuenta</span>
+            <select id="filterAccountType" class="input-base">
+              <option value="" data-i18n="filter_all_account_types">Todos los tipos</option>
+              <option value="challenge" data-i18n="account_type_challenge">Challenge</option>
+              <option value="funded" data-i18n="account_type_funded">Fondeada</option>
+              <option value="own_capital" data-i18n="account_type_own_capital">Capital propio</option>
+            </select>
+          </div>
+          <div class="stats-filter">
+            <span class="stats-filter-label" data-i18n="label_account">Cuenta</span>
+            <select id="filterAccount" class="input-base">
+              <option value="" data-i18n="all_accounts">Todas las cuentas</option>
+            </select>
+          </div>
+          <div class="stats-filter">
+            <span class="stats-filter-label" data-i18n="label_strategy">Estrategia</span>
+            <select id="filterStrategy" class="input-base">
+              <option value="" data-i18n="all_strategies">Todas las estrategias</option>
+            </select>
+          </div>
+          <button id="applyFilters" class="btn-apply" type="button" onclick="applyFilters()" data-i18n="apply">Aplicar</button>
         </div>
-        <div class="toggle-row">
-          <label class="switch" for="includeBE">
-            <input type="checkbox" id="includeBE" checked />
-            <span class="slider"></span>
-          </label>
-          <span class="toggle-label" data-i18n="include_be">Incluir BE</span>
-        </div>
-        <div class="toggle-row">
-          <label class="switch" for="excludeOutOfSchedule">
-            <input type="checkbox" id="excludeOutOfSchedule" />
-            <span class="slider"></span>
-          </label>
-          <span class="toggle-label" data-i18n="stats_exclude_out_of_schedule">Excluir trades fuera de horario</span>
+
+        <div class="stats-toolbar-block stats-toolbar-options">
+          <span class="stats-toolbar-label" data-i18n="stats_options">Ajustes</span>
+          <div class="compare-toggle">
+            <div class="toggle-row">
+              <label class="switch" for="compareMode">
+                <input type="checkbox" id="compareMode" />
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label" data-i18n="compare">Comparar</span>
+            </div>
+            <div class="toggle-row">
+              <label class="switch" for="includeBE">
+                <input type="checkbox" id="includeBE" checked />
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label" data-i18n="include_be">Incluir BE</span>
+            </div>
+            <div class="toggle-row">
+              <label class="switch" for="excludeOutOfSchedule">
+                <input type="checkbox" id="excludeOutOfSchedule" />
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label" data-i18n="stats_exclude_out_of_schedule">Excluir trades fuera de horario</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -8270,29 +8300,37 @@
         <button type="button" class="stats-tab-btn active" id="statsTabBtnSummary" data-stats-tab="summary" data-i18n="stats_tab_summary">Resumen</button>
         <button type="button" class="stats-tab-btn" id="statsTabBtnCharts" data-stats-tab="charts" data-i18n="stats_tab_charts">Gráficas</button>
         <button type="button" class="stats-tab-btn" id="statsTabBtnSchedule" data-stats-tab="schedule" data-i18n="stats_tab_schedule">Horario</button>
-        <button type="button" class="stats-tab-btn" id="statsTabBtnBreakdown" data-stats-tab="breakdown" data-i18n="stats_tab_breakdown">Compra/Venta y métricas</button>
+        <button type="button" class="stats-tab-btn" id="statsTabBtnBreakdown" data-stats-tab="breakdown" data-i18n="stats_tab_breakdown">Compra/Venta</button>
+        <button type="button" class="stats-tab-btn" id="statsTabBtnMetrics" data-stats-tab="metrics" data-i18n="stats_tab_metrics">Métricas</button>
       </div>
 
+      <!-- Cada cifra lleva debajo una linea de contexto: un ratio de aciertos del 60% no dice
+           lo mismo con 5 operaciones que con 300, y antes ese dato no estaba a la vista. -->
       <div class="top-stats stats-tab-panel" data-stats-tab="summary">
+        <div class="stat-box is-primary">
+          <span data-i18n="stat_total_pnl">PnL total</span>
+          <h2 id="statPnL">0€</h2>
+          <small id="statPnLSub" class="stat-box-sub"></small>
+        </div>
         <div class="stat-box">
           <span data-i18n="stat_win_rate">Ratio de aciertos</span>
           <h2 id="statWinrate">0%</h2>
-        </div>
-        <div class="stat-box">
-          <span data-i18n="stat_total_pnl">PnL total</span>
-          <h2 id="statPnL">0€</h2>
+          <small id="statWinrateSub" class="stat-box-sub"></small>
         </div>
         <div class="stat-box">
           <span data-i18n="stat_returns">Rentabilidad</span>
           <h2 id="statReturns">0%</h2>
+          <small id="statReturnsSub" class="stat-box-sub"></small>
         </div>
         <div class="stat-box">
           <span data-i18n="stat_profit_factor">Factor de beneficio</span>
           <h2 id="statPF">0</h2>
+          <small id="statPFSub" class="stat-box-sub"></small>
         </div>
         <div class="stat-box">
           <span data-i18n="stat_commissions_paid">Comisiones pagadas</span>
           <h2 id="statCommissions" class="negative">0.00€</h2>
+          <small id="statCommissionsSub" class="stat-box-sub"></small>
         </div>
       </div>
 
@@ -8394,7 +8432,7 @@
         <p id="statsDirectionMissing" class="muted small" hidden></p>
       </section>
 
-      <section id="statsMetricsSection" class="card panel-card stats-tab-panel" data-stats-tab="breakdown" hidden>
+      <section id="statsMetricsSection" class="card panel-card stats-tab-panel" data-stats-tab="metrics" hidden>
         <h2 class="section-title title-with-icon">
           <i data-lucide="check-square"></i>
           <span data-i18n="stats_metrics_title">Análisis por métricas de estrategia</span>

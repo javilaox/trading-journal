@@ -817,3 +817,177 @@ body.light #statsView .card, body.light #statsView .chart-card, body.light #stat
     grid-template-columns: 1fr;
   }
 }
+/* ============================================================================
+   Barra de filtros, tarjetas de cifras y tarjetas de contenido
+   ----------------------------------------------------------------------------
+   Antes los filtros eran controles sueltos en fila, sin etiquetas y sin decir
+   sobre que periodo se estaba mirando; las cinco cifras de arriba pesaban todas
+   igual y sin contexto; y cada seccion tenia su propio margen y su propio
+   titulo. Esto agrupa las tres cosas bajo el mismo patron.
+   ========================================================================== */
+
+#statsView .stats-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-sm);
+}
+#statsView .stats-toolbar-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+#statsView .stats-toolbar-block + .stats-toolbar-block {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+#statsView .stats-toolbar-label {
+  flex: 0 0 92px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+#statsView .stats-period-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Atajos de periodo. El activo se marca, para que se vea de un vistazo si lo que
+   hay en pantalla es el mes en curso o un rango elegido a mano. */
+#statsView .stats-range-presets {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.16);
+  flex-wrap: wrap;
+}
+#statsView .stats-range-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+#statsView .stats-range-btn:hover {
+  color: var(--text);
+}
+#statsView .stats-range-btn.is-active {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--green, #22c55e);
+}
+body.light #statsView .stats-range-presets {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+#statsView .stats-toolbar-filters {
+  gap: 12px;
+}
+#statsView .stats-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+#statsView .stats-filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+/* El desplegable de la aplicacion se inserta justo detras del <select> nativo,
+   que queda oculto: hay que darle el ancho al que se ve, no al escondido. */
+#statsView .stats-filter .custom-select {
+  min-width: 190px;
+}
+#statsView .stats-toolbar-filters .btn-apply {
+  align-self: flex-end;
+}
+#statsView .stats-toolbar-options .compare-toggle {
+  gap: 18px;
+}
+
+@media (max-width: 900px) {
+  #statsView .stats-toolbar-label {
+    flex-basis: 100%;
+  }
+  #statsView .stats-filter {
+    flex: 1 1 180px;
+  }
+  #statsView .stats-filter .custom-select {
+    min-width: 0;
+  }
+}
+
+/* --------------------------------------------------------- tarjetas de cifras */
+
+#statsView .stat-box {
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+/* La cifra que de verdad se mira primero es el PnL: se le da algo mas de peso en
+   lugar de dejar las cinco tarjetas exactamente iguales. */
+#statsView .stat-box.is-primary {
+  border-color: rgba(34, 197, 94, 0.32);
+}
+#statsView .stat-box.is-primary h2 {
+  font-size: 26px;
+}
+#statsView .stat-box h2.positive {
+  color: var(--green, #22c55e);
+}
+#statsView .stat-box h2.negative {
+  color: var(--red, #ef4444);
+}
+#statsView .stat-box h2.neutral {
+  color: var(--text);
+}
+#statsView .stat-box-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  min-height: 15px;
+}
+#statsView .stat-box-sub:empty {
+  display: none;
+}
+
+/* ------------------------------------------------ tarjetas de graficas y tablas */
+
+/* Mismo recuadro, mismo aire y mismo titulo en las cuatro pestañas. Antes cada
+   seccion traia su propio margen y sus titulos no coincidian de tamaño. */
+#statsView .card.panel-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-md);
+}
+#statsView .card.panel-card > .section-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: var(--fw-semibold);
+}
+#statsView .card.panel-card > .muted.small {
+  margin: 0 0 var(--space-md);
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -16,7 +16,7 @@
     "make:production": "cross-env APP_BUILD_ENV=production electron-forge make",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
-    "check": "node scripts/check-syntax.js && node scripts/check-rls.js && node scripts/check-trade-fields.js",
+    "check": "node scripts/check-syntax.js && node scripts/check-rls.js && node scripts/check-trade-fields.js && node scripts/check-i18n.js",
     "check:rls": "node scripts/check-rls.js",
     "build:viewer": "node scripts/build-share-viewer.js",
     "build:mobile": "node scripts/build-mobile.js",
