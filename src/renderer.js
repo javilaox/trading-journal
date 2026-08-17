@@ -6262,10 +6262,34 @@ function renderTradeCustomMetricFields(form, strategyName, values = {}) {
   metrics.forEach((name) => {
     const label = document.createElement('label');
     label.className = 'trade-metric-check';
-    const checked = values && values[name] === true ? 'checked' : '';
-    label.innerHTML = `<input type="checkbox" data-metric-name="${escapeAttrChip(name)}" ${checked} /><span>${escapeHtmlChipText(name)}</span>`;
+    const isChecked = Boolean(values && values[name] === true);
+    if (isChecked) label.classList.add('is-checked');
+    label.innerHTML = `<input type="checkbox" data-metric-name="${escapeAttrChip(name)}" ${isChecked ? 'checked' : ''} /><span>${escapeHtmlChipText(name)}</span>`;
     host.appendChild(label);
   });
+
+  // Un solo escuchador para todas: marca visualmente la fila y refresca el contador.
+  if (host.dataset.metricsBound !== 'true') {
+    host.dataset.metricsBound = 'true';
+    host.addEventListener('change', (event) => {
+      const input = event.target;
+      if (!input?.matches?.('input[type="checkbox"][data-metric-name]')) return;
+      input.closest('.trade-metric-check')?.classList.toggle('is-checked', input.checked);
+      updateTradeCustomMetricsCount(form);
+    });
+  }
+
+  updateTradeCustomMetricsCount(form);
+}
+
+/** «3 de 5» junto al título, para saber de un vistazo cuántas quedan sin repasar. */
+function updateTradeCustomMetricsCount(form) {
+  const host = document.getElementById(form === 'edit' ? 'editCustomMetricsFields' : 'tradeCustomMetricsFields');
+  const badge = document.getElementById(form === 'edit' ? 'editCustomMetricsCount' : 'tradeCustomMetricsCount');
+  if (!host || !badge) return;
+  const boxes = host.querySelectorAll('input[type="checkbox"][data-metric-name]');
+  const marcadas = [...boxes].filter((cb) => cb.checked).length;
+  badge.textContent = boxes.length ? `${marcadas} de ${boxes.length}` : '';
 }
 
 /** Valores marcados. Se guardan TODAS las métricas (true/false), no solo las marcadas: así el
@@ -12301,12 +12325,15 @@ function attachDayTradeEvents(trades) {
   });
 }
 
-function openDayTradesModal(dateStr, trades) {
+function openDayTradesModal(dateStr, rawTrades) {
   const title = document.getElementById('modalDateTitle');
   const container = document.getElementById('dayTradesList');
   if (!title || !container) return;
 
   title.textContent = dateStr;
+
+  // Mismo criterio que el panel lateral: por hora de entrada, del primero al último.
+  const trades = sortTradesChronologically(Array.isArray(rawTrades) ? rawTrades : []);
 
   if (!trades.length) {
     container.innerHTML = `<p>${t('no_trades_modal')}</p>`;
@@ -12386,7 +12413,10 @@ function getTradePanelScheduleBadge(trade) {
 function renderTradePanel(trades) {
   const container = document.getElementById('tradePanelList');
   if (!container) return;
-  const safeTrades = Array.isArray(trades) ? trades : [];
+  // Por hora de entrada, del primero al último. Sin ordenar salían en el orden en que los
+  // devuelve la base de datos, que no tiene por qué coincidir con el orden en que ocurrieron:
+  // en un día con varias operaciones cuesta seguir cuál fue antes.
+  const safeTrades = sortTradesChronologically(Array.isArray(trades) ? trades : []);
 
   if (!safeTrades.length) {
     container.innerHTML = `<div class="trade-panel-empty">${t('no_trades_day')}</div>`;
@@ -15108,11 +15138,23 @@ function bindBacktestingDayTradeEditHandlers() {
  * enseñar las operaciones en distinto orden. Las que no tienen hora van al final de su día.
  */
 function sortTradesChronologically(list) {
-  const key = (t) =>
-    `${String(t?.date || '').slice(0, 10)} ${String(t?.entry_time || '99:99').slice(0, 5)}`;
+  // La hora se compara como texto, así que hay que dejarla siempre en HH:MM: escrita como
+  // "7:30" iría después de "15:00", porque el 7 es mayor que el 1. Las operaciones sin hora se
+  // van al final, que es donde molestan menos.
+  const hora = (value) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? '').trim());
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '99:99';
+  };
+  const key = (t) => `${String(t?.date || '').slice(0, 10)} ${hora(t?.entry_time)}`;
   return [...(list || [])].sort((a, b) => {
     const diff = key(a).localeCompare(key(b));
-    return diff !== 0 ? diff : String(a?.id || '').localeCompare(String(b?.id || ''));
+    if (diff !== 0) return diff;
+    // A igual día y hora manda el orden en que se guardaron. Se comparan los identificadores
+    // como números: como texto, el 10 iría antes que el 9.
+    const na = Number(a?.id);
+    const nb = Number(b?.id);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
   });
 }
 

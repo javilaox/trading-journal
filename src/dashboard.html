@@ -1371,20 +1371,77 @@
         padding: 12px 14px;
         background: rgba(148, 163, 184, 0.06);
       }
+      /* El bloque solo aparece si la estrategia tiene métricas: como aquí se declara un
+         `display`, hay que devolverle el `display:none` cuando lleva el atributo hidden. */
+      .trade-metrics-section[hidden] { display: none; }
+      .trade-metrics-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .trade-metrics-hint {
+        margin: 2px 0 0;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .trade-metrics-count {
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-muted);
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+      }
       .trade-metrics-fields {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 8px 18px;
-        margin-top: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 8px;
+        margin-top: 12px;
       }
+      /* Cada métrica es una fila con su propio recuadro: antes eran casillas sueltas repartidas
+         por el ancho y, con varias, no se sabía dónde acababa una y empezaba la siguiente. */
       .trade-metric-check {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 0.88rem;
+        gap: 10px;
+        font-size: 0.86rem;
+        line-height: 1.3;
         cursor: pointer;
+        padding: 9px 11px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.16);
+        transition: border-color 0.15s ease, background 0.15s ease;
       }
-      .trade-metric-check input { cursor: pointer; }
+      .trade-metric-check:hover {
+        border-color: rgba(56, 189, 248, 0.45);
+      }
+      /* Tamaño fijo: dentro de un contenedor flex, una casilla sin medidas propias se estira y
+         empuja el texto. */
+      .trade-metric-check input {
+        cursor: pointer;
+        width: 16px;
+        min-width: 16px;
+        max-width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 0;
+        accent-color: var(--green, #22c55e);
+      }
+      .trade-metric-check span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .trade-metric-check.is-checked {
+        border-color: rgba(34, 197, 94, 0.5);
+        background: rgba(34, 197, 94, 0.08);
+      }
+      body.light .trade-metric-check {
+        background: rgba(148, 163, 184, 0.08);
+      }
       .strategy-hours-head {
         display: flex;
         align-items: center;
@@ -7661,7 +7718,13 @@
                   </div>
                   <!-- Checklist de la estrategia elegida (se rellena por JS al seleccionarla). -->
                   <div id="tradeCustomMetricsSection" class="trade-metrics-section field-full" hidden>
-                    <span class="settings-field-label" data-i18n="trade_metrics_title">Métricas de la estrategia</span>
+                    <div class="trade-metrics-head">
+                      <div>
+                        <span class="settings-field-label" data-i18n="trade_metrics_title">Métricas de la estrategia</span>
+                        <p class="trade-metrics-hint">Marca las que se cumplieron en esta operación.</p>
+                      </div>
+                      <span id="tradeCustomMetricsCount" class="trade-metrics-count"></span>
+                    </div>
                     <div id="tradeCustomMetricsFields" class="trade-metrics-fields"></div>
                   </div>
                   <div id="tradeCompositeSection" class="trade-composite-section field-full">
@@ -9720,7 +9783,13 @@
             <input id="editAccountCapital" class="input" type="number" step="0.01" readonly />
           </div>
           <div id="editCustomMetricsSection" class="trade-metrics-section field-full" hidden>
-            <span class="settings-field-label" data-i18n="trade_metrics_title">Métricas de la estrategia</span>
+            <div class="trade-metrics-head">
+              <div>
+                <span class="settings-field-label" data-i18n="trade_metrics_title">Métricas de la estrategia</span>
+                <p class="trade-metrics-hint">Marca las que se cumplieron en esta operación.</p>
+              </div>
+              <span id="editCustomMetricsCount" class="trade-metrics-count"></span>
+            </div>
             <div id="editCustomMetricsFields" class="trade-metrics-fields"></div>
           </div>
           <div class="field field-full">
