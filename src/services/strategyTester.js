@@ -73,13 +73,12 @@ function combineEntries(entries) {
  * tercera solo si entró la segunda. Así que los casos son «solo la primera», «primera y
  * segunda», «las tres»... cada uno con su probabilidad.
  *
- * Lo importante: promediar no es un suceso neutro. Si la segunda entrada se activa es porque el
- * precio se fue en tu contra, y esas operaciones no aciertan lo mismo que las que se van a favor
- * desde el principio. Por eso cada escenario lleva su propio acierto: `winRate` para las que no
- * promedian y `winRateAveraged` para las que sí. Meterlas todas en el mismo saco con un solo
- * acierto es lo que hace que estos cálculos salgan demasiado bonitos.
+ * El acierto es el mismo en todos los escenarios: la estrategia es la misma, y que el precio
+ * pasara antes por la segunda entrada no cambia el criterio con el que se abrió la operación.
+ * Lo que sí cambia entre escenarios es cuánto riesgo se llegó a poner y con qué RR, y eso es lo
+ * que se calcula aquí.
  */
-function buildScenarios(entries, { winRate, winRateAveraged, beRate }) {
+function buildScenarios(entries, { winRate, beRate }) {
   const list = (Array.isArray(entries) ? entries : [])
     .map((e, i) => ({
       weight: Math.max(0, Number(e?.weight) || 0),
@@ -91,9 +90,10 @@ function buildScenarios(entries, { winRate, winRateAveraged, beRate }) {
   if (!list.length) return [];
 
   const totalWeight = list.reduce((sum, e) => sum + e.weight, 0);
-  const winSolo = clampRate(winRate);
-  const winAvg = winRateAveraged == null ? winSolo : clampRate(winRateAveraged);
+  const win = clampRate(winRate);
   const be = clampRate(beRate);
+  const beAjustado = Math.min(be, Math.max(0, 1 - win));
+  const loss = Math.max(0, 1 - win - beAjustado);
 
   const escenarios = [];
   let probAcumulada = 1; // probabilidad de haber llegado hasta la entrada k
@@ -112,9 +112,6 @@ function buildScenarios(entries, { winRate, winRateAveraged, beRate }) {
       ? usadas.reduce((sum, e) => sum + (e.weight / totalWeight) * e.rr, 0) / peso
       : 0;
 
-    const win = k === 0 ? winSolo : winAvg;
-    const beAjustado = Math.min(be, Math.max(0, 1 - win));
-
     escenarios.push({
       entriesFilled: k + 1,
       averaged: k > 0,
@@ -123,7 +120,7 @@ function buildScenarios(entries, { winRate, winRateAveraged, beRate }) {
       rr,
       winRate: win,
       beRate: beAjustado,
-      lossRate: Math.max(0, 1 - win - beAjustado),
+      lossRate: loss,
     });
   }
 
@@ -270,7 +267,6 @@ function runStrategyTest(config = {}) {
   const entries = combineEntries(config.entries);
   const escenarios = buildScenarios(config.entries, {
     winRate: config.winRate,
-    winRateAveraged: config.winRateAveraged,
     beRate: config.beRate,
   });
 

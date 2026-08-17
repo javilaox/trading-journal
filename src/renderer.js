@@ -19414,9 +19414,6 @@ function stDefaultConfig() {
     startingCapital: 10000,
     riskPercent: 1,
     winRate: 50,
-    // Arranca igual que el acierto general: hasta que el usuario lo baje, el resultado es el
-    // mismo que antes de existir este campo.
-    winRateAveraged: 50,
     beRate: 0,
     commissionR: 0,
     tradesPerWeek: 5,
@@ -19558,10 +19555,7 @@ function stApplyStrategy(side, key) {
       // el interés compuesto.
       config.riskPercent = (estrategia.riskValue / config.startingCapital) * 100;
     }
-    if (estrategia.winRate != null) {
-      config.winRate = estrategia.winRate;
-      config.winRateAveraged = estrategia.winRate;
-    }
+    if (estrategia.winRate != null) config.winRate = estrategia.winRate;
     if (estrategia.beRate != null) config.beRate = estrategia.beRate;
   }
 
@@ -19620,6 +19614,8 @@ function stMeasureMetric(strategyName, metricName) {
     lista.length
       ? (lista.filter((t) => String(t.result).toUpperCase() === 'TP').length / lista.length) * 100
       : null;
+  // El acierto se mide sobre TODAS las operaciones de la estrategia, promedien o no: es la misma
+  // estrategia y el criterio de entrada no cambia porque el precio pasara antes por la segunda.
   const empates = (lista) =>
     lista.length
       ? (lista.filter((t) => String(t.result).toUpperCase() === 'BE').length / lista.length) * 100
@@ -19630,8 +19626,7 @@ function stMeasureMetric(strategyName, metricName) {
     conMetrica: conMetrica.length,
     sinMetrica: sinMetrica.length,
     fillRate: (conMetrica.length / evaluadas) * 100,
-    winRateSolo: acierto(sinMetrica),
-    winRateAveraged: acierto(conMetrica),
+    winRateGeneral: acierto(deLaEstrategia),
     beRate: empates(deLaEstrategia),
   };
 }
@@ -19706,8 +19701,9 @@ function stApplyMetric(side, metricName) {
   }
   config.entries[1].fillRate = medida.fillRate;
 
-  if (medida.winRateSolo != null) config.winRate = medida.winRateSolo;
-  if (medida.winRateAveraged != null) config.winRateAveraged = medida.winRateAveraged;
+  // El acierto es el mismo se promedie o no, así que lo que aporta la métrica es la frecuencia
+  // de activación, que es lo que no se puede saber a ojo.
+  if (medida.winRateGeneral != null) config.winRate = medida.winRateGeneral;
   if (medida.beRate != null) config.beRate = medida.beRate;
 
   stRenderFields(side);
@@ -19741,16 +19737,13 @@ function stRenderMetricNote(side, medida) {
     }`,
     `${t('st_metric_fill', 'se activa el')} ${medida.fillRate.toFixed(0)}% (${medida.conMetrica})`,
   ];
-  if (medida.winRateSolo != null) {
-    partes.push(`${t('st_metric_win_solo', 'acierto sin promediar')} ${medida.winRateSolo.toFixed(0)}% (${medida.sinMetrica})`);
-  }
-  if (medida.winRateAveraged != null) {
-    partes.push(`${t('st_metric_win_avg', 'promediando')} ${medida.winRateAveraged.toFixed(0)}% (${medida.conMetrica})`);
+  if (medida.winRateGeneral != null) {
+    partes.push(`${t('st_metric_win', 'acierto')} ${medida.winRateGeneral.toFixed(0)}%`);
   }
 
   // Con muy pocas operaciones a un lado, el porcentaje se mueve enteros con una sola operación
   // más. Se dice, en vez de presentarlo como un dato firme.
-  const pocas = medida.conMetrica < 10 || medida.sinMetrica < 10;
+  const pocas = medida.evaluadas < 20;
   el.hidden = false;
   el.className = pocas ? 'st-metric-note is-warn' : 'st-metric-note';
   el.textContent = partes.join(' · ') + (pocas ? ` · ${t('st_metric_few', 'son pocas operaciones: tómalo como una primera referencia')}` : '');
@@ -19762,9 +19755,6 @@ const ST_FIELDS = [
   { key: 'startingCapital', label: 'Capital inicial (€)', step: '100', min: '0' },
   { key: 'riskPercent', label: 'Riesgo por operación (%)', step: '0.1', min: '0' },
   { key: 'winRate', label: 'Acierto (%)', step: '1', min: '0', max: '100' },
-  // Nota: 'winRateAveraged' NO está aquí. Solo tiene sentido cuando la posición se construye por
-  // partes, y ahí es donde se pinta: dentro del bloque de entradas, junto al «Se activa (%)» que
-  // lo provoca. Arriba, entre el capital y las semanas, quedaba descolgado de lo que explica.
   { key: 'beRate', label: 'Operaciones en BE (%)', step: '1', min: '0', max: '100' },
   { key: 'tradesPerWeek', label: 'Operaciones por semana', step: '1', min: '0' },
   { key: 'weeks', label: 'Semanas', step: '1', min: '0' },
@@ -19838,23 +19828,6 @@ function stRenderFields(side) {
         )}</button>
       </div>
       <div class="st-entries">${entradas}</div>
-      ${
-        variasEntradas
-          ? `<div class="st-entries-extra">
-               <label class="st-field">
-                 <span>${escapeHtmlChipText(t('st_field_winRateAveraged', 'Acierto promediando (%)'))}</span>
-                 <input type="number" class="input" data-st-side="${side}" data-st-key="winRateAveraged"
-                        value="${stFormatNumber(config.winRateAveraged)}" step="1" min="0" max="100" />
-               </label>
-               <p class="st-block-hint">${escapeHtmlChipText(
-                 t(
-                   'st_averaged_hint',
-                   'Si la segunda entrada se activa es porque el precio se fue en contra. Esas operaciones no suelen acertar lo mismo que las que van a favor desde el principio.'
-                 )
-               )}</p>
-             </div>`
-          : ''
-      }
       <p class="st-entries-rr" data-st-entry-rr="${side}"></p>
     </div>`;
 }
@@ -20102,11 +20075,7 @@ function stRenderSummary(a, b) {
     {
       label: t('st_res_averaged', 'Acaban promediando'),
       value: (r) => `${((r.averagedRate ?? 0) * 100).toFixed(0)}%`,
-      sub: (r) =>
-        `${t('st_res_averaged_sub', 'acierto')} ${(r.winRate * 100).toFixed(1)}% ${t(
-          'st_res_averaged_sub_2',
-          'de media, juntando los dos casos'
-        )}`,
+      sub: () => t('st_res_averaged_sub', 'se activa la segunda entrada'),
       tone: () => 'neutral',
       // Solo se enseña si la posición se construye por partes.
       onlyMultiEntry: true,
@@ -20309,9 +20278,6 @@ function initStrategyTester() {
       if (config) {
         config.entries = [...(config.entries || []), { weight: 0, rr: 2, fillRate: 60 }];
         stDistributeEven(config.entries);
-        // El campo aparece ahora por primera vez: se iguala al acierto general para no meter un
-        // número que el usuario no ha decidido.
-        if (config.winRateAveraged == null) config.winRateAveraged = config.winRate;
         stRenderFields(side);
         stRecalculate();
       }
