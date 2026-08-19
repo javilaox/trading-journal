@@ -841,6 +841,9 @@ function normalizeTrade(trade = {}) {
     exit_time: normalizeTimeField(trade.exit_time ?? trade.exitTime),
     direction: normalizeTradeDirection(trade.direction),
     custom_metrics: normalizeTradeCustomMetrics(trade.custom_metrics),
+    // Operación apuntada pero no ejecutada («live testing»): cuenta para medir la estrategia,
+    // no para el dinero.
+    live_testing: Boolean(trade.live_testing),
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: applied.position_legs ?? legs,
   };
@@ -891,6 +894,7 @@ function mapRowToTradeResponse(row) {
     exit_time: row.exit_time || null,
     direction: row.direction || null,
     custom_metrics: normalizeTradeCustomMetrics(row.custom_metrics),
+    live_testing: Boolean(row.live_testing),
     is_composite_position: row.is_composite_position,
     position_legs: row.position_legs ?? row.positionLegs,
   });
@@ -2125,6 +2129,7 @@ ipcMain.handle('add-trade', async (event, trade) => {
     // la local, así que el trade acababa sin dirección y sin métricas sin que nadie lo tocara.
     direction: mapped.direction ?? null,
     custom_metrics: mapped.custom_metrics || {},
+    live_testing: Boolean(mapped.live_testing),
     is_composite_position: Boolean(mapped.is_composite_position),
     // Conservamos position_legs incluso cuando es 1 sola entrada (trade de referencia).
     position_legs: mapped.position_legs || [],
@@ -2186,9 +2191,9 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
 
     db.prepare(`
       INSERT INTO trades
-      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, direction, custom_metrics, is_composite_position, position_legs, updated_at, user_id, sync_status, deleted_at)
+      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, direction, custom_metrics, live_testing, is_composite_position, position_legs, updated_at, user_id, sync_status, deleted_at)
       VALUES
-      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     `).run(
       tempId,
       clientUuid,
@@ -2208,6 +2213,7 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
       mapped.exit_time,
       mapped.direction,
       JSON.stringify(mapped.custom_metrics || {}),
+      mapped.live_testing ? 1 : 0,
       mapped.is_composite_position ? 1 : 0,
       legsJson,
       createdAt,
@@ -2338,6 +2344,7 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
     direction: normalizeTradeDirection(payload.direction),
     custom_metrics: normalizeTradeCustomMetrics(payload.custom_metrics),
+    live_testing: Boolean(payload.live_testing),
     is_composite_position: composite,
     position_legs: legs,
     updated_at: nowIso(),
@@ -3691,7 +3698,7 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     UPDATE trades
     SET date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
         lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
-        entry_time = ?, exit_time = ?, direction = ?, custom_metrics = ?,
+        entry_time = ?, exit_time = ?, direction = ?, custom_metrics = ?, live_testing = ?,
         is_composite_position = ?, position_legs = ?,
         updated_at = ?, sync_status = ?
     WHERE user_id = ? AND id = ?
@@ -3712,6 +3719,7 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     mapped.exit_time ?? null,
     mapped.direction ?? null,
     JSON.stringify(mapped.custom_metrics || {}),
+    mapped.live_testing ? 1 : 0,
     mapped.is_composite_position ? 1 : 0,
     legsJson,
     now,

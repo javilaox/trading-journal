@@ -163,6 +163,10 @@ function ensureTradesSchema() {
   // invalidar los trades ya guardados sin estos datos.
   addColumnIfMissing('trades', 'direction', 'direction TEXT');
   addColumnIfMissing('trades', 'custom_metrics', "custom_metrics TEXT DEFAULT '{}'");
+  // Operación registrada pero NO ejecutada («live testing»): la señal estaba y se apunta para
+  // medir la estrategia, pero no se entró, así que no mueve dinero. Por defecto 0 = ejecutada,
+  // que es lo que son todas las que ya existen.
+  addColumnIfMissing('trades', 'live_testing', 'live_testing INTEGER DEFAULT 0');
 
   // Índice único solo después de asegurar client_uuid
   const cols = getTableColumns('trades');
@@ -305,6 +309,7 @@ db.prepare(`
     image_after TEXT,
     direction TEXT,
     custom_metrics TEXT DEFAULT '{}',
+    live_testing INTEGER DEFAULT 0,
     updated_at TEXT,
     user_id TEXT,
     sync_status TEXT,

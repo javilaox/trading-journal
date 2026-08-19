@@ -62,6 +62,9 @@ function mapTrade(raw) {
     exit_time: raw.exit_time || null,
     direction: normalizeDirection(raw.direction),
     custom_metrics: normalizeCustomMetrics(raw.custom_metrics),
+    // Operación apuntada pero no ejecutada. Se guarda siempre como booleano para que la columna
+    // no acabe con unos, ceros, cadenas y nulos mezclados según por dónde entrara el dato.
+    live_testing: Boolean(raw.live_testing),
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: positionLegsForStorage(applied.position_legs),
     user_id: raw.user_id,

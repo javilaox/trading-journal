@@ -3916,6 +3916,25 @@ function getDashboardFilteredTrades() {
   });
 }
 
+
+/* --------------------------------------------------------------------------- live testing
+ * Una operación de «live testing» es una señal de la estrategia que se apuntó pero NO se
+ * ejecutó: no se entró, así que no movió dinero. Sirve para medir la estrategia sin los fallos
+ * de ejecución, y por eso cuenta en Estadísticas (si se activa su interruptor) pero nunca en el
+ * PnL, ni en el balance de las cuentas, ni en los challenges.
+ *
+ * Las operaciones guardadas antes de que esto existiera no tienen el campo: se leen como
+ * ejecutadas, que es lo que son.
+ */
+function isLiveTestingTrade(trade) {
+  return Boolean(trade?.live_testing);
+}
+
+/** Solo las que movieron dinero de verdad. Es lo que hay que usar en cualquier suma de euros. */
+function onlyExecutedTrades(list) {
+  return (Array.isArray(list) ? list : []).filter((t) => !isLiveTestingTrade(t));
+}
+
 function escapeHtmlChipText(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -4102,9 +4121,12 @@ async function renderDashboardFilters(trades = cachedTrades) {
 function renderDashboardWithFilters(options = {}) {
   const skipCalendar = options.skipCalendar === true;
   const filteredTrades = getDashboardFilteredTrades();
+  // Las cifras en euros solo cuentan lo ejecutado. El listado y el calendario sí las enseñan,
+  // marcadas, para poder abrirlas y editarlas.
+  const executedTrades = onlyExecutedTrades(filteredTrades);
 
-  updateDashboardMetrics(filteredTrades, { withKpi: false });
-  updateKpiCards(filteredTrades, currentMonth, currentYear);
+  updateDashboardMetrics(executedTrades, { withKpi: false });
+  updateKpiCards(executedTrades, currentMonth, currentYear);
   renderTradeList(filteredTrades);
 
   if (!skipCalendar) {
@@ -4149,6 +4171,13 @@ function renderTradeList(trades) {
     const pnlValue = getTradeRealPnl(trade);
     pnl.className = `pill trade-pnl ${pnlValue > 0 ? 'trade-profit' : pnlValue < 0 ? 'trade-loss' : 'trade-be'}`;
     pnl.textContent = `${pnlValue > 0 ? '+' : ''}${pnlValue.toFixed(2)}€`;
+
+    if (isLiveTestingTrade(trade)) {
+      const marca = document.createElement('span');
+      marca.className = 'live-testing-badge';
+      marca.textContent = t('live_testing_badge', 'Live testing');
+      li.appendChild(marca);
+    }
 
     const result = document.createElement('span');
     const resultValue = trade.result || 'BE';
@@ -7440,8 +7469,10 @@ async function refreshWithdrawalsUI() {
     capital: Number(account.capital ?? 0) || 0,
     prop_name: account.prop_name || null,
   }));
-  const globalMetrics = calculateWithdrawalMetrics(withdrawalsCache, cachedTrades, accounts);
-  const filteredMetrics = calculateWithdrawalMetrics(filtered, getWithdrawalTradeScope(), accounts);
+  // Solo lo ejecutado: el balance estimado de una cuenta no puede incluir operaciones que nunca
+  // se llegaron a tomar.
+  const globalMetrics = calculateWithdrawalMetrics(withdrawalsCache, onlyExecutedTrades(cachedTrades), accounts);
+  const filteredMetrics = calculateWithdrawalMetrics(filtered, onlyExecutedTrades(getWithdrawalTradeScope()), accounts);
   const hasAnyWithdrawals = withdrawalsCache.length > 0;
   updateWithdrawalsLayoutState(hasAnyWithdrawals);
   renderWithdrawalsSummary(filtered, globalMetrics);
@@ -12059,12 +12090,21 @@ function groupTradesByDay(trades) {
     if (!map[date]) {
       map[date] = {
         trades: [],
-        totalPnL: 0
+        totalPnL: 0,
+        executedCount: 0,
+        liveTestingCount: 0
       };
     }
 
     map[date].trades.push(trade);
-    map[date].totalPnL += getTradeRealPnl(trade);
+    // Las de live testing se quedan en la lista del día (para poder verlas y editarlas), pero
+    // no entran en el total: ese dinero no se ganó ni se perdió.
+    if (isLiveTestingTrade(trade)) {
+      map[date].liveTestingCount = (map[date].liveTestingCount || 0) + 1;
+    } else {
+      map[date].executedCount = (map[date].executedCount || 0) + 1;
+      map[date].totalPnL += getTradeRealPnl(trade);
+    }
   });
 
   return map;
@@ -12243,6 +12283,10 @@ async function resetNewTradeForm(presetDate = null) {
   const exitEl = document.getElementById('exitTime');
   if (entryEl) entryEl.value = '';
   if (exitEl) exitEl.value = '';
+  // El interruptor de live testing no se queda pegado de una operación a la siguiente: lo normal
+  // es que la próxima sí se ejecute, y dejarlo marcado sin querer falsearía el PnL del día.
+  const liveTestingEl = document.getElementById('tradeLiveTesting');
+  if (liveTestingEl) liveTestingEl.checked = false;
   updateTradeScheduleHints();
 
   if (beforeEl) beforeEl.value = '';
@@ -12484,6 +12528,11 @@ function renderTradePanel(trades) {
       ? `<div class="trade-panel-legs">${escapeHtmlChipText(formatPositionLegsPanelSummary(hydrated.position_legs))}</div>`
       : '';
     const scheduleBadge = getTradePanelScheduleBadge(hydrated);
+    // Se marca para que no se confunda con una operación que sí movió dinero: su PnL se ve, pero
+    // no está sumado en ningún total.
+    const liveTestingBadge = isLiveTestingTrade(hydrated)
+      ? `<span class="live-testing-badge">${escapeHtmlChipText(t('live_testing_badge', 'Live testing'))}</span>`
+      : '';
     const lotLine = composite ? '' : `<span>Lotes ${lotaje > 0 ? lotaje.toFixed(2) : '0'}</span>`;
 
     return `
@@ -12494,6 +12543,7 @@ function renderTradePanel(trades) {
               <strong class="trade-panel-asset">${escapeHtmlChipText(hydrated.asset || '-')}</strong>
               <span class="trade-result-badge ${resultCls}">${result}</span>
               ${compositeBadge}
+              ${liveTestingBadge}
             </div>
             <div class="trade-panel-badges">${scheduleBadge}</div>
           </div>
@@ -12748,7 +12798,7 @@ async function renderCalendar(year, month, useCurrentCache = false, displayTrade
       const info = grouped[toDateKey(year, month, day)];
       if (info) {
         monthPnl += info.totalPnL;
-        monthTrades += info.trades.length;
+        monthTrades += info.executedCount || 0;
       }
     }
     if (monthPnlEl) monthPnlEl.textContent = `${monthPnl > 0 ? '+' : ''}${monthPnl.toFixed(2)}€`;
@@ -18390,6 +18440,8 @@ async function openTradeForEdit(tradeId) {
   };
 
   setValue('editTradeId', String(trade.id));
+  const editLiveTesting = document.getElementById('editLiveTesting');
+  if (editLiveTesting) editLiveTesting.checked = Boolean(trade.live_testing);
   setValue('editDirection', String(trade.direction || '').toUpperCase());
   setValue('editDate', toInputDate(trade.date || ''));
   setValue('editEntryTime', trade.entry_time || '');
@@ -18589,6 +18641,7 @@ async function saveTrade() {
 
     direction: document.getElementById('direction')?.value || '',
     custom_metrics: collectTradeCustomMetrics('create'),
+    live_testing: Boolean(document.getElementById('tradeLiveTesting')?.checked),
 
     image_before: isPersistentImagePath(createBeforeImagePath) ? createBeforeImagePath : null,
     image_after: isPersistentImagePath(createAfterImagePath) ? createAfterImagePath : null,
@@ -18762,6 +18815,7 @@ async function saveEditedTrade() {
     exit_time: document.getElementById('editExitTime')?.value || null,
 
     direction: document.getElementById('editDirection')?.value || '',
+    live_testing: Boolean(document.getElementById('editLiveTesting')?.checked),
     custom_metrics: collectTradeCustomMetrics('edit'),
 
     image_before: isPersistentImagePath(editBeforeImagePath) ? editBeforeImagePath : null,

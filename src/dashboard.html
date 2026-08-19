@@ -1373,6 +1373,56 @@
       }
       /* El bloque solo aparece si la estrategia tiene métricas: como aquí se declara un
          `display`, hay que devolverle el `display:none` cuando lleva el atributo hidden. */
+      /* Live testing: operacion apuntada pero no ejecutada. */
+      .trade-live-testing-switch {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 11px 13px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(56, 189, 248, 0.05);
+        cursor: pointer;
+      }
+      .trade-live-testing-switch:has(input:checked) {
+        border-color: rgba(56, 189, 248, 0.5);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      /* Tamano fijo: en una fila flexible, una casilla sin medidas propias se estira. */
+      .trade-live-testing-switch input {
+        width: 16px;
+        min-width: 16px;
+        max-width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 2px 0 0;
+        cursor: pointer;
+      }
+      .trade-live-testing-switch > span {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .trade-live-testing-switch strong { font-size: 0.9rem; }
+      .trade-live-testing-switch small {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+      /* Distintivo en los listados. */
+      .live-testing-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        color: #38bdf8;
+        white-space: nowrap;
+      }
       .trade-metrics-section[hidden] { display: none; }
       .trade-metrics-head {
         display: flex;
@@ -8019,6 +8069,17 @@
                       <option value="" data-i18n="placeholder_select_result">Selecciona resultado</option><option value="TP">TP</option><option value="SL">SL</option><option value="BE">BE</option>
                     </select>
                   </div>
+                  <!-- Live testing: la señal estaba pero no se entró. Cuenta para medir la
+                       estrategia y NO toca el dinero de ninguna cuenta. -->
+                  <div class="field field-full trade-live-testing">
+                    <label class="trade-live-testing-switch" for="tradeLiveTesting">
+                      <input type="checkbox" id="tradeLiveTesting" />
+                      <span>
+                        <strong data-i18n="live_testing_label">Live testing (no la cogí)</strong>
+                        <small data-i18n="live_testing_hint">Cuenta en Estadísticas si activas su interruptor, para ver cómo habría ido la estrategia sin fallos de ejecución. No suma ni resta en el PnL, ni en el balance de tus cuentas, ni en los challenges.</small>
+                      </span>
+                    </label>
+                  </div>
                   <!-- Checklist de la estrategia elegida (se rellena por JS al seleccionarla). -->
                   <div id="tradeCustomMetricsSection" class="trade-metrics-section field-full" hidden>
                     <div class="trade-metrics-head">
@@ -8589,6 +8650,13 @@
                 <span class="slider"></span>
               </label>
               <span class="toggle-label" data-i18n="stats_exclude_out_of_schedule">Excluir trades fuera de horario</span>
+            </div>
+            <div class="toggle-row">
+              <label class="switch" for="includeLiveTesting">
+                <input type="checkbox" id="includeLiveTesting" />
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label" data-i18n="stats_include_live_testing">Incluir live testing</span>
             </div>
           </div>
         </div>
@@ -10195,6 +10263,17 @@
           <div class="field pro-only">
             <label for="editAccountCapital" data-i18n="label_edit_capital">Capital cuenta</label>
             <input id="editAccountCapital" class="input" type="number" step="0.01" readonly />
+          </div>
+          <!-- Live testing: la señal estaba pero no se entró. Cuenta para medir la
+               estrategia y NO toca el dinero de ninguna cuenta. -->
+          <div class="field field-full trade-live-testing">
+            <label class="trade-live-testing-switch" for="editLiveTesting">
+              <input type="checkbox" id="editLiveTesting" />
+              <span>
+                <strong data-i18n="live_testing_label">Live testing (no la cogí)</strong>
+                <small data-i18n="live_testing_hint">Cuenta en Estadísticas si activas su interruptor, para ver cómo habría ido la estrategia sin fallos de ejecución. No suma ni resta en el PnL, ni en el balance de tus cuentas, ni en los challenges.</small>
+              </span>
+            </label>
           </div>
           <div id="editCustomMetricsSection" class="trade-metrics-section field-full" hidden>
             <div class="trade-metrics-head">

@@ -301,6 +301,36 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
   };
 }
 
+/**
+ * Interruptor de live testing.
+ *
+ * Apagado (por defecto) se ven solo las operaciones ejecutadas, que es el resultado real.
+ * Encendido se añaden las de live testing, para ver cómo habría ido la estrategia si no se
+ * hubiera escapado ninguna. Empieza apagado a propósito: mezclarlas sin querer daría un
+ * resultado mejor del que se tuvo en la cuenta.
+ */
+function isIncludeLiveTestingEnabled() {
+  return document.getElementById('includeLiveTesting')?.checked === true;
+}
+
+const INCLUDE_LIVE_TESTING_KEY_PREFIX = 'stats_include_live_testing';
+
+async function loadIncludeLiveTestingState() {
+  const el = document.getElementById('includeLiveTesting');
+  if (!el) return;
+  const userId = await getCurrentUserIdForFilters();
+  if (!userId) return;
+  const saved = localStorage.getItem(`${INCLUDE_LIVE_TESTING_KEY_PREFIX}_${userId}`);
+  if (saved !== null) el.checked = saved === 'true';
+}
+
+async function saveIncludeLiveTestingState() {
+  const userId = await getCurrentUserIdForFilters();
+  if (!userId) return;
+  const el = document.getElementById('includeLiveTesting');
+  localStorage.setItem(`${INCLUDE_LIVE_TESTING_KEY_PREFIX}_${userId}`, el?.checked ? 'true' : 'false');
+}
+
 /** Switch ON = excluir fuera/sin hora según reglas; OFF = no tocar el listado de trades. */
 function isExcludeOutOfScheduleEnabled() {
   const el = document.getElementById('excludeOutOfSchedule');
@@ -1539,6 +1569,10 @@ function getFilteredTrades() {
 
   let nextTrades = filterTradesByDate(filtered);
   nextTrades = filterBE(nextTrades);
+  // Las de live testing solo entran si se pide: son señales que no se llegaron a operar.
+  if (!isIncludeLiveTestingEnabled()) {
+    nextTrades = nextTrades.filter((trade) => !trade?.live_testing);
+  }
   return normalizeTrades(nextTrades);
 }
 
@@ -2936,6 +2970,10 @@ async function bindStatsEventsOnce() {
   }
   includeBEToggle?.addEventListener('change', applyFilters);
   const excludeScheduleToggle = document.getElementById('excludeOutOfSchedule');
+  document.getElementById('includeLiveTesting')?.addEventListener('change', () => {
+    void saveIncludeLiveTestingState();
+    void applyFilters();
+  });
   excludeScheduleToggle?.addEventListener('change', () => {
     console.log(
       '[stats-schedule] toggle changed ->',
@@ -2981,6 +3019,7 @@ async function bindStatsEventsOnce() {
   loadDateFilterState();
   loadIncludeBeState();
   void loadExcludeScheduleState();
+  void loadIncludeLiveTestingState();
 }
 
 /**
