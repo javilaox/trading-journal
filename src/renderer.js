@@ -3842,13 +3842,13 @@ let selectedDashboardStrategies = new Set(['ALL']);
 // internos ('challenge', 'funded', 'own_capital') y se muestran sus etiquetas traducidas.
 let selectedDashboardAccountTypes = new Set(['ALL']);
 /**
- * Filtro de ejecución del panel: ejecutadas, live testing o las dos.
+ * Si el calendario y el listado enseñan también las operaciones de live testing.
  *
- * Empieza en «todas» porque el calendario es también el sitio desde el que se encuentran las
- * operaciones para editarlas; esconderlas por defecto las haría difíciles de localizar. Las
- * cifras en euros nunca cuentan las de live testing, se filtre como se filtre.
+ * Apagado por defecto: el panel es la vista de lo que se operó de verdad. Al encenderlo aparecen
+ * las señales que no se llegaron a tomar, marcadas. Las cifras en euros no cambian en ningún
+ * caso, porque esas operaciones no movieron dinero.
  */
-let selectedDashboardExecution = new Set(['ALL']);
+let showLiveTestingInCalendar = false;
 
 /** @type {{ client_uuid: string|null, remote_id: string|null, id: string|number|null, originalName: string|null } | null} */
 let accountModalIdentity = null;
@@ -3902,8 +3902,6 @@ function getDashboardFilteredTrades() {
   const allAccounts = selectedDashboardAccounts.has('ALL') || selectedDashboardAccounts.size === 0;
   const allStrategies = selectedDashboardStrategies.has('ALL') || selectedDashboardStrategies.size === 0;
   const allTypes = selectedDashboardAccountTypes.has('ALL') || selectedDashboardAccountTypes.size === 0;
-  const allExecutions =
-    selectedDashboardExecution.has('ALL') || selectedDashboardExecution.size === 0;
 
   // Nombres de cuenta que cumplen el filtro de tipo (los trades guardan el nombre, no el tipo).
   const namesMatchingType = allTypes
@@ -3921,8 +3919,7 @@ function getDashboardFilteredTrades() {
     const accountOk = allAccounts || selectedDashboardAccounts.has(accountValue);
     const strategyOk = allStrategies || selectedDashboardStrategies.has(strategyValue);
     const typeOk = allTypes || namesMatchingType.has(accountValue);
-    const executionValue = isLiveTestingTrade(trade) ? 'live_testing' : 'executed';
-    const executionOk = allExecutions || selectedDashboardExecution.has(executionValue);
+    const executionOk = showLiveTestingInCalendar || !isLiveTestingTrade(trade);
 
     return accountOk && strategyOk && typeOk && executionOk;
   });
@@ -4109,31 +4106,6 @@ async function renderDashboardFilters(trades = cachedTrades) {
     }
   );
 
-  // Solo se ofrece si hay algo que filtrar: sin ninguna operación de live testing, el
-  // desplegable no aportaría nada.
-  const hayLiveTesting = (Array.isArray(cachedTrades) ? cachedTrades : []).some(isLiveTestingTrade);
-  const campoEjecucion = document.getElementById('dashboardExecutionMulti')?.closest('.field');
-  if (campoEjecucion) campoEjecucion.hidden = !hayLiveTesting;
-
-  if (!hayLiveTesting) {
-    // Sin operaciones de live testing el filtro no tiene sentido, y dejarlo puesto en
-    // «Live testing» escondería todo el calendario sin que se viera por qué.
-    selectedDashboardExecution = new Set(['ALL']);
-  } else {
-    createDashboardMultiSelect(
-      'dashboardExecutionMulti',
-      [
-        { value: 'executed', label: t('execution_executed', 'Ejecutadas') },
-        { value: 'live_testing', label: t('live_testing_badge', 'Live testing') },
-      ],
-      selectedDashboardExecution,
-      t('filter_all_executions', 'Todas'),
-      () => {
-        void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
-      }
-    );
-  }
-
   createDashboardMultiSelect(
     'dashboardAccountMulti',
     accounts,
@@ -4155,8 +4127,26 @@ async function renderDashboardFilters(trades = cachedTrades) {
   );
 }
 
+/**
+ * El interruptor de live testing solo tiene sentido si hay alguna operación así. Sin ninguna se
+ * esconde, y además se apaga: dejarlo encendido sin nada que enseñar solo confunde.
+ */
+function refreshCalendarLiveTestingToggle() {
+  const fila = document.getElementById('calendarLiveTestingRow');
+  const input = document.getElementById('toggleLiveTesting');
+  if (!fila || !input) return;
+
+  const hay = (Array.isArray(cachedTrades) ? cachedTrades : []).some(isLiveTestingTrade);
+  fila.hidden = !hay;
+  if (!hay && showLiveTestingInCalendar) {
+    showLiveTestingInCalendar = false;
+    input.checked = false;
+  }
+}
+
 function renderDashboardWithFilters(options = {}) {
   const skipCalendar = options.skipCalendar === true;
+  refreshCalendarLiveTestingToggle();
   const filteredTrades = getDashboardFilteredTrades();
   // Las cifras en euros solo cuentan lo ejecutado. El listado y el calendario sí las enseñan,
   // marcadas, para poder abrirlas y editarlas.
@@ -21159,6 +21149,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   toggleWeekendInput?.addEventListener('change', (event) => {
     showWeekend = Boolean(event.target.checked);
     renderCalendar(currentYear, currentMonth, true, getDashboardFilteredTrades());
+  });
+  document.getElementById('toggleLiveTesting')?.addEventListener('change', (event) => {
+    showLiveTestingInCalendar = Boolean(event.target.checked);
+    // Se repinta el panel entero, no solo el calendario: el listado de operaciones también
+    // depende de esto.
+    renderDashboardWithFilters();
   });
   if (excludeBEInput) {
     excludeBEInput.checked = isExcludeBEEnabled();

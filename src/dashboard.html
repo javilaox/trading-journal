@@ -1375,6 +1375,16 @@
          `display`, hay que devolverle el `display:none` cuando lleva el atributo hidden. */
       /* Live testing: operacion apuntada pero no ejecutada. */
       .dashboard-filter-row .field[hidden] { display: none; }
+      .calendar-toggles {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      /* El interruptor solo aparece si hay operaciones de live testing; como .toggle-row declara
+         un display, hay que devolverle el display:none al ocultarlo. */
+      .calendar-toggles .toggle-row[hidden] { display: none; }
       .trade-live-testing-switch {
         display: flex;
         align-items: flex-start;
@@ -7912,10 +7922,6 @@
                 <div id="dashboardAccountMulti" class="dashboard-multiselect"></div>
               </div>
               <div class="field">
-                <label data-i18n="label_execution">Ejecución</label>
-                <div id="dashboardExecutionMulti" class="dashboard-multiselect"></div>
-              </div>
-              <div class="field">
                 <label data-i18n="label_strategy">Estrategia</label>
                 <div id="dashboardStrategyMulti" class="dashboard-multiselect"></div>
               </div>
@@ -7971,12 +7977,23 @@
 
           <section class="card section dashboard-section calendar-container">
             <h2 class="section-title title-with-icon"><i data-lucide="calendar"></i><span data-i18n="calendar_monthly">Calendario mensual</span></h2>
-            <div class="toggle-row" style="margin-bottom:10px;">
-              <label class="switch" for="toggleWeekend">
-                <input type="checkbox" id="toggleWeekend" />
-                <span class="slider"></span>
-              </label>
-              <span data-i18n="show_weekend">Mostrar fin de semana</span>
+            <div class="calendar-toggles">
+              <div class="toggle-row">
+                <label class="switch" for="toggleWeekend">
+                  <input type="checkbox" id="toggleWeekend" />
+                  <span class="slider"></span>
+                </label>
+                <span data-i18n="show_weekend">Mostrar fin de semana</span>
+              </div>
+              <!-- Apagado por defecto: el calendario enseña lo que se opero de verdad. Al
+                   encenderlo aparecen tambien las senales que no se llegaron a tomar. -->
+              <div class="toggle-row" id="calendarLiveTestingRow" hidden>
+                <label class="switch" for="toggleLiveTesting">
+                  <input type="checkbox" id="toggleLiveTesting" />
+                  <span class="slider"></span>
+                </label>
+                <span data-i18n="show_live_testing">Mostrar live testing</span>
+              </div>
             </div>
             <div class="calendar-header">
               <button id="prevMonth" class="calendar-nav-btn" type="button">‹</button>
