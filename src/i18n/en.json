@@ -624,5 +624,8 @@
   "live_testing_label": "Live testing",
   "live_testing_hint": "Trade recorded without being executed. Counts in Statistics if you turn on its switch, to measure the strategy without execution mistakes. It does not add or subtract in the PnL, your account balances or the challenges.",
   "live_testing_badge": "Live testing",
-  "stats_include_live_testing": "Include live testing"
+  "stats_include_live_testing": "Include live testing",
+  "label_execution": "Execution",
+  "execution_executed": "Executed",
+  "filter_all_executions": "All"
 }

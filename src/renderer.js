@@ -3841,6 +3841,14 @@ let selectedDashboardStrategies = new Set(['ALL']);
 // Filtro por tipo de cuenta (Challenge / Fondeada / Capital propio). Se guardan los valores
 // internos ('challenge', 'funded', 'own_capital') y se muestran sus etiquetas traducidas.
 let selectedDashboardAccountTypes = new Set(['ALL']);
+/**
+ * Filtro de ejecución del panel: ejecutadas, live testing o las dos.
+ *
+ * Empieza en «todas» porque el calendario es también el sitio desde el que se encuentran las
+ * operaciones para editarlas; esconderlas por defecto las haría difíciles de localizar. Las
+ * cifras en euros nunca cuentan las de live testing, se filtre como se filtre.
+ */
+let selectedDashboardExecution = new Set(['ALL']);
 
 /** @type {{ client_uuid: string|null, remote_id: string|null, id: string|number|null, originalName: string|null } | null} */
 let accountModalIdentity = null;
@@ -3894,6 +3902,8 @@ function getDashboardFilteredTrades() {
   const allAccounts = selectedDashboardAccounts.has('ALL') || selectedDashboardAccounts.size === 0;
   const allStrategies = selectedDashboardStrategies.has('ALL') || selectedDashboardStrategies.size === 0;
   const allTypes = selectedDashboardAccountTypes.has('ALL') || selectedDashboardAccountTypes.size === 0;
+  const allExecutions =
+    selectedDashboardExecution.has('ALL') || selectedDashboardExecution.size === 0;
 
   // Nombres de cuenta que cumplen el filtro de tipo (los trades guardan el nombre, no el tipo).
   const namesMatchingType = allTypes
@@ -3911,8 +3921,10 @@ function getDashboardFilteredTrades() {
     const accountOk = allAccounts || selectedDashboardAccounts.has(accountValue);
     const strategyOk = allStrategies || selectedDashboardStrategies.has(strategyValue);
     const typeOk = allTypes || namesMatchingType.has(accountValue);
+    const executionValue = isLiveTestingTrade(trade) ? 'live_testing' : 'executed';
+    const executionOk = allExecutions || selectedDashboardExecution.has(executionValue);
 
-    return accountOk && strategyOk && typeOk;
+    return accountOk && strategyOk && typeOk && executionOk;
   });
 }
 
@@ -4096,6 +4108,31 @@ async function renderDashboardFilters(trades = cachedTrades) {
       void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
     }
   );
+
+  // Solo se ofrece si hay algo que filtrar: sin ninguna operación de live testing, el
+  // desplegable no aportaría nada.
+  const hayLiveTesting = (Array.isArray(cachedTrades) ? cachedTrades : []).some(isLiveTestingTrade);
+  const campoEjecucion = document.getElementById('dashboardExecutionMulti')?.closest('.field');
+  if (campoEjecucion) campoEjecucion.hidden = !hayLiveTesting;
+
+  if (!hayLiveTesting) {
+    // Sin operaciones de live testing el filtro no tiene sentido, y dejarlo puesto en
+    // «Live testing» escondería todo el calendario sin que se viera por qué.
+    selectedDashboardExecution = new Set(['ALL']);
+  } else {
+    createDashboardMultiSelect(
+      'dashboardExecutionMulti',
+      [
+        { value: 'executed', label: t('execution_executed', 'Ejecutadas') },
+        { value: 'live_testing', label: t('live_testing_badge', 'Live testing') },
+      ],
+      selectedDashboardExecution,
+      t('filter_all_executions', 'Todas'),
+      () => {
+        void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
+      }
+    );
+  }
 
   createDashboardMultiSelect(
     'dashboardAccountMulti',

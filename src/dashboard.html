@@ -1374,6 +1374,7 @@
       /* El bloque solo aparece si la estrategia tiene métricas: como aquí se declara un
          `display`, hay que devolverle el `display:none` cuando lleva el atributo hidden. */
       /* Live testing: operacion apuntada pero no ejecutada. */
+      .dashboard-filter-row .field[hidden] { display: none; }
       .trade-live-testing-switch {
         display: flex;
         align-items: flex-start;
@@ -7909,6 +7910,10 @@
               <div class="field">
                 <label data-i18n="label_account">Cuenta</label>
                 <div id="dashboardAccountMulti" class="dashboard-multiselect"></div>
+              </div>
+              <div class="field">
+                <label data-i18n="label_execution">Ejecución</label>
+                <div id="dashboardExecutionMulti" class="dashboard-multiselect"></div>
               </div>
               <div class="field">
                 <label data-i18n="label_strategy">Estrategia</label>
