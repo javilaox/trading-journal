@@ -621,8 +621,8 @@
   "st_tag_backtest": "backtest",
   "st_no_ops": "sin operaciones",
   "st_metric_win": "acierto",
-  "live_testing_label": "Live testing (no la cogí)",
-  "live_testing_hint": "Cuenta en Estadísticas si activas su interruptor, para ver cómo habría ido la estrategia sin fallos de ejecución. No suma ni resta en el PnL, ni en el balance de tus cuentas, ni en los challenges.",
+  "live_testing_label": "Live testing",
+  "live_testing_hint": "Operación registrada sin ejecutar. Cuenta en Estadísticas si activas su interruptor, para medir la estrategia sin fallos de ejecución. No suma ni resta en el PnL, ni en el balance de tus cuentas, ni en los challenges.",
   "live_testing_badge": "Live testing",
   "stats_include_live_testing": "Incluir live testing"
 }
