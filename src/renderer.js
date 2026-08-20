@@ -9500,20 +9500,38 @@ function getStrategyTradeStats(record) {
   return { count: trades.length, pnl, winrate };
 }
 
-/** Una cuenta deshabilitada (quemada por máximo DD) ya no se puede operar. */
+/** Una cuenta perdida por máximo DD ya no se puede operar. */
 function isAccountDisabled(account) {
   return Boolean(account?.disabled_by_max_dd ?? account?.disabledByMaxDd);
+}
+
+/**
+ * Cuentas en las que todavía tiene sentido registrar operaciones.
+ *
+ * Quedan fuera dos casos, y los dos por el mismo motivo: ya no se opera en ellas.
+ *   - Perdidas por máximo DD.
+ *   - Challenges ya superados: dieron paso a la cuenta fondeada, que aparece aquí por su propio
+ *     tipo. Seguir ofreciendo el challenge invita a apuntar en él operaciones que en realidad se
+ *     hicieron en la fondeada, y entonces las dos cuentas quedan mal.
+ *
+ * Es el mismo criterio que usa la pestaña «Activas» de Configuración › Cuentas, a propósito: si
+ * una cuenta no sale en «Activas», tampoco debería poder elegirse al registrar un trade.
+ */
+function isAccountOperable(account) {
+  if (isAccountDisabled(account)) return false;
+  if (account?.account_type === 'challenge' && account?.challenge_passed) return false;
+  return true;
 }
 
 async function loadAccounts() {
   await syncRealListsFromStorage();
   const accounts = getAccounts();
   const accountNames = accounts.map((account) => account.name);
-  // En los formularios de trade solo se ofrecen las cuentas vivas: si una cuenta se marcó como
-  // deshabilitada, seguir pudiendo registrar operaciones en ella no tiene sentido y ensucia las
-  // estadísticas. En los demás selectores (reiniciar cuenta, retiros) siguen apareciendo todas,
-  // porque ahí sí hace falta poder tocar una cuenta ya quemada.
-  const activeAccountNames = accounts.filter((account) => !isAccountDisabled(account)).map((a) => a.name);
+  // En los formularios de trade solo se ofrecen las cuentas en las que se puede operar: ni
+  // perdidas por máximo DD, ni challenges ya superados. Seguir pudiendo registrar operaciones en
+  // ellas no tiene sentido y ensucia las estadísticas. En los demás selectores (reiniciar cuenta,
+  // retiros) siguen apareciendo todas, porque ahí sí hace falta poder tocar una cuenta cerrada.
+  const activeAccountNames = accounts.filter(isAccountOperable).map((a) => a.name);
   fillSelect('account', activeAccountNames, 'placeholder_select_account');
   fillSelect('editAccount', activeAccountNames, 'placeholder_select_account');
   fillSelect('resetAccountSelect', accountNames, 'placeholder_select_account');
@@ -9613,13 +9631,10 @@ let settingsAccountsPropFilter = '';
 
 function accountMatchesSettingsTab(account, tab) {
   if (tab === 'all') return true;
-  // "Activas" = las que se pueden seguir operando: ni quemadas por máximo DD, ni challenges ya
-  // superados (esos dan paso a la cuenta fondeada, que sí aparece aquí por su propio tipo).
-  if (tab === 'active') {
-    if (account.disabled_by_max_dd) return false;
-    if (account.account_type === 'challenge' && account.challenge_passed) return false;
-    return true;
-  }
+  // "Activas" = las que se pueden seguir operando. Mismo criterio que el desplegable de cuenta
+  // del formulario de trade, compartiendo función para que no puedan acabar diciendo cosas
+  // distintas.
+  if (tab === 'active') return isAccountOperable(account);
   if (tab === 'disabled') return Boolean(account.disabled_by_max_dd);
   if (tab === 'challenge') return account.account_type === 'challenge' && !account.disabled_by_max_dd;
   if (tab === 'funded') return account.account_type === 'funded' && !account.disabled_by_max_dd;
@@ -18566,9 +18581,11 @@ async function openTradeForEdit(tradeId) {
   setValue('editStrategy', trade.strategy || '');
   setValue('editResult', trade.result || '');
   setValue('editBeAfterResult', sanitizeBeAfterResult(trade.be_after_result) || '');
-  // Si el trade es de una cuenta que después se deshabilitó, su nombre ya no está en la lista:
-  // se añade solo para este trade, marcado, en vez de dejar el campo vacío.
-  ensureSelectHasValue(document.getElementById('editAccount'), trade.account || '', ' (deshabilitada)');
+  // Si el trade es de una cuenta que ya no se opera (perdida por máximo DD, o un challenge
+  // superado), su nombre no está en la lista: se añade solo para este trade, marcado, en vez de
+  // dejar el campo vacío y perder a qué cuenta pertenecía. Se dice «cerrada» porque vale para
+  // los dos casos.
+  ensureSelectHasValue(document.getElementById('editAccount'), trade.account || '', ' (cerrada)');
 
   const lotValue = Number(trade.lotSize ?? trade.lotaje ?? 0) || 0;
   setValue('editLotSize', String(lotValue));
