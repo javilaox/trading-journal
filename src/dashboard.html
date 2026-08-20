@@ -1375,6 +1375,10 @@
          `display`, hay que devolverle el `display:none` cuando lleva el atributo hidden. */
       /* Live testing: operacion apuntada pero no ejecutada. */
       .dashboard-filter-row .field[hidden] { display: none; }
+      /* Los dos bloques del modal de cuenta se ocultan segun el tipo; como .toggle-row declara
+         un display, hay que devolverle el display:none al contenedor. */
+      #accountModalChallengeFields[hidden],
+      #accountModalLostFields[hidden] { display: none; }
       .calendar-toggles {
         display: flex;
         align-items: center;
@@ -10421,6 +10425,8 @@
             </label>
             <span data-i18n="free_swap">Free Swap</span>
           </div>
+          <!-- «Challenge superado» solo tiene sentido en un challenge. Perder la cuenta por
+               máximo DD le pasa igual a una fondeada, asi que ese va aparte. -->
           <div id="accountModalChallengeFields">
             <div class="toggle-row">
               <label class="switch" for="accountModalChallengePassed">
@@ -10429,12 +10435,14 @@
               </label>
               <span data-i18n="account_challenge_passed">Challenge superado</span>
             </div>
+          </div>
+          <div id="accountModalLostFields">
             <div class="toggle-row">
               <label class="switch" for="accountModalMaxDd">
                 <input id="accountModalMaxDd" type="checkbox" />
                 <span class="slider"></span>
               </label>
-              <span data-i18n="account_max_dd">Deshabilitada por Máximo DD (quemada)</span>
+              <span data-i18n="account_max_dd">Cuenta perdida por Máximo DD</span>
             </div>
           </div>
           <div id="accountModalSummary" class="entity-detail-summary" hidden></div>

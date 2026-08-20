@@ -9349,6 +9349,37 @@ function getAccountTradeNames(account) {
   return names;
 }
 
+
+/**
+ * Recorrido de una cuenta: primera y última operación, y días entre ambas.
+ *
+ * Se mide con los trades porque es el único dato que la aplicación tiene con certeza. Ojo con lo
+ * que significa: son «días operando», de la primera operación a la última, no los días que se
+ * tuvo la cuenta abierta. Si se estuvo parado dos semanas, esas dos semanas cuentan; y si se
+ * perdió la cuenta un mes después de la última operación, ese mes no.
+ */
+function getAccountLifespan(account) {
+  const names = getAccountTradeNames(account);
+  const fechas = cachedTrades
+    .filter((t) => names.has(String(t.account || '')))
+    .map((t) => String(t.date || '').slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+
+  if (!fechas.length) return { days: 0, first: '', last: '', trades: 0 };
+
+  const first = fechas[0];
+  const last = fechas[fechas.length - 1];
+  const ms = new Date(`${last}T00:00:00`) - new Date(`${first}T00:00:00`);
+  return {
+    // +1 para que operar un solo día cuente como un día, no como cero.
+    days: Math.round(ms / 86400000) + 1,
+    first,
+    last,
+    trades: fechas.length,
+  };
+}
+
 function countTradesForAccount(account) {
   const names = getAccountTradeNames(account);
   return cachedTrades.filter((t) => names.has(String(t.account || ''))).length;
@@ -9545,7 +9576,9 @@ function buildStrategyCardDataAttrs(record) {
 }
 
 // Pestaña activa en Configuración > Cuentas: 'all' | 'challenge' | 'funded' | 'own_capital' | 'disabled'.
-// 'disabled' son las cuentas Challenge marcadas como quemadas por Máximo DD (disabled_by_max_dd).
+// 'disabled' son las cuentas perdidas por Máximo DD (disabled_by_max_dd), sean challenges o
+// fondeadas: una fondeada tambien se pierde, y tiene que salir de las activas igual que un
+// challenge quemado.
 // Se arranca en "Activas": lo normal es tener muchas cuentas quemadas o pasadas acumuladas, y
 // abrir siempre con el listado entero obliga a buscar entre ellas la que se está usando.
 let settingsAccountsTab = 'active';
@@ -9561,8 +9594,9 @@ function accountMatchesSettingsTab(account, tab) {
     if (account.account_type === 'challenge' && account.challenge_passed) return false;
     return true;
   }
-  if (tab === 'disabled') return account.account_type === 'challenge' && Boolean(account.disabled_by_max_dd);
+  if (tab === 'disabled') return Boolean(account.disabled_by_max_dd);
   if (tab === 'challenge') return account.account_type === 'challenge' && !account.disabled_by_max_dd;
+  if (tab === 'funded') return account.account_type === 'funded' && !account.disabled_by_max_dd;
   return account.account_type === tab;
 }
 
@@ -9669,8 +9703,14 @@ function renderSettingsAccountsList() {
       const typeLabel = getAccountTypeLabel(account.account_type);
       if (typeLabel) badges.push(`<span class="settings-entity-badge muted">${escapeHtmlChipText(typeLabel)}</span>`);
       if (account.account_number) badges.push(`<span class="settings-entity-badge muted">#${escapeHtmlChipText(account.account_number)}</span>`);
-      if (account.account_type === 'challenge' && account.disabled_by_max_dd) {
-        badges.push(`<span class="settings-entity-badge danger">${escapeHtmlChipText(t('account_max_dd_badge', 'Quemada (Máx. DD)'))}</span>`);
+      if (account.disabled_by_max_dd) {
+        // Un challenge se «quema»; una fondeada se «pierde». Es la misma marca, pero llamarlas
+        // igual sonaría raro en la que de verdad tenías.
+        const texto =
+          account.account_type === 'funded'
+            ? t('account_lost_badge', 'Perdida (Máx. DD)')
+            : t('account_max_dd_badge', 'Quemada (Máx. DD)');
+        badges.push(`<span class="settings-entity-badge danger">${escapeHtmlChipText(texto)}</span>`);
       }
       if (account.account_type === 'challenge' && account.challenge_passed) {
         badges.push(`<span class="settings-entity-badge ok">${escapeHtmlChipText(t('account_challenge_passed_badge', 'Challenge superado'))}</span>`);
@@ -9684,6 +9724,20 @@ function renderSettingsAccountsList() {
               <div class="settings-entity-stat">Comisión/lote<strong>${formatWithdrawalEuro(account.commissionPerLot)}</strong></div>
               <div class="settings-entity-stat">Trades<strong>${tradeCount}</strong></div>
               <div class="settings-entity-stat" title="Solo retiros vinculados a esta cuenta">Retirado (cuenta)<strong>${formatWithdrawalEuro(stats.withdrawn)}</strong></div>
+              ${
+                // Cuanto duro la cuenta. Solo se enseña en las que ya se perdieron: en una que
+                // sigue viva el numero cambia cada dia y no dice nada todavia.
+                (() => {
+                  if (!account.disabled_by_max_dd) return '';
+                  const vida = getAccountLifespan(account);
+                  if (!vida.trades) return '';
+                  const dias = `${vida.days} ${vida.days === 1 ? t('day_one', 'día') : t('day_many', 'días')}`;
+                  const rango = `${formatDateToDisplay(vida.first)} → ${formatDateToDisplay(vida.last)}`;
+                  return `<div class="settings-entity-stat" title="${escapeAttrChip(
+                    t('account_lifespan_hint', 'De la primera a la última operación de esta cuenta')
+                  )}">${escapeHtmlChipText(t('account_lifespan', 'Duró'))}<strong>${escapeHtmlChipText(dias)} <small>${escapeHtmlChipText(rango)}</small></strong></div>`;
+                })()
+              }
               ${
                 // Gastos asociados a ESTA cuenta (la compra con la que se creó, un reset
                 // posterior...). Es la otra mitad del vínculo: desde el gasto se ve la cuenta y
@@ -9849,6 +9903,12 @@ function syncAccountModalChallengeFieldsVisibility() {
   const wrap = document.getElementById('accountModalChallengeFields');
   if (wrap) wrap.hidden = type !== 'challenge';
 
+  // Una fondeada tambien se pierde por maximo DD, y saber cuando pasa es justo lo que permite
+  // medir cuanto dura cada una y cuanto se le saca antes de perderla. En capital propio no
+  // aplica: ahi no hay ninguna regla de una prop que te cierre la cuenta.
+  const lostWrap = document.getElementById('accountModalLostFields');
+  if (lostWrap) lostWrap.hidden = type !== 'challenge' && type !== 'funded';
+
   const isOwnCapital = type === 'own_capital';
   const label = document.getElementById('accountModalPropLabel');
   const input = document.getElementById('accountModalProp');
@@ -9910,7 +9970,9 @@ async function saveAccountFromModal() {
   // Los toggles de challenge solo se guardan tal cual si la cuenta es de tipo Challenge; si se
   // cambia el tipo a Fondeada/Capital propio no tiene sentido arrastrar un estado de challenge.
   const challengePassed = accountType === 'challenge' && Boolean(document.getElementById('accountModalChallengePassed')?.checked);
-  const disabledByMaxDd = accountType === 'challenge' && Boolean(document.getElementById('accountModalMaxDd')?.checked);
+  const disabledByMaxDd =
+    (accountType === 'challenge' || accountType === 'funded') &&
+    Boolean(document.getElementById('accountModalMaxDd')?.checked);
 
   if (!name) {
     setAccountModalError('el nombre es obligatorio');

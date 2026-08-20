@@ -251,7 +251,7 @@
   "account_number_label": "Account number (optional)",
   "account_number_placeholder": "E.g: 123456",
   "account_challenge_passed": "Challenge passed",
-  "account_max_dd": "Disabled by Max DD (burned)",
+  "account_max_dd": "Account lost to Max DD",
   "account_max_dd_badge": "Disabled (Max DD)",
   "account_challenge_passed_badge": "Challenge passed",
   "account_stats_challenges": "Challenges attempted",
@@ -625,5 +625,10 @@
   "live_testing_hint": "Trade recorded without being executed. Counts in Statistics if you turn on its switch, to measure the strategy without execution mistakes. It does not add or subtract in the PnL, your account balances or the challenges.",
   "live_testing_badge": "Live testing",
   "stats_include_live_testing": "Include live testing",
-  "show_live_testing": "Show live testing"
+  "show_live_testing": "Show live testing",
+  "account_lost_badge": "Lost (Max DD)",
+  "account_lifespan": "Lasted",
+  "day_one": "day",
+  "day_many": "days",
+  "account_lifespan_hint": "From the first to the last trade of this account"
 }

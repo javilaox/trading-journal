@@ -251,7 +251,7 @@
   "account_number_label": "Nº de cuenta (opcional)",
   "account_number_placeholder": "Ej: 123456",
   "account_challenge_passed": "Challenge superado",
-  "account_max_dd": "Deshabilitada por Máximo DD (quemada)",
+  "account_max_dd": "Cuenta perdida por Máximo DD",
   "account_max_dd_badge": "Deshabilitada (Máx. DD)",
   "account_challenge_passed_badge": "Challenge superado",
   "account_stats_challenges": "Challenges intentados",
@@ -625,5 +625,10 @@
   "live_testing_hint": "Operación registrada sin ejecutar. Cuenta en Estadísticas si activas su interruptor, para medir la estrategia sin fallos de ejecución. No suma ni resta en el PnL, ni en el balance de tus cuentas, ni en los challenges.",
   "live_testing_badge": "Live testing",
   "stats_include_live_testing": "Incluir live testing",
-  "show_live_testing": "Mostrar live testing"
+  "show_live_testing": "Mostrar live testing",
+  "account_lost_badge": "Perdida (Máx. DD)",
+  "account_lifespan": "Duró",
+  "day_one": "día",
+  "day_many": "días",
+  "account_lifespan_hint": "De la primera a la última operación de esta cuenta"
 }
