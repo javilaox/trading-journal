@@ -1389,6 +1389,10 @@
       /* El interruptor solo aparece si hay operaciones de live testing; como .toggle-row declara
          un display, hay que devolverle el display:none al ocultarlo. */
       .calendar-toggles .toggle-row[hidden] { display: none; }
+      /* El campo de cuenta se esconde al marcar live testing; como .field declara un display,
+         hay que devolverle el display:none. */
+      #tradeAccountField[hidden],
+      #editAccountField[hidden] { display: none; }
       .trade-live-testing-switch {
         display: flex;
         align-items: flex-start;
@@ -8034,7 +8038,7 @@
               <div class="trade-section">
                 <h3 class="title-with-icon"><i data-lucide="clipboard-list"></i><span>Información del trade</span></h3>
                 <div class="trade-section-fields">
-                  <div class="field">
+                  <div class="field" id="tradeAccountField">
                     <label for="account" data-i18n="label_account">Cuenta</label>
                     <select id="account" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
                   </div>
@@ -10274,7 +10278,7 @@
             <label for="editPnl" data-i18n="label_edit_gross">PnL bruto</label>
             <input id="editPnl" class="input" type="number" step="0.01" />
           </div>
-          <div class="field">
+          <div class="field" id="editAccountField">
             <label for="editAccount" data-i18n="label_account">Cuenta</label>
             <select id="editAccount" class="input"></select>
           </div>

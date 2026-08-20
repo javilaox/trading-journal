@@ -3944,6 +3944,32 @@ function onlyExecutedTrades(list) {
   return (Array.isArray(list) ? list : []).filter((t) => !isLiveTestingTrade(t));
 }
 
+
+/**
+ * Al marcar una operación como live testing se esconde el campo de cuenta.
+ *
+ * No se ejecutó, así que no pertenece a ninguna cuenta: dejarlo a la vista invita a elegir una,
+ * y entonces la operación aparece asociada a una cuenta en la que no pasó nada. El valor se
+ * limpia además de esconderse, porque esconder un campo sin vaciarlo guarda igualmente lo que
+ * hubiera dentro.
+ */
+function syncLiveTestingAccountField(form) {
+  const esEdicion = form === 'edit';
+  const check = document.getElementById(esEdicion ? 'editLiveTesting' : 'tradeLiveTesting');
+  const campo = document.getElementById(esEdicion ? 'editAccountField' : 'tradeAccountField');
+  const select = document.getElementById(esEdicion ? 'editAccount' : 'account');
+  if (!check || !campo) return;
+
+  const activo = Boolean(check.checked);
+  campo.hidden = activo;
+
+  if (activo && select && select.value) {
+    select.value = '';
+    refreshCustomSelectForNative(select);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
 function escapeHtmlChipText(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -12376,6 +12402,7 @@ async function resetNewTradeForm(presetDate = null) {
   // es que la próxima sí se ejecute, y dejarlo marcado sin querer falsearía el PnL del día.
   const liveTestingEl = document.getElementById('tradeLiveTesting');
   if (liveTestingEl) liveTestingEl.checked = false;
+  syncLiveTestingAccountField('create');
   updateTradeScheduleHints();
 
   if (beforeEl) beforeEl.value = '';
@@ -18602,6 +18629,10 @@ async function openTradeForEdit(tradeId) {
     }
   });
 
+  // Al final a propósito: la cuenta se rellena unas líneas más arriba, así que hacerlo antes no
+  // serviría de nada. Aquí ya está todo puesto y se puede esconder (y vaciar) si toca.
+  syncLiveTestingAccountField('edit');
+
   openEditTradeModal();
 }
 
@@ -20699,6 +20730,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   initManagementTabs();
   initBacktestingViewTabs();
   initBacktestImportUi();
+  ['create', 'edit'].forEach((form) => {
+    const id = form === 'edit' ? 'editLiveTesting' : 'tradeLiveTesting';
+    document.getElementById(id)?.addEventListener('change', () => syncLiveTestingAccountField(form));
+  });
   const tradeScheduleInputs = [
     ['strategy', 'entryTime', 'exitTime', 'date'],
     ['editStrategy', 'editEntryTime', 'editExitTime', 'editDate'],
