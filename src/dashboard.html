@@ -6604,42 +6604,125 @@
       #backtestingView .form-grid .full {
         grid-column: 1 / -1;
       }
+      /* Métricas personalizadas del formulario de backtesting.
+         Antes cada métrica ocupaba una fila entera del ancho del formulario, con la casilla
+         perdida a la izquierda y todo lo demás vacío: con tres o cuatro métricas el bloque se
+         iba de alto y no se leía como una lista. Ahora es una rejilla que reparte las métricas
+         en columnas, con el mismo aspecto que el checklist del formulario real, y separando las
+         de marcar de las que piden un valor, que son dos cosas distintas. */
       #backtestingView .bt-custom-metrics,
       #backtestingView .bt-metrics-fields {
+        display: block;
+        margin-top: 4px;
+      }
+      #backtestingView .bt-metrics-hint {
+        margin: 0 0 12px;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      #backtestingView .bt-metrics-group + .bt-metrics-group {
+        margin-top: 14px;
+      }
+      #backtestingView .bt-metrics-group-title {
+        display: block;
+        margin: 0 0 8px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+      #backtestingView .bt-metrics-group-grid {
         display: grid;
-        gap: 10px;
-        margin-top: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 8px;
+        align-items: start;
       }
-      #backtestingView .bt-custom-metric-row {
+      /* Métrica de marcar: la casilla y su nombre dentro del mismo recuadro, para saber dónde
+         acaba una y empieza la siguiente. */
+      #backtestingView .bt-metric-check {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        flex-wrap: wrap;
-        padding: 10px 12px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        background: rgba(15, 23, 42, 0.16);
-      }
-      body.light #backtestingView .bt-custom-metric-row {
-        background: rgba(15, 23, 42, 0.05);
-      }
-      #backtestingView .bt-custom-metric-row label {
-        display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
         margin: 0;
+        padding: 9px 11px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.16);
+        font-size: 0.86rem;
+        line-height: 1.3;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
       }
-      #backtestingView .bt-custom-metric-row > .input {
+      #backtestingView .bt-metric-check:hover {
+        border-color: rgba(56, 189, 248, 0.45);
+      }
+      /* Tamaño fijo: en un contenedor flexible, una casilla sin medidas propias se estira y
+         empuja el texto. */
+      #backtestingView .bt-metric-check input[type='checkbox'] {
+        width: 16px;
+        min-width: 16px;
+        max-width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 2px 0 0;
+        cursor: pointer;
+        accent-color: var(--green, #22c55e);
+      }
+      #backtestingView .bt-metric-check.is-checked {
+        border-color: rgba(34, 197, 94, 0.5);
+        background: rgba(34, 197, 94, 0.08);
+      }
+      body.light #backtestingView .bt-metric-check {
+        background: rgba(148, 163, 184, 0.08);
+      }
+      /* Métrica con valor: nombre encima, campo debajo. */
+      #backtestingView .bt-metric-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 0;
+        min-width: 0;
+      }
+      #backtestingView .bt-metric-field > span {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+      #backtestingView .bt-metric-field .input {
+        width: 100%;
+      }
+      #backtestingView .bt-metric-name {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        overflow-wrap: anywhere;
+      }
+      #backtestingView .bt-metric-desc {
+        font-size: 11px;
+        line-height: 1.4;
+        color: var(--text-muted);
+      }
+      /* Contador «2 de 3» en la cabecera del desplegable, para verlo también plegado. */
+      #backtestingView .bt-metrics-count {
+        flex: 0 0 auto;
+        margin-left: 10px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-muted);
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      #backtestingView .bt-metrics-count[hidden] { display: none; }
+      #backtestingView .bt-form-accordion-header > span:first-child {
         flex: 1;
         min-width: 0;
-        max-width: 240px;
-      }
-      #backtestingView .bt-custom-metric-hint {
-        margin: 6px 0 0;
-        font-size: 11px;
-        width: 100%;
-        flex-basis: 100%;
+        text-align: left;
       }
       #backtestingView .bt-analysis-grid {
         display: grid;
@@ -9432,9 +9515,11 @@
                     <div class="bt-operation-form-section bt-form-accordion" id="btCustomMetricsBlock" data-section="custom-metrics">
                       <button type="button" class="bt-form-accordion-header">
                         <span data-i18n="bt_custom_metrics_section">Métricas personalizadas</span>
+                        <span id="btCustomMetricsCount" class="bt-metrics-count" hidden></span>
                         <i data-lucide="chevron-down" aria-hidden="true"></i>
                       </button>
                       <div class="bt-form-accordion-body">
+                        <p class="bt-metrics-hint" data-i18n="bt_custom_metrics_hint">Marca las que se cumplieron en esta operación.</p>
                         <div id="btCustomMetricsFields" class="bt-metrics-fields bt-custom-metrics"></div>
                       </div>
                     </div>

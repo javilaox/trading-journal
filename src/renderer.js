@@ -401,8 +401,8 @@ function injectBacktestingProStyles() {
   min-height:42px;
   border-radius:10px;
 }
-#backtestingView .bt-custom-metric-row{
-  border-radius:12px;
+#backtestingView .bt-metric-check,#backtestingView .bt-metric-field .input{
+  border-radius:10px;
 }
 #backtestingView .bt-analysis-grid .bt-analysis-card,#backtestingView .bt-analysis-card.card{
   border-radius:16px;
@@ -13975,75 +13975,137 @@ function parseTradeCustomMetrics(trade) {
   return {};
 }
 
+/**
+ * Checklist de métricas en el formulario de operación de backtesting.
+ *
+ * Se separan en dos grupos porque son dos cosas distintas: unas se marcan (se cumplió o no) y
+ * otras piden un valor. Mezcladas en una sola lista, cada una con su propia fila del ancho del
+ * formulario, el bloque crecía a lo alto y no se leía. Dentro de cada grupo se respeta el orden
+ * de la configuración.
+ */
 function renderBacktestingCustomMetricFields(preset) {
   const container = document.getElementById('btCustomMetricsFields');
   if (!container) return;
   const block = document.getElementById('btCustomMetricsBlock');
   const metrics = (cachedBacktestingMetrics || []).filter((m) => m.is_active);
+  container.innerHTML = '';
   if (!metrics.length) {
-    container.innerHTML = '';
     if (block) block.style.display = 'none';
+    updateBacktestingCustomMetricsCount();
     return;
   }
   if (block) block.style.display = '';
-  container.innerHTML = '';
-  const vals = preset && typeof preset === 'object' ? preset : {};
-  metrics.forEach((m) => {
-    const name = m.name;
-    const v = vals[name];
-    const mid = String(m.id);
-    const inpId = `bt-cm-${mid}`;
 
-    if (m.metric_type === 'checkbox') {
-      const row = document.createElement('div');
-      row.className = 'bt-custom-metric-row';
+  const vals = preset && typeof preset === 'object' ? preset : {};
+  const casillas = metrics.filter((m) => m.metric_type === 'checkbox');
+  const conValor = metrics.filter((m) => m.metric_type !== 'checkbox');
+  // Los títulos de grupo solo aportan cuando hay de los dos tipos; con uno solo son ruido.
+  const conTitulos = casillas.length > 0 && conValor.length > 0;
+
+  const grupo = (titulo, nodos) => {
+    if (!nodos.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'bt-metrics-group';
+    if (conTitulos) {
+      const h = document.createElement('span');
+      h.className = 'bt-metrics-group-title';
+      h.textContent = titulo;
+      wrap.appendChild(h);
+    }
+    const grid = document.createElement('div');
+    grid.className = 'bt-metrics-group-grid';
+    nodos.forEach((n) => grid.appendChild(n));
+    wrap.appendChild(grid);
+    container.appendChild(wrap);
+  };
+
+  /** Nombre de la métrica y, si la tiene, su descripción debajo en pequeño. */
+  const nombreConAyuda = (m) => {
+    const nombre = document.createElement('span');
+    nombre.className = 'bt-metric-name';
+    const texto = document.createElement('span');
+    texto.textContent = m.name;
+    nombre.appendChild(texto);
+    if (m.description) {
+      const ayuda = document.createElement('small');
+      ayuda.className = 'bt-metric-desc';
+      ayuda.textContent = m.description;
+      nombre.appendChild(ayuda);
+    }
+    return nombre;
+  };
+
+  grupo(
+    t('bt_custom_metrics_group_check', 'Se cumplieron'),
+    casillas.map((m) => {
+      const v = vals[m.name];
+      const marcada = v === true || v === 'true';
       const lab = document.createElement('label');
+      lab.className = marcada ? 'bt-metric-check is-checked' : 'bt-metric-check';
       const inp = document.createElement('input');
       inp.type = 'checkbox';
-      inp.dataset.btMetricId = mid;
-      inp.checked = v === true || v === 'true';
-      const span = document.createElement('span');
-      span.textContent = name;
+      inp.dataset.btMetricId = String(m.id);
+      inp.checked = marcada;
       lab.appendChild(inp);
-      lab.appendChild(span);
-      row.appendChild(lab);
-      if (m.description) {
-        const hint = document.createElement('p');
-        hint.className = 'muted bt-custom-metric-hint';
-        hint.textContent = m.description;
-        row.appendChild(hint);
-      }
-      container.appendChild(row);
-      return;
-    }
+      lab.appendChild(nombreConAyuda(m));
+      return lab;
+    })
+  );
 
-    const row = document.createElement('div');
-    row.className = 'bt-custom-metric-row';
-    const lab = document.createElement('label');
-    lab.htmlFor = inpId;
-    lab.textContent = name;
-    const inp = document.createElement('input');
-    inp.id = inpId;
-    inp.className = 'input';
-    inp.dataset.btMetricId = mid;
-    if (m.metric_type === 'number') {
-      inp.type = 'number';
-      inp.step = 'any';
-      inp.value = v != null && v !== '' ? String(v) : '';
-    } else {
-      inp.type = 'text';
-      inp.value = v != null ? String(v) : '';
-    }
-    row.appendChild(lab);
-    row.appendChild(inp);
-    if (m.description) {
-      const hint = document.createElement('p');
-      hint.className = 'muted bt-custom-metric-hint';
-      hint.textContent = m.description;
-      row.appendChild(hint);
-    }
-    container.appendChild(row);
-  });
+  grupo(
+    t('bt_custom_metrics_group_value', 'Con valor'),
+    conValor.map((m) => {
+      const v = vals[m.name];
+      const inpId = `bt-cm-${m.id}`;
+      const lab = document.createElement('label');
+      lab.className = 'bt-metric-field';
+      lab.htmlFor = inpId;
+      lab.appendChild(nombreConAyuda(m));
+      const inp = document.createElement('input');
+      inp.id = inpId;
+      inp.className = 'input';
+      inp.dataset.btMetricId = String(m.id);
+      if (m.metric_type === 'number') {
+        inp.type = 'number';
+        inp.step = 'any';
+        inp.value = v != null && v !== '' ? String(v) : '';
+      } else {
+        inp.type = 'text';
+        inp.value = v != null ? String(v) : '';
+      }
+      lab.appendChild(inp);
+      return lab;
+    })
+  );
+
+  // Un solo escuchador para todas: pinta la casilla marcada y refresca el contador.
+  if (container.dataset.metricsBound !== 'true') {
+    container.dataset.metricsBound = 'true';
+    container.addEventListener('change', (event) => {
+      const input = event.target;
+      if (!input?.matches?.('input[type="checkbox"][data-bt-metric-id]')) return;
+      input.closest('.bt-metric-check')?.classList.toggle('is-checked', input.checked);
+      updateBacktestingCustomMetricsCount();
+    });
+  }
+
+  updateBacktestingCustomMetricsCount();
+}
+
+/** «2 de 3» en la cabecera, para saber cuántas quedan sin repasar sin desplegar el bloque. */
+function updateBacktestingCustomMetricsCount() {
+  const badge = document.getElementById('btCustomMetricsCount');
+  if (!badge) return;
+  const casillas = document.querySelectorAll(
+    '#btCustomMetricsFields input[type="checkbox"][data-bt-metric-id]'
+  );
+  if (!casillas.length) {
+    badge.hidden = true;
+    badge.textContent = '';
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = `${[...casillas].filter((cb) => cb.checked).length} de ${casillas.length}`;
 }
 
 function collectBacktestingCustomMetrics() {
