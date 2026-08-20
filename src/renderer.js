@@ -1046,6 +1046,9 @@ body.light #backtestingView .bt-session-card.is-active-session{
 #backtestingView .bt-day-trade-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 #backtestingView .bt-day-trade-title{display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;font-weight:900}
 #backtestingView .bt-day-trade-meta{margin-top:4px;color:var(--text-muted);font-size:12px}
+#backtestingView .bt-day-trade-time{margin-top:4px;color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#backtestingView .bt-day-trade-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#backtestingView .bt-day-trade-metric{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.10);color:var(--green,#22c55e);font-size:11px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
 #backtestingView .bt-day-trade-pnl{font-size:14px;font-weight:900;color:var(--text);white-space:nowrap}
 #backtestingView .bt-day-trade-pnl.positive{color:var(--green)}
 #backtestingView .bt-day-trade-pnl.negative{color:#ef4444}
@@ -15442,6 +15445,71 @@ function sortTradesChronologically(list) {
   });
 }
 
+/**
+ * Horario de una operación para la tarjeta del día: «09:30 → 11:15 · 1h 45m».
+ *
+ * Devuelve cadena vacía si no hay hora de entrada, en vez de inventarse un guion: una operación
+ * importada de un Excel sin horas no debe enseñar un horario falso.
+ */
+function buildBacktestingDayTradeTime(trade) {
+  const limpia = (v) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(v ?? '').trim());
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
+  };
+  const entrada = limpia(trade?.entry_time);
+  const salida = limpia(trade?.exit_time);
+  if (!entrada && !salida) return '';
+  if (!salida) return entrada;
+  if (!entrada) return salida;
+
+  const partes = [`${entrada} → ${salida}`];
+  const minutos = computeDurationMinutes(entrada, salida);
+  if (minutos != null && minutos > 0) partes.push(formatMinutesAsHm(minutos));
+  return partes.join(' · ');
+}
+
+/**
+ * Métricas que se cumplieron en una operación, para enseñarlas en la tarjeta del día.
+ *
+ * Se recorre lo guardado en el propio trade, no la configuración: así una operación conserva sus
+ * métricas aunque después se desactive o se renombre alguna en Config. Backtesting. La
+ * configuración solo se usa para respetar su orden; lo que ya no esté en ella va al final.
+ *
+ * Solo salen las que aportan algo: las casillas marcadas, y las de valor que tengan valor. Una
+ * casilla sin marcar es la ausencia de un dato, y llenar la tarjeta de ausencias no informa.
+ */
+function buildBacktestingDayTradeMetrics(trade) {
+  const valores = parseTradeCustomMetrics(trade);
+  // `risk_eur` y las claves de servicio (`__fila`, etc.) viven dentro de custom_metrics en las
+  // operaciones antiguas, pero no son métricas del usuario: enseñarlas sería un chip «risk_eur:
+  // 100» en cada tarjeta. La ficha de detalle ya las descartaba igual.
+  const INTERNAS = new Set(['risk_eur']);
+  const nombres = Object.keys(valores).filter((k) => !INTERNAS.has(k) && !k.startsWith('__'));
+  if (!nombres.length) return [];
+
+  const orden = new Map(
+    (cachedBacktestingMetrics || []).map((m, i) => [String(m.name), i])
+  );
+  nombres.sort((a, b) => {
+    const ia = orden.has(a) ? orden.get(a) : Number.MAX_SAFE_INTEGER;
+    const ib = orden.has(b) ? orden.get(b) : Number.MAX_SAFE_INTEGER;
+    return ia !== ib ? ia - ib : a.localeCompare(b);
+  });
+
+  const chips = [];
+  nombres.forEach((nombre) => {
+    const v = valores[nombre];
+    if (v === true || v === 'true') {
+      chips.push(nombre);
+      return;
+    }
+    // El false y el vacío no se enseñan; el 0 sí, que es un valor como cualquier otro.
+    if (v === false || v === 'false' || v == null || v === '') return;
+    if (typeof v === 'number' || typeof v === 'string') chips.push(`${nombre}: ${v}`);
+  });
+  return chips;
+}
+
 function renderBacktestingDayTrades() {
   const wrap = document.getElementById('backtestingDayTrades');
   const lbl = document.getElementById('backtestingSelectedDateLabel');
@@ -15470,6 +15538,9 @@ function renderBacktestingDayTrades() {
     const badgeTone = resUp === 'TP' || resUp === 'SL' ? resUp.toLowerCase() : 'be';
     const resLabel = escapeHtmlAssetLabel(tr.result || '—');
 
+    const horario = buildBacktestingDayTradeTime(tr);
+    const metricas = buildBacktestingDayTradeMetrics(tr);
+
     const card = document.createElement('div');
     card.className = 'bt-day-trade-card';
     card.dataset.id = String(tr.id);
@@ -15483,9 +15554,17 @@ function renderBacktestingDayTrades() {
       <div class="bt-day-trade-meta">
         ${escapeHtmlAssetLabel(tr.strategy || 'Sin estrategia')} · ${escapeHtmlAssetLabel(String(tr.direction || '—'))}
       </div>
+      ${horario ? `<div class="bt-day-trade-time">${escapeHtmlChipText(horario)}</div>` : ''}
     </div>
     <div class="bt-day-trade-pnl ${pnlToneClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}€</div>
   </div>
+  ${
+    metricas.length
+      ? `<div class="bt-day-trade-metrics">${metricas
+          .map((m) => `<span class="bt-day-trade-metric">${escapeHtmlChipText(m)}</span>`)
+          .join('')}</div>`
+      : ''
+  }
   <div class="bt-day-trade-actions">
     <button type="button" class="bt-day-trade-edit" data-id="${escapeAttrChip(String(tr.id))}">
       Editar
