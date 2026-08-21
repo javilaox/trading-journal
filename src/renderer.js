@@ -4020,7 +4020,41 @@ function tradeFormIds(form) {
     pnl: edicion ? 'editPnl' : 'pnl',
     lot: edicion ? 'editLotSize' : 'lotSize',
     liveTesting: edicion ? 'editLiveTesting' : 'tradeLiveTesting',
+    result: edicion ? 'editResult' : 'result',
   };
+}
+
+/**
+ * El resultado manda en el signo, también en las cuentas añadidas.
+ *
+ * En un SL se pierde en todas las cuentas y en un TP se gana en todas: es la misma operación. Se
+ * escribe la cifra a secas y aquí se le pone el signo, igual que hace el PnL de la cuenta
+ * principal y el de las entradas parciales. Sin esto, un SL de 457 se guardaba como +457 en la
+ * cuenta añadida y el dinero salía al revés.
+ *
+ * El BE se deja como está: ahí el resultado no dice si el número va con signo o sin él.
+ */
+function applyResultSignToExtraAccounts(form = 'create') {
+  const ids = tradeFormIds(form);
+  const resultado = document.getElementById(ids.result)?.value;
+  if (resultado !== 'SL' && resultado !== 'TP') return;
+
+  (tradeExtraAccounts[form] || []).forEach((fila, i) => {
+    const raw = String(fila.pnl ?? '');
+    // A medio escribir («-», «12,») no se toca: cambiaría lo que se está tecleando.
+    if (raw === '' || raw === '-' || raw === '+' || raw.endsWith(',') || raw.endsWith('.')) return;
+    const valor = Math.abs(parseMoneyInput(raw));
+    if (!Number.isFinite(valor)) return;
+    const conSigno = String(resultado === 'SL' ? -valor : valor);
+    if (conSigno === raw) return;
+    fila.pnl = conSigno;
+    const input = document.querySelector(
+      `#${ids.list} [data-extra-field="pnl"][data-extra-index="${i}"]`
+    );
+    if (input) input.value = conSigno;
+  });
+
+  updateTradeExtraAccountsSummary(form);
 }
 
 /** Cuentas que se pueden elegir aquí: las mismas que en el desplegable principal. */
@@ -4165,7 +4199,10 @@ function bindTradeExtraAccounts(form = 'create') {
     const fila = (tradeExtraAccounts[form] || [])[i];
     if (!fila) return;
     fila[campo] = el.value;
-    if (campo === 'pnl') updateTradeExtraAccountsSummary(form);
+    if (campo === 'pnl') {
+      applyResultSignToExtraAccounts(form);
+      updateTradeExtraAccountsSummary(form);
+    }
   });
 
   host.addEventListener('change', (event) => {
@@ -4191,6 +4228,8 @@ function bindTradeExtraAccounts(form = 'create') {
   // Cambiar la cuenta principal cambia qué cuentas quedan libres abajo.
   document.getElementById(ids.account)?.addEventListener('change', () => renderTradeExtraAccounts(form));
   document.getElementById(ids.liveTesting)?.addEventListener('change', () => syncTradeExtraAccountsVisibility(form));
+  // Cambiar el resultado después de escribir las cifras les da la vuelta al signo si toca.
+  document.getElementById(ids.result)?.addEventListener('change', () => applyResultSignToExtraAccounts(form));
 }
 
 /**
@@ -4204,6 +4243,10 @@ function bindTradeExtraAccounts(form = 'create') {
 function appendAccountExecutionsToTradePayload(trade, form = 'create') {
   const filas = tradeExtraAccounts[form] || [];
   if (!filas.length) return { account_executions: [] };
+
+  // Antes de leer nada: el signo lo manda el resultado. Es una red de seguridad por si alguna
+  // cifra se quedó sin pasar por el evento de escritura.
+  applyResultSignToExtraAccounts(form);
 
   const ids = tradeFormIds(form);
   const principal = String(document.getElementById(ids.account)?.value || '').trim();
