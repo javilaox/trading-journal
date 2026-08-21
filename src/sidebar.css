@@ -15,6 +15,13 @@
   transition: width 0.25s ease, padding 0.25s ease;
   align-items: stretch;
   box-sizing: border-box;
+  /* En una pantalla baja la barra no cabe entera y el pie -tema, idioma, cerrar sesión- se
+     quedaba por debajo del borde de la ventana, sin forma de llegar hasta él: la barra mide
+     100vh y no se podía desplazar. Ahora se desplaza por dentro. En cuanto cabe entera, el pie
+     vuelve a quedarse pegado abajo por su margin-top:auto y no se nota ningún cambio. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 .sidebar.closed,
 .sidebar.collapsed {
@@ -22,7 +29,37 @@
   min-width: var(--sidebar-collapsed-width);
   padding: 14px 10px;
   align-items: center;
-  overflow: hidden;
+  /* Plegada tampoco puede quedarse sin desplazamiento; lo que se recorta es el ancho (las
+     etiquetas durante la transición), no el alto. */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* Ninguna parte de la barra se encoge cuando hay que desplazar. En una columna flexible, lo
+   primero que hace el navegador al no caber es aplastar los elementos; entonces los botones se
+   quedarían chatos en vez de aparecer la barra de desplazamiento. */
+.sidebar > * {
+  flex-shrink: 0;
+}
+/* Misma barra de desplazamiento fina que el resto de la aplicación. */
+.sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+.sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+  background-clip: padding-box;
 }
 .sidebar-header {
   display: flex;

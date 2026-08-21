@@ -4953,8 +4953,6 @@ function setupIntegratedTitleBar() {
     style.id = 'appTitlebarStyles';
     style.textContent = `
       body.overlay-titlebar { --titlebar-h: ${APP_TITLEBAR_HEIGHT}px; }
-      /* Transparente a propósito: así la barra lateral conserva su color a la izquierda y el
-         contenido el suyo a la derecha, sin una banda de un tercer color cruzando la ventana. */
       body.overlay-titlebar .app-titlebar-drag {
         position: fixed; top: 0; left: 0; right: 0;
         height: var(--titlebar-h);
@@ -4962,10 +4960,29 @@ function setupIntegratedTitleBar() {
         background: transparent;
         -webkit-app-region: drag;
       }
+      /* La franja tapa la zona de contenido, y solo esa.
+         El contenido de la página se desplaza por debajo de los botones de la ventana, que
+         Windows dibuja siempre encima: al pasar por delante, los títulos y los desplegables se
+         cruzaban con minimizar / maximizar / cerrar. El relleno superior de .main-content no
+         basta, porque un relleno se va con el desplazamiento.
+         Se pinta solo desde el borde de la barra lateral hacia la derecha: la barra es fija, no
+         se desplaza, y así conserva su color propio en esos 32px en vez de aparecer una banda de
+         otro color cruzando la ventana. */
+      body.overlay-titlebar .app-titlebar-drag::before {
+        content: ''; position: absolute; top: 0; bottom: 0;
+        left: var(--sidebar-width); right: 0;
+        background: var(--bg);
+        transition: left 0.25s ease;
+      }
+      body.overlay-titlebar:has(.sidebar.closed) .app-titlebar-drag::before,
+      body.overlay-titlebar:has(.sidebar.collapsed) .app-titlebar-drag::before {
+        left: var(--sidebar-collapsed-width);
+      }
       /* Hueco sin arrastre donde Windows pinta los botones de la ventana, para no comerse sus clics. */
       body.overlay-titlebar .app-titlebar-drag::after {
         content: ''; position: absolute; top: 0; right: 0;
         width: 150px; height: 100%;
+        z-index: 1;
         -webkit-app-region: no-drag;
       }
       body.overlay-titlebar .sidebar { padding-top: calc(12px + var(--titlebar-h)); }
