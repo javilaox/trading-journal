@@ -15685,6 +15685,97 @@ function setValueIfExists(id, value) {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/* ================== Editar una operación de backtesting en su propio desplegable ==================
+ * «Nueva operación» y la edición usaban el mismo panel de la derecha: al pulsar Editar, el
+ * formulario se rellenaba en el sitio donde normalmente se crea, y era fácil creer que se estaba
+ * creando una operación nueva cuando en realidad se estaba cambiando una ya guardada.
+ *
+ * El formulario NO se duplica. Se mueve el mismo nodo dentro del desplegable y se devuelve a su
+ * sitio al cerrar: así todos los identificadores, escuchadores y widgets siguen siendo los que
+ * ya funcionaban, y cualquier arreglo futuro se hace una sola vez.
+ */
+
+/** Dónde vivía el formulario antes de moverlo, para devolverlo exactamente al mismo sitio. */
+let btFormHome = null;
+
+/**
+ * La tarjeta del formulario, esté donde esté.
+ *
+ * Sin acotar a #backtestingView a propósito: mientras se edita, la tarjeta vive dentro del
+ * desplegable, que cuelga de <body> y no de la vista. Buscándola solo dentro de la vista, al
+ * cerrar no se encontraba y se quedaba atrapada en el desplegable para siempre.
+ */
+function getBacktestingFormCard() {
+  return document.querySelector('.bt-operation-form-card');
+}
+
+function isBacktestingEditModalOpen() {
+  return Boolean(document.getElementById('btEditModalOverlay')?.classList.contains('active'));
+}
+
+function openBacktestingEditModal() {
+  const overlay = document.getElementById('btEditModalOverlay');
+  const body = document.getElementById('btEditModalBody');
+  const card = getBacktestingFormCard();
+  if (!overlay || !body || !card) return;
+  if (isBacktestingEditModalOpen()) return;
+
+  btFormHome = { card, parent: card.parentNode, next: card.nextSibling };
+
+  // Un hueco con su explicación en el panel de la derecha: si no, la columna se queda vacía y al
+  // cerrar el desplegable el contenido pega un salto.
+  const hueco = document.createElement('div');
+  hueco.className = 'bt-edit-placeholder';
+  hueco.id = 'btEditPlaceholder';
+  hueco.textContent = t('bt_editing_placeholder', 'Editando una operación…');
+  btFormHome.parent.insertBefore(hueco, card);
+
+  body.appendChild(card);
+  overlay.classList.add('active');
+  body.scrollTop = 0;
+}
+
+/**
+ * Cierra el desplegable y devuelve el formulario a su sitio.
+ *
+ * Por defecto se limpia: salir de una edición sin guardar no puede dejar el formulario de crear
+ * con los datos de la operación que se estaba editando, porque la siguiente que se guardara
+ * sobreescribiría aquella sin querer.
+ */
+function closeBacktestingEditModal({ reset = true } = {}) {
+  const overlay = document.getElementById('btEditModalOverlay');
+  // Se usa la referencia guardada al abrir, no una búsqueda: es lo único que no puede fallar
+  // aunque la tarjeta haya cambiado de sitio.
+  const card = btFormHome?.card || getBacktestingFormCard();
+  overlay?.classList.remove('active');
+
+  if (card && btFormHome?.parent) {
+    btFormHome.parent.insertBefore(card, btFormHome.next);
+  }
+  document.getElementById('btEditPlaceholder')?.remove();
+  btFormHome = null;
+
+  if (reset) clearBacktestForm();
+}
+
+function bindBacktestingEditModal() {
+  const overlay = document.getElementById('btEditModalOverlay');
+  if (!overlay || overlay.dataset.bound === 'true') return;
+  overlay.dataset.bound = 'true';
+
+  document.getElementById('btEditModalClose')?.addEventListener('click', () => closeBacktestingEditModal());
+
+  // Pulsar fuera cierra; pulsar dentro no. Sin la comprobación, soltar el ratón dentro del
+  // formulario tras arrastrar cerraría la edición a medias.
+  overlay.addEventListener('mousedown', (event) => {
+    if (event.target === overlay) closeBacktestingEditModal();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isBacktestingEditModalOpen()) closeBacktestingEditModal();
+  });
+}
+
 /** Carga una operación de backtesting en el formulario (misma zona que «Nueva operación»). */
 function openBacktestingTradeEditor(trade) {
   if (!trade) return;
@@ -15770,10 +15861,11 @@ function openBacktestingTradeEditor(trade) {
   updateBacktestingPnlConversionHint();
   updateBacktestingDerivedRFields();
 
-  document.querySelector('#backtestingView .bt-operation-form-card')?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start'
-  });
+  // El formulario se abre en su propio desplegable: rellenarlo en el mismo sitio donde se crean
+  // las operaciones hacía creer que se estaba creando una nueva cuando se estaba cambiando una
+  // ya guardada.
+  bindBacktestingEditModal();
+  openBacktestingEditModal();
 }
 
 function bindBacktestingDayTradeEditHandlers() {
@@ -21394,7 +21486,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  document.getElementById('btClearBacktestForm')?.addEventListener('click', () => clearBacktestForm());
+  document.getElementById('btClearBacktestForm')?.addEventListener('click', () => {
+    // Editando, «Limpiar» es cancelar: cerrar devuelve el formulario a su sitio y lo vacía.
+    if (isBacktestingEditModalOpen()) closeBacktestingEditModal();
+    else clearBacktestForm();
+  });
   document.getElementById('btRecalcOpen')?.addEventListener('click', () => openBacktestRecalcModal());
   // --- Métricas personalizadas (modal crear/editar) ---
   document.getElementById('openBtMetricModalBtn')?.addEventListener('click', () => {
@@ -21593,9 +21689,15 @@ window.addEventListener('DOMContentLoaded', async () => {
       renderBacktestingSessionCards();
 
       await refreshBacktestingView({ skipTradeFetch: true });
-      // Reinicio parcial: mantiene día, par, estrategia, cuenta, sesión y riesgo/RR para poder
-      // encadenar operaciones sin volver a rellenar lo mismo en cada una.
-      resetBacktestFormForNextTrade();
+      if (isBacktestingEditModalOpen()) {
+        // Se estaba editando: el desplegable se cierra y el formulario vuelve a su sitio listo
+        // para crear. Encadenar no tiene sentido aquí, porque el cambio ya está guardado.
+        closeBacktestingEditModal();
+      } else {
+        // Reinicio parcial: mantiene día, par, estrategia, cuenta, sesión y riesgo/RR para poder
+        // encadenar operaciones sin volver a rellenar lo mismo en cada una.
+        resetBacktestFormForNextTrade();
+      }
     } catch (e) {
       console.error(e);
       setMsg(String(e?.message || e), false);

@@ -281,6 +281,8 @@
   "direction": "Dirección",
   "bt_base_data": "Datos base",
   "bt_new_operation": "Nueva operación",
+  "bt_edit_operation_title": "Editar operación",
+  "bt_editing_placeholder": "Editando una operación…",
   "bt_custom_metrics_section": "Métricas personalizadas",
   "bt_custom_metrics_hint": "Marca las que se cumplieron en esta operación.",
   "bt_custom_metrics_group_check": "Se cumplieron",

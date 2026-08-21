@@ -6823,6 +6823,69 @@
         min-width: 0;
         text-align: left;
       }
+      /* Editar una operación de backtesting: el mismo formulario, dentro de un desplegable propio,
+         para no confundirlo con «Nueva operación», que está justo al lado.
+         Quien desplaza es el fondo, no el cuerpo del desplegable, y a propósito: el formulario
+         lleva desplegables de cuenta, activo, resultado, fecha y hora, y un contenedor con
+         overflow los recortaría en cuanto el campo quedara cerca del borde de abajo. Sin
+         overflow por medio se comportan igual que en el panel de la derecha, donde ya funcionan.
+         El relleno de arriba deja pasar la franja de los botones de la ventana. */
+      .bt-edit-modal-overlay {
+        align-items: flex-start;
+        overflow-y: auto;
+        padding: 44px 24px 32px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+      }
+      .bt-edit-modal-overlay::-webkit-scrollbar { width: 10px; }
+      .bt-edit-modal-overlay::-webkit-scrollbar-track { background: transparent; }
+      .bt-edit-modal-overlay::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .bt-edit-modal {
+        width: min(880px, 100%);
+        max-height: none;
+        /* .app-modal lleva overflow:hidden para redondear las esquinas; aquí estorba, porque es
+           justo lo que recortaría los desplegables. */
+        overflow: visible;
+      }
+      .bt-edit-modal-body {
+        padding: 0 18px 18px;
+      }
+      /* Dentro del desplegable la tarjeta pierde su marco: el marco ya lo pone el propio
+         desplegable, y dos recuadros uno dentro de otro se ven mal. */
+      .bt-edit-modal-body .bt-operation-form-card {
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        max-width: none;
+      }
+      /* El título «Nueva operación» sobra: la cabecera del desplegable ya dice que se está
+         editando, y dejarlo era justo la confusión que se quería quitar. */
+      .bt-edit-modal-body .bt-operation-form-card > .subsection-title:first-of-type { display: none; }
+      /* La cabecera se queda a la vista al desplazar un formulario largo. */
+      .bt-edit-modal > .modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: inherit;
+        border-radius: 22px 22px 0 0;
+      }
+      /* Hueco que deja el formulario en el panel de la derecha mientras se edita. */
+      .bt-operation-panel .bt-edit-placeholder {
+        border: 1px dashed var(--border);
+        border-radius: 16px;
+        padding: 24px 18px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
       #backtestingView .bt-analysis-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -10167,6 +10230,20 @@
     <!-- Importar operaciones desde Excel. Dos pasos dentro del mismo cuadro: primero se elige
          destino y archivo, y despues se muestra lo que se va a guardar y lo que se descarta.
          No se escribe nada hasta que el usuario confirma en el segundo paso. -->
+    <!-- Editar una operación de backtesting. El formulario NO se duplica: se mueve aquí dentro el
+         mismo que se usa para crear y se devuelve a su sitio al cerrar. Duplicarlo obligaría a
+         repetir todos los identificadores y todos los escuchadores, y cualquier arreglo futuro
+         habría que hacerlo dos veces. -->
+    <div id="btEditModalOverlay" class="modal-overlay app-modal-overlay bt-edit-modal-overlay">
+      <div class="modal app-modal bt-edit-modal" role="dialog" aria-modal="true" aria-labelledby="btEditModalTitle">
+        <div class="app-modal-header modal-header">
+          <h2 id="btEditModalTitle" data-i18n="bt_edit_operation_title">Editar operación</h2>
+          <button type="button" id="btEditModalClose" class="app-modal-close modal-close" data-i18n="close" aria-label="Cerrar">Cerrar</button>
+        </div>
+        <div class="app-modal-body modal-body bt-edit-modal-body" id="btEditModalBody"></div>
+      </div>
+    </div>
+
     <div id="btImportModalOverlay" class="modal-overlay app-modal-overlay">
       <div class="modal app-modal bt-import-modal" role="dialog" aria-modal="true" aria-labelledby="btImportModalTitle">
         <div class="app-modal-header modal-header">

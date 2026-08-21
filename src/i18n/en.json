@@ -281,6 +281,8 @@
   "direction": "Direction",
   "bt_base_data": "Base data",
   "bt_new_operation": "New operation",
+  "bt_edit_operation_title": "Edit trade",
+  "bt_editing_placeholder": "Editing a trade…",
   "bt_custom_metrics_section": "Custom metrics",
   "bt_custom_metrics_hint": "Tick the ones this trade met.",
   "bt_custom_metrics_group_check": "Met",
