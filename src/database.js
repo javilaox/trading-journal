@@ -167,6 +167,10 @@ function ensureTradesSchema() {
   // medir la estrategia, pero no se entró, así que no mueve dinero. Por defecto 0 = ejecutada,
   // que es lo que son todas las que ya existen.
   addColumnIfMissing('trades', 'live_testing', 'live_testing INTEGER DEFAULT 0');
+  // La misma operación tomada en varias cuentas, con el PnL y el lotaje de cada una. Vacío = la
+  // operación va en una sola cuenta, que es lo que son todas las que ya existen: se sigue leyendo
+  // de la columna `account`, así que nada de lo guardado necesita convertirse.
+  addColumnIfMissing('trades', 'account_executions', "account_executions TEXT DEFAULT '[]'");
 
   // Índice único solo después de asegurar client_uuid
   const cols = getTableColumns('trades');
@@ -310,6 +314,7 @@ db.prepare(`
     direction TEXT,
     custom_metrics TEXT DEFAULT '{}',
     live_testing INTEGER DEFAULT 0,
+    account_executions TEXT DEFAULT '[]',
     updated_at TEXT,
     user_id TEXT,
     sync_status TEXT,

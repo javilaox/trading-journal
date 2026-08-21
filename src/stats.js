@@ -19,6 +19,12 @@ let datePickerSelecting = 'start';
 let dateRangePreset = 'month';
 const { Chart: ChartJS, registerables } = require('chart.js');
 const {
+  tradeAccountNames,
+  tradeMatchesAccount,
+  tradePnlForAccount,
+  parseAccountExecutions,
+} = require('./services/accountExecutions');
+const {
   loadLanguage,
   t,
   detectUserLanguage,
@@ -626,6 +632,7 @@ function normalizeTrades(trades) {
     .map((trade) => ({
       ...trade,
       account: trade?.account ?? trade?.cuenta ?? '',
+      account_executions: parseAccountExecutions(trade?.account_executions),
       strategy: trade?.strategy ?? trade?.estrategia ?? '',
       date: normalizeDate(trade?.date),
       pnl: normalizePnl(trade),
@@ -647,6 +654,17 @@ function sortTradesByDate(trades) {
 function pnlByAccount(trades) {
   const map = {};
   trades.forEach((trade) => {
+    // Repartida entre varias cuentas, cada una suma lo suyo. Si se atribuyera el total a la
+    // primera, ese desglose diría que todo el dinero salió de una cuenta en la que solo pasó
+    // una parte.
+    const ejecuciones = parseAccountExecutions(trade?.account_executions);
+    if (ejecuciones.length >= 2) {
+      ejecuciones.forEach((e) => {
+        const clave = e.account || 'Sin cuenta';
+        map[clave] = (map[clave] || 0) + (Number(e.pnl) || 0);
+      });
+      return;
+    }
     const key = trade.account || 'Sin cuenta';
     map[key] = (map[key] || 0) + Number(trade.pnl || 0);
   });
@@ -1555,7 +1573,12 @@ function getFilteredTrades() {
   const filtered = trades.filter((trade) => {
     const account = String(trade.account ?? trade.cuenta ?? '').trim();
     const strategy = String(trade.strategy ?? trade.estrategia ?? '').trim();
-    const accountMatch = !selectedAccount || selectedAccount === 'Todas las cuentas' || account === selectedAccount;
+    // Una operación tomada en varias cuentas pertenece a todas: tiene que salir al filtrar por
+    // cualquiera de ellas, no solo por la primera.
+    const accountMatch =
+      !selectedAccount ||
+      selectedAccount === 'Todas las cuentas' ||
+      tradeMatchesAccount(trade, selectedAccount);
     const allStrategiesLabel = t('all_strategies', 'Todas las estrategias');
     const strategyMatch =
       !selectedStrategy ||
@@ -1563,11 +1586,23 @@ function getFilteredTrades() {
       selectedStrategy === allStrategiesLabel ||
       strategy === selectedStrategy;
     // Filtro por tipo de cuenta (challenge / fondeada / capital propio).
-    const typeMatch = !accountNamesByTypeFilter || accountNamesByTypeFilter.has(account);
+    const typeMatch =
+      !accountNamesByTypeFilter ||
+      tradeAccountNames(trade).some((n) => accountNamesByTypeFilter.has(n));
     return accountMatch && strategyMatch && typeMatch;
   });
 
   let nextTrades = filterTradesByDate(filtered);
+  // Filtrando por UNA cuenta, el dinero que se enseña es el de esa cuenta. El PnL de una
+  // operación repartida es la suma de todas, así que dejarlo tal cual mostraría en «Lucid 25K»
+  // dinero que en realidad se ganó en las otras dos. Sin filtro no se toca nada: ahí el total
+  // sumado es justo lo que se quiere ver.
+  if (selectedAccount && selectedAccount !== 'Todas las cuentas') {
+    nextTrades = nextTrades.map((trade) => {
+      if (parseAccountExecutions(trade?.account_executions).length < 2) return trade;
+      return { ...trade, pnl: tradePnlForAccount(trade, selectedAccount) };
+    });
+  }
   nextTrades = filterBE(nextTrades);
   // Las de live testing solo entran si se pide: son señales que no se llegaron a operar.
   if (!isIncludeLiveTestingEnabled()) {

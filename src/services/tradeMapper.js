@@ -3,6 +3,11 @@ const {
   positionLegsForStorage,
   parsePositionLegs,
 } = require('./positionLegsUtils');
+const {
+  accountExecutionsForStorage,
+  sumExecutionsPnl,
+  sumExecutionsLot,
+} = require('./accountExecutions');
 
 /** Dirección: solo LONG (compra) o SHORT (venta); cualquier otra cosa queda a null. */
 function normalizeDirection(value) {
@@ -39,10 +44,17 @@ function mapTrade(raw) {
     ...raw,
     position_legs: legsRaw,
   });
-  const gross = Number(applied.pnl ?? raw.pnl) || 0;
+  // La misma operación tomada en varias cuentas. Cuando las hay, el PnL y el lotaje de la
+  // operación son la suma de lo de cada cuenta: es el único número que puede ser, y así el total
+  // nunca se contradice con el desglose.
+  const ejecuciones = accountExecutionsForStorage(raw.account_executions ?? raw.accountExecutions);
+  const gross = ejecuciones.length
+    ? sumExecutionsPnl(ejecuciones)
+    : Number(applied.pnl ?? raw.pnl) || 0;
   const commission = Number(raw.commission) || 0;
-  const pnlNet =
-    raw.pnl_net !== undefined && raw.pnl_net !== null && raw.pnl_net !== ''
+  const pnlNet = ejecuciones.length
+    ? gross - commission
+    : raw.pnl_net !== undefined && raw.pnl_net !== null && raw.pnl_net !== ''
       ? Number(raw.pnl_net)
       : gross - commission;
   return {
@@ -53,7 +65,9 @@ function mapTrade(raw) {
     pnl: gross,
     strategy: raw.strategy,
     account: raw.account,
-    lotaje: Number(applied.lotaje ?? raw.lotaje) || 0,
+    lotaje: ejecuciones.length
+      ? sumExecutionsLot(ejecuciones)
+      : Number(applied.lotaje ?? raw.lotaje) || 0,
     commission,
     pnl_net: Number.isFinite(pnlNet) ? pnlNet : gross - commission,
     image_before: raw.image_before || null,
@@ -65,6 +79,7 @@ function mapTrade(raw) {
     // Operación apuntada pero no ejecutada. Se guarda siempre como booleano para que la columna
     // no acabe con unos, ceros, cadenas y nulos mezclados según por dónde entrara el dato.
     live_testing: Boolean(raw.live_testing),
+    account_executions: ejecuciones,
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: positionLegsForStorage(applied.position_legs),
     user_id: raw.user_id,

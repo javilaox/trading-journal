@@ -21,6 +21,8 @@
  * ejecutar y verificar sin abrir la app.
  */
 
+const { tradeAccountNames } = require('./accountExecutions');
+
 const COL = (key, header, type = 'text') => ({ key, header, type });
 
 /** 'YYYY-MM-DD' -> 'DD-MM-YYYY', el formato que usa la app. Deja pasar lo que no reconozca. */
@@ -164,7 +166,9 @@ function buildTradesReport({ trades = [], filters = {} } = {}) {
       direction: DIRECTION_LABEL[String(t.direction || '').toUpperCase()] || '',
       result: t.result || '',
       pnl: num(t.pnl),
-      account: t.account || '',
+      // Repartida entre varias cuentas, se listan todas: si solo saliera la primera, el informe
+      // diría que la operación fue en una cuenta cuando estuvo en tres.
+      account: tradeAccountNames(t).join(' · ') || t.account || '',
       strategy: t.strategy || '',
       entry_time: t.entry_time || '',
       exit_time: t.exit_time || '',

@@ -34,6 +34,13 @@ const {
   sumLegsLotSize,
   hydrateTradeCompositeFields,
 } = require('./services/positionLegsUtils');
+const {
+  parseAccountExecutions,
+  accountExecutionsForStorage,
+  serializeAccountExecutionsForStorage,
+  sumExecutionsPnl,
+  sumExecutionsLot,
+} = require('./services/accountExecutions');
 const { parseOperatingHours } = require('./services/scheduleUtils');
 const { getCurrentUserId, setCachedUserId } = require('./services/supabaseAuth');
 const {
@@ -810,6 +817,7 @@ function strategyFieldsForSupabase(strategy = {}) {
 
 function normalizeTrade(trade = {}) {
   const legs = parsePositionLegs(trade.position_legs ?? trade.positionLegs ?? []);
+  const ejecuciones = accountExecutionsForStorage(trade.account_executions ?? trade.accountExecutions);
   // La flag is_composite_position se calcula automáticamente en función del número de entradas:
   // - 2+ legs => posición construida
   // - 1 leg => trade normal (pero conservamos position_legs como referencia)
@@ -818,9 +826,15 @@ function normalizeTrade(trade = {}) {
     position_legs: legs,
     positionLegs: legs,
   });
-  const grossPnl = Number(applied.pnl ?? trade.pnl ?? trade.pnl_net ?? 0) || 0;
+  // Repartida entre varias cuentas, el PnL de la operación es la suma de lo de cada una: es el
+  // único número que puede ser, y así el total nunca se contradice con el desglose.
+  const grossPnl = ejecuciones.length
+    ? sumExecutionsPnl(ejecuciones)
+    : Number(applied.pnl ?? trade.pnl ?? trade.pnl_net ?? 0) || 0;
   const commission = Number(trade.commission ?? 0) || 0;
-  const pnlNet = Number(trade.pnl_net ?? grossPnl - commission) || 0;
+  const pnlNet = ejecuciones.length
+    ? grossPnl - commission
+    : Number(trade.pnl_net ?? grossPnl - commission) || 0;
   const result = String(trade.result || '').toUpperCase();
   const beAfterRaw = String(trade.be_after_result ?? '').toUpperCase();
   const beAfterResult = result === 'BE' && (beAfterRaw === 'TP' || beAfterRaw === 'SL') ? beAfterRaw : null;
@@ -832,7 +846,9 @@ function normalizeTrade(trade = {}) {
     pnl: grossPnl,
     strategy: trade.strategy || '',
     account: trade.account || '',
-    lotaje: Number(applied.lotaje ?? trade.lotaje ?? trade.lotSize ?? 0) || 0,
+    lotaje: ejecuciones.length
+      ? sumExecutionsLot(ejecuciones)
+      : Number(applied.lotaje ?? trade.lotaje ?? trade.lotSize ?? 0) || 0,
     commission,
     pnl_net: pnlNet,
     image_before: trade.image_before || trade.beforeImage || '',
@@ -846,6 +862,9 @@ function normalizeTrade(trade = {}) {
     live_testing: Boolean(trade.live_testing),
     is_composite_position: Boolean(applied.is_composite_position),
     position_legs: applied.position_legs ?? legs,
+    // La misma operación tomada en varias cuentas. Con menos de dos queda vacía y la operación se
+    // guarda como siempre, con su única cuenta en la columna `account`.
+    account_executions: ejecuciones,
   };
 }
 
@@ -897,6 +916,7 @@ function mapRowToTradeResponse(row) {
     live_testing: Boolean(row.live_testing),
     is_composite_position: row.is_composite_position,
     position_legs: row.position_legs ?? row.positionLegs,
+    account_executions: parseAccountExecutions(row.account_executions),
   });
 }
 
@@ -2133,6 +2153,7 @@ ipcMain.handle('add-trade', async (event, trade) => {
     is_composite_position: Boolean(mapped.is_composite_position),
     // Conservamos position_legs incluso cuando es 1 sola entrada (trade de referencia).
     position_legs: mapped.position_legs || [],
+    account_executions: mapped.account_executions || [],
     user_id: userId
   };
 
@@ -2191,9 +2212,9 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
 
     db.prepare(`
       INSERT INTO trades
-      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, direction, custom_metrics, live_testing, is_composite_position, position_legs, updated_at, user_id, sync_status, deleted_at)
+      (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, direction, custom_metrics, live_testing, is_composite_position, position_legs, account_executions, updated_at, user_id, sync_status, deleted_at)
       VALUES
-      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     `).run(
       tempId,
       clientUuid,
@@ -2216,6 +2237,7 @@ ipcMain.handle('add-trade-offline', async (event, trade) => {
       mapped.live_testing ? 1 : 0,
       mapped.is_composite_position ? 1 : 0,
       legsJson,
+      serializeAccountExecutionsForStorage(mapped.account_executions),
       createdAt,
       String(userId),
       'pending_create'
@@ -2297,9 +2319,16 @@ async function upsertTradeRemote({ userId, payload }) {
     exit_time: normalizeTimeField(payload.exit_time) ?? null,
     direction: normalizeTradeDirection(payload.direction),
     custom_metrics: normalizeTradeCustomMetrics(payload.custom_metrics),
+    // Faltaba, y era una pérdida silenciosa: una operación creada sin conexión y marcada como
+    // live testing subía a Supabase sin la marca, así que al volver la fila remota se quedaba
+    // como ejecutada y empezaba a contar para el dinero de la cuenta.
+    live_testing: Boolean(payload.live_testing),
     is_composite_position: Boolean(payload.is_composite_position),
     // Conservamos position_legs incluso cuando no es posición construida.
     position_legs: payload.position_legs || [],
+    account_executions: accountExecutionsForStorage(
+      payload.account_executions ?? payload.accountExecutions
+    ),
     updated_at: nowIso(),
   };
 
@@ -2347,6 +2376,9 @@ async function updateTradeRemote({ userId, payload, remoteId }) {
     live_testing: Boolean(payload.live_testing),
     is_composite_position: composite,
     position_legs: legs,
+    account_executions: accountExecutionsForStorage(
+      payload.account_executions ?? payload.accountExecutions
+    ),
     updated_at: nowIso(),
   };
 
@@ -3699,7 +3731,7 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     SET date = ?, asset = ?, result = ?, be_after_result = ?, pnl = ?, strategy = ?, account = ?,
         lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
         entry_time = ?, exit_time = ?, direction = ?, custom_metrics = ?, live_testing = ?,
-        is_composite_position = ?, position_legs = ?,
+        is_composite_position = ?, position_legs = ?, account_executions = ?,
         updated_at = ?, sync_status = ?
     WHERE user_id = ? AND id = ?
   `).run(
@@ -3722,6 +3754,7 @@ function writeTradeUpdateToSqlite(userId, localId, mapped, syncStatus, now) {
     mapped.live_testing ? 1 : 0,
     mapped.is_composite_position ? 1 : 0,
     legsJson,
+    serializeAccountExecutionsForStorage(mapped.account_executions),
     now,
     syncStatus,
     String(userId),

@@ -1443,6 +1443,77 @@
         white-space: nowrap;
       }
       .trade-metrics-section[hidden] { display: none; }
+      /* La misma operación tomada en varias cuentas. Vacío hasta que se añade la segunda: quien
+         opera en una sola cuenta no ve más que el botón. */
+      .trade-accounts-section {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: rgba(148, 163, 184, 0.06);
+      }
+      /* Declara un display, así que hay que devolverle el display:none al ocultarla (se esconde
+         al marcar live testing, donde no hay cuenta que valga). */
+      .trade-accounts-section[hidden] { display: none; }
+      .trade-accounts-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .trade-accounts-head > div { min-width: 0; flex: 1; }
+      .trade-accounts-hint {
+        margin: 2px 0 0;
+        font-size: 11px;
+        line-height: 1.45;
+        color: var(--text-muted);
+      }
+      .trade-accounts-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .trade-accounts-list:not(:empty) { margin-top: 12px; }
+      .trade-account-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: end;
+      }
+      @media (max-width: 780px) {
+        .trade-account-row { grid-template-columns: 1fr 1fr; }
+        .trade-account-row .trade-account-cell:first-child { grid-column: 1 / -1; }
+      }
+      .trade-account-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .trade-account-cell > span {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+      .trade-account-remove {
+        height: 38px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(239, 68, 68, 0.28);
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .trade-account-remove:hover { background: rgba(239, 68, 68, 0.18); }
+      .trade-accounts-summary {
+        margin: 12px 0 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .trade-accounts-summary[hidden] { display: none; }
+      .trade-accounts-summary .muted { font-weight: 500; color: var(--text-muted); }
       .trade-metrics-head {
         display: flex;
         align-items: flex-start;
@@ -8125,6 +8196,17 @@
                     <label for="account" data-i18n="label_account">Cuenta</label>
                     <select id="account" class="input"><option value="" data-i18n="placeholder_select_account">Selecciona cuenta</option></select>
                   </div>
+                  <div class="field field-full trade-accounts-section" id="tradeAccountsSection">
+                    <div class="trade-accounts-head">
+                      <div>
+                        <span class="settings-field-label" data-i18n="trade_accounts_title">Otras cuentas</span>
+                        <p class="trade-accounts-hint" data-i18n="trade_accounts_hint">Si tomaste la misma operación en varias cuentas, añádelas con lo que ganaste o perdiste en cada una. Sigue contando como una sola operación en las estadísticas.</p>
+                      </div>
+                      <button type="button" id="tradeAddAccountExecution" class="button button-secondary" data-i18n="trade_accounts_add">Añadir cuenta</button>
+                    </div>
+                    <div id="tradeAccountExecutionsList" class="trade-accounts-list"></div>
+                    <p id="tradeAccountExecutionsSummary" class="trade-accounts-summary" hidden></p>
+                  </div>
                   <div class="field">
                     <label for="strategy" data-i18n="label_strategy">Estrategia</label>
                     <select id="strategy" class="input"><option value="" data-i18n="placeholder_select_strategy">Selecciona estrategia</option></select>
@@ -10366,6 +10448,17 @@
           <div class="field" id="editAccountField">
             <label for="editAccount" data-i18n="label_account">Cuenta</label>
             <select id="editAccount" class="input"></select>
+          </div>
+          <div class="field field-full trade-accounts-section" id="editAccountsSection">
+            <div class="trade-accounts-head">
+              <div>
+                <span class="settings-field-label" data-i18n="trade_accounts_title">Otras cuentas</span>
+                <p class="trade-accounts-hint" data-i18n="trade_accounts_hint">Si tomaste la misma operación en varias cuentas, añádelas con lo que ganaste o perdiste en cada una. Sigue contando como una sola operación en las estadísticas.</p>
+              </div>
+              <button type="button" id="editAddAccountExecution" class="button button-secondary" data-i18n="trade_accounts_add">Añadir cuenta</button>
+            </div>
+            <div id="editAccountExecutionsList" class="trade-accounts-list"></div>
+            <p id="editAccountExecutionsSummary" class="trade-accounts-summary" hidden></p>
           </div>
           <div class="field pro-only">
             <label for="editLotSize" data-i18n="label_lot">Lotaje</label>

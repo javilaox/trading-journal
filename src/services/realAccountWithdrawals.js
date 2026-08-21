@@ -7,6 +7,8 @@
  * elegida aparte en el formulario ("Cuenta (opcional)").
  */
 
+const { tradeMatchesAccount, tradePnlForAccount } = require('./accountExecutions');
+
 function isWithdrawalRowHidden(row) {
   if (!row) return true;
   const deletedAt = row.deleted_at;
@@ -226,12 +228,11 @@ function calculateWithdrawalMetrics(withdrawals = [], trades = [], accounts = []
       return wName === name || (propName && wName === propName);
     });
     const withdrawn = accWithdrawals.reduce((s, w) => s + (Number(w.amount) || 0), 0);
-    const accTrades = tradeList.filter((t) => String(t.account || '') === name);
-    const accPnlNet = accTrades.reduce((s, t) => {
-      const net = Number(t.pnl_net ?? t.pnlNet);
-      if (Number.isFinite(net)) return s + net;
-      return s + (Number(t.pnl ?? 0) - Number(t.commission ?? 0));
-    }, 0);
+    // Una operación tomada en varias cuentas pertenece a todas, pero a cada una solo le
+    // corresponde su parte: el PnL de la operación entera es la suma de todas las cuentas y
+    // usarlo aquí multiplicaría el dinero de cada una.
+    const accTrades = tradeList.filter((t) => tradeMatchesAccount(t, name));
+    const accPnlNet = accTrades.reduce((s, t) => s + tradePnlForAccount(t, name, { net: true }), 0);
     return {
       name,
       capital,

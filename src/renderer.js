@@ -3162,6 +3162,15 @@ const {
   hydrateTradeCompositeFields,
 } = require('./services/positionLegsUtils');
 const {
+  parseAccountExecutions,
+  isMultiAccount,
+  tradeAccountNames,
+  tradeMatchesAccount,
+  tradePnlForAccount,
+  accountExecutionsForStorage,
+  validateAccountExecutions,
+} = require('./services/accountExecutions');
+const {
   mergeRealAccounts,
   mergeRealStrategies,
   dedupeRealAccounts,
@@ -3460,9 +3469,15 @@ function resetTradeCompositeForm(form = 'create') {
   renderTradePositionLegsList(form, [createEmptyPositionLeg(1)]);
   syncTradeCompositeSectionVisibility(form);
   recalculateTradeCompositeTotals(form);
+  // Las entradas parciales y el reparto entre cuentas no pueden convivir: las dos decidirían el
+  // PnL total y se contradirían.
+  syncTradeExtraAccountsVisibility(form);
 }
 
 function ensureTradeCompositeFormListeners() {
+  // El reparto entre cuentas se engancha aquí porque comparte formularios y momento: los dos
+  // bloques se excluyen, así que tienen que estar escuchando a la vez.
+  ['create', 'edit'].forEach((form) => bindTradeExtraAccounts(form));
   ['create', 'edit'].forEach((form) => {
     const cfg = getTradeCompositeFormConfig(form);
     const enabledEl = document.getElementById(cfg.enabled);
@@ -3916,12 +3931,14 @@ function getDashboardFilteredTrades() {
       );
 
   return source.filter((trade) => {
-    const accountValue = trade.account || '';
+    // Una operación tomada en varias cuentas pertenece a todas: tiene que salir al filtrar por
+    // cualquiera de ellas, y por el tipo de cualquiera de ellas.
+    const cuentasDelTrade = tradeAccountNames(trade);
     const strategyValue = trade.strategy || '';
 
-    const accountOk = allAccounts || selectedDashboardAccounts.has(accountValue);
+    const accountOk = allAccounts || cuentasDelTrade.some((n) => selectedDashboardAccounts.has(n));
     const strategyOk = allStrategies || selectedDashboardStrategies.has(strategyValue);
-    const typeOk = allTypes || namesMatchingType.has(accountValue);
+    const typeOk = allTypes || cuentasDelTrade.some((n) => namesMatchingType.has(n));
     const executionOk = showLiveTestingInCalendar || !isLiveTestingTrade(trade);
 
     return accountOk && strategyOk && typeOk && executionOk;
@@ -3971,6 +3988,269 @@ function syncLiveTestingAccountField(form) {
     refreshCustomSelectForNative(select);
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }
+}
+
+/* ======================= La misma operación en varias cuentas =======================
+ * Un setup se coge muchas veces en dos o tres cuentas a la vez. Apuntarlo como dos operaciones
+ * duplicaría el winrate y el número de operaciones, cuando la decisión fue una sola; pero el
+ * dinero sí es distinto en cada cuenta, porque cada una tiene su tamaño y sus costes.
+ *
+ * Aquí solo está la parte de formulario. El reparto vive en services/accountExecutions.js.
+ *
+ * El campo «Cuenta» de arriba sigue siendo la cuenta principal, con su PnL y su lotaje en los
+ * campos de siempre. Este bloque añade las DEMÁS. Mientras no se añada ninguna, guardar una
+ * operación funciona exactamente igual que antes.
+ */
+
+/** Cuentas extra de cada formulario. Solo vive mientras el formulario está abierto. */
+const tradeExtraAccounts = { create: [], edit: [] };
+
+function makeExtraAccountId() {
+  return `cta-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function tradeFormIds(form) {
+  const edicion = form === 'edit';
+  return {
+    section: edicion ? 'editAccountsSection' : 'tradeAccountsSection',
+    list: edicion ? 'editAccountExecutionsList' : 'tradeAccountExecutionsList',
+    summary: edicion ? 'editAccountExecutionsSummary' : 'tradeAccountExecutionsSummary',
+    addBtn: edicion ? 'editAddAccountExecution' : 'tradeAddAccountExecution',
+    account: edicion ? 'editAccount' : 'account',
+    pnl: edicion ? 'editPnl' : 'pnl',
+    lot: edicion ? 'editLotSize' : 'lotSize',
+    liveTesting: edicion ? 'editLiveTesting' : 'tradeLiveTesting',
+  };
+}
+
+/** Cuentas que se pueden elegir aquí: las mismas que en el desplegable principal. */
+function operableAccountNamesForTradeForm() {
+  return getAccounts().filter(isAccountOperable).map((a) => a.name);
+}
+
+function renderTradeExtraAccounts(form = 'create') {
+  const ids = tradeFormIds(form);
+  const host = document.getElementById(ids.list);
+  if (!host) return;
+
+  const filas = tradeExtraAccounts[form] || [];
+  const principal = String(document.getElementById(ids.account)?.value || '');
+  const disponibles = operableAccountNamesForTradeForm();
+
+  host.innerHTML = '';
+  filas.forEach((fila, i) => {
+    // Una cuenta no puede salir dos veces en la misma operación: descuadraría su saldo. Se
+    // esconden la principal y las ya elegidas en otras filas, salvo la de esta fila.
+    const ocupadas = new Set([principal, ...filas.filter((_, j) => j !== i).map((f) => f.account)]);
+    const opciones = disponibles.filter((n) => !ocupadas.has(n) || n === fila.account);
+
+    const row = document.createElement('div');
+    row.className = 'trade-account-row';
+    row.innerHTML = `
+      <label class="trade-account-cell">
+        <span>${escapeHtmlChipText(t('label_account', 'Cuenta'))}</span>
+        <select class="input" data-extra-field="account" data-extra-index="${i}">
+          <option value="">${escapeHtmlChipText(t('placeholder_select_account', 'Selecciona cuenta'))}</option>
+          ${opciones
+            .map(
+              (n) =>
+                `<option value="${escapeAttrChip(n)}" ${n === fila.account ? 'selected' : ''}>${escapeHtmlChipText(n)}</option>`
+            )
+            .join('')}
+        </select>
+      </label>
+      <label class="trade-account-cell">
+        <span>${escapeHtmlChipText(t('label_pnl', 'PnL'))}</span>
+        <input type="number" step="0.01" class="input" data-extra-field="pnl" data-extra-index="${i}"
+               value="${fila.pnl === '' || fila.pnl == null ? '' : fila.pnl}" />
+      </label>
+      <label class="trade-account-cell">
+        <span>${escapeHtmlChipText(t('label_lot', 'Lotaje'))}</span>
+        <input type="number" step="0.01" class="input" data-extra-field="lotaje" data-extra-index="${i}"
+               value="${fila.lotaje === '' || fila.lotaje == null ? '' : fila.lotaje}" />
+      </label>
+      <button type="button" class="trade-account-remove" data-extra-remove="${i}"
+              aria-label="${escapeAttrChip(t('remove', 'Quitar'))}">✕</button>`;
+    host.appendChild(row);
+    // El desplegable propio de la app se monta sobre el nativo; sin esto se vería el del sistema.
+    refreshCustomSelectForNative(row.querySelector('select'));
+  });
+
+  updateTradeExtraAccountsSummary(form);
+}
+
+/** «Total: +450.00€ repartido en 3 cuentas», para no tener que sumar de cabeza. */
+function updateTradeExtraAccountsSummary(form = 'create') {
+  const ids = tradeFormIds(form);
+  const el = document.getElementById(ids.summary);
+  if (!el) return;
+
+  const filas = tradeExtraAccounts[form] || [];
+  if (!filas.length) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+
+  const principalPnl = Number(document.getElementById(ids.pnl)?.value) || 0;
+  const total = filas.reduce((sum, f) => sum + (Number(f.pnl) || 0), principalPnl);
+  const cuentas = filas.length + 1;
+  el.hidden = false;
+  el.innerHTML = `${total >= 0 ? '+' : ''}${total.toFixed(2)}€ <span class="muted">${escapeHtmlChipText(
+    `en ${cuentas} cuentas · cuenta una sola operación`
+  )}</span>`;
+}
+
+/**
+ * El bloque se esconde cuando no tiene sentido:
+ *  - En live testing no se ejecutó nada, así que no hay cuentas donde repartir.
+ *  - Con la posición construida por entradas parciales, el PnL sale de las entradas; mezclarlo
+ *    con un reparto por cuentas daría dos maneras distintas de decidir el mismo número.
+ */
+function syncTradeExtraAccountsVisibility(form = 'create') {
+  const ids = tradeFormIds(form);
+  const section = document.getElementById(ids.section);
+  if (!section) return;
+
+  const enLiveTesting = Boolean(document.getElementById(ids.liveTesting)?.checked);
+  const conEntradas = isTradeCompositeEnabled(form) && collectTradePositionLegsFromDom(form).length >= 2;
+  const esconder = enLiveTesting || conEntradas;
+
+  section.hidden = esconder;
+  // Esconder sin vaciar guardaría igualmente lo que hubiera dentro.
+  if (esconder && (tradeExtraAccounts[form] || []).length) {
+    tradeExtraAccounts[form] = [];
+    renderTradeExtraAccounts(form);
+  }
+}
+
+/** Deja el formulario como si nunca se hubiera tocado este bloque. */
+function resetTradeExtraAccounts(form = 'create', filas = []) {
+  tradeExtraAccounts[form] = (Array.isArray(filas) ? filas : []).map((f) => ({
+    id: makeExtraAccountId(),
+    account: String(f.account || ''),
+    pnl: f.pnl == null ? '' : f.pnl,
+    lotaje: f.lotaje == null ? '' : f.lotaje,
+  }));
+  renderTradeExtraAccounts(form);
+  syncTradeExtraAccountsVisibility(form);
+}
+
+function bindTradeExtraAccounts(form = 'create') {
+  const ids = tradeFormIds(form);
+  const host = document.getElementById(ids.list);
+  const addBtn = document.getElementById(ids.addBtn);
+  if (!host || host.dataset.extraBound === 'true') return;
+  host.dataset.extraBound = 'true';
+
+  addBtn?.addEventListener('click', () => {
+    const usadas = new Set([
+      String(document.getElementById(ids.account)?.value || ''),
+      ...(tradeExtraAccounts[form] || []).map((f) => f.account),
+    ]);
+    const libres = operableAccountNamesForTradeForm().filter((n) => !usadas.has(n));
+    if (!libres.length) {
+      showToast('No te quedan cuentas activas que añadir', 'error');
+      return;
+    }
+    tradeExtraAccounts[form].push({ id: makeExtraAccountId(), account: '', pnl: '', lotaje: '' });
+    renderTradeExtraAccounts(form);
+  });
+
+  host.addEventListener('input', (event) => {
+    const el = event.target;
+    const campo = el?.dataset?.extraField;
+    if (!campo) return;
+    const i = Number(el.dataset.extraIndex);
+    const fila = (tradeExtraAccounts[form] || [])[i];
+    if (!fila) return;
+    fila[campo] = el.value;
+    if (campo === 'pnl') updateTradeExtraAccountsSummary(form);
+  });
+
+  host.addEventListener('change', (event) => {
+    const el = event.target;
+    if (el?.dataset?.extraField !== 'account') return;
+    const i = Number(el.dataset.extraIndex);
+    const fila = (tradeExtraAccounts[form] || [])[i];
+    if (!fila) return;
+    fila.account = el.value;
+    // Se redibuja para que la cuenta recién elegida desaparezca de las demás filas.
+    renderTradeExtraAccounts(form);
+  });
+
+  host.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-extra-remove]');
+    if (!btn) return;
+    tradeExtraAccounts[form].splice(Number(btn.dataset.extraRemove), 1);
+    renderTradeExtraAccounts(form);
+  });
+
+  // El PnL de la cuenta principal entra en el total.
+  document.getElementById(ids.pnl)?.addEventListener('input', () => updateTradeExtraAccountsSummary(form));
+  // Cambiar la cuenta principal cambia qué cuentas quedan libres abajo.
+  document.getElementById(ids.account)?.addEventListener('change', () => renderTradeExtraAccounts(form));
+  document.getElementById(ids.liveTesting)?.addEventListener('change', () => syncTradeExtraAccountsVisibility(form));
+}
+
+/**
+ * Mete el reparto en lo que se va a guardar.
+ *
+ * Sin cuentas extra devuelve la lista vacía: la operación se guarda como siempre, con su cuenta
+ * en la columna de siempre. Con cuentas extra, el PnL y el lotaje de la operación pasan a ser la
+ * suma de todas, que es el único número que puede ser para que el total no contradiga al
+ * desglose.
+ */
+function appendAccountExecutionsToTradePayload(trade, form = 'create') {
+  const filas = tradeExtraAccounts[form] || [];
+  if (!filas.length) return { account_executions: [] };
+
+  const ids = tradeFormIds(form);
+  const principal = String(document.getElementById(ids.account)?.value || '').trim();
+  if (!principal) return { error: 'NO_MAIN_ACCOUNT' };
+
+  const lista = [
+    {
+      account: principal,
+      pnl: Number(document.getElementById(ids.pnl)?.value) || 0,
+      lotaje: Number(document.getElementById(ids.lot)?.value) || null,
+    },
+  ];
+
+  for (const fila of filas) {
+    const nombre = String(fila.account || '').trim();
+    if (!nombre) return { error: 'EMPTY_ACCOUNT' };
+    if (lista.some((e) => e.account.toLowerCase() === nombre.toLowerCase())) {
+      return { error: 'DUPLICATED_ACCOUNT' };
+    }
+    const pnl = Number(fila.pnl);
+    if (fila.pnl === '' || !Number.isFinite(pnl)) return { error: 'INVALID_PNL' };
+    const lot = fila.lotaje === '' || fila.lotaje == null ? null : Number(fila.lotaje);
+    if (lot != null && !Number.isFinite(lot)) return { error: 'INVALID_LOT' };
+    lista.push({ account: nombre, pnl, lotaje: lot });
+  }
+
+  const validacion = validateAccountExecutions(lista);
+  if (!validacion.valid) return { error: validacion.error };
+
+  return {
+    account: principal,
+    account_executions: validacion.executions,
+    pnl: validacion.totalPnl,
+    lotaje: validacion.totalLot > 0 ? validacion.totalLot : Number(trade?.lotaje ?? 0) || 0,
+  };
+}
+
+/** Mensajes de los fallos del reparto, en el idioma de quien lo está usando. */
+function accountExecutionsErrorMessage(code) {
+  const mensajes = {
+    NO_MAIN_ACCOUNT: 'Elige la cuenta principal antes de añadir otras',
+    EMPTY_ACCOUNT: 'Elige la cuenta en todas las filas que has añadido',
+    DUPLICATED_ACCOUNT: 'Has puesto la misma cuenta dos veces',
+    INVALID_PNL: 'Escribe el PnL de cada cuenta añadida',
+    INVALID_LOT: 'Revisa el lotaje de las cuentas añadidas',
+  };
+  return mensajes[code] || 'Revisa las cuentas de la operación';
 }
 
 function escapeHtmlChipText(s) {
@@ -7229,6 +7509,39 @@ function tradeOperationalNet(trade) {
   return (Number(trade?.pnl ?? 0) || 0) - (Number(trade?.commission ?? 0) || 0);
 }
 
+/**
+ * ¿Esta operación se tomó en alguna de estas cuentas?
+ *
+ * Un conjunto de nombres, y no uno solo, porque una cuenta puede haberse renombrado y conserva
+ * sus nombres anteriores. Una operación repartida entre varias cuentas pertenece a todas ellas,
+ * así que aparece al filtrar por cualquiera.
+ */
+function tradeBelongsToAccountNames(trade, names) {
+  const set = names instanceof Set ? names : new Set(names || []);
+  if (!set.size) return false;
+  return tradeAccountNames(trade).some((n) => set.has(n));
+}
+
+/**
+ * Lo que esta operación le deja a estas cuentas, ya con la comisión descontada.
+ *
+ * Es la pieza que evita el error grave: el saldo de una cuenta NO puede usar el PnL total de una
+ * operación repartida, porque ese total es la suma de todas las cuentas. Si lo usara, una
+ * operación tomada en tres cuentas triplicaría el dinero en cada una.
+ */
+function tradeNetForAccountNames(trade, names) {
+  const set = names instanceof Set ? names : new Set(names || []);
+  if (!set.size) return 0;
+  const ejecuciones = parseAccountExecutions(trade?.account_executions);
+  if (ejecuciones.length < 2) {
+    return set.has(String(trade?.account || '')) ? tradeOperationalNet(trade) : 0;
+  }
+  return ejecuciones.reduce(
+    (sum, e) => (set.has(e.account) ? sum + tradePnlForAccount(trade, e.account, { net: true }) : sum),
+    0
+  );
+}
+
 async function loadWithdrawalsCache() {
   const backend = getBackendApi();
   if (!backend?.getWithdrawalsLocal) {
@@ -7311,7 +7624,8 @@ function getWithdrawalTradeScope() {
     .filter((acc) => acc.name === propFilter || String(acc.prop_name || '').trim() === propFilter)
     .map((acc) => acc.name);
   if (!matchingAccountNames.length) return [];
-  return cachedTrades.filter((trade) => matchingAccountNames.includes(String(trade.account || '')));
+  const nombres = new Set(matchingAccountNames);
+  return cachedTrades.filter((trade) => tradeBelongsToAccountNames(trade, nombres));
 }
 
 function renderWithdrawalsSummary(list, globalMetrics) {
@@ -9390,7 +9704,7 @@ function getAccountTradeNames(account) {
 function getAccountLifespan(account) {
   const names = getAccountTradeNames(account);
   const fechas = cachedTrades
-    .filter((t) => names.has(String(t.account || '')))
+    .filter((t) => tradeBelongsToAccountNames(t, names))
     .map((t) => String(t.date || '').slice(0, 10))
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort();
@@ -9411,7 +9725,7 @@ function getAccountLifespan(account) {
 
 function countTradesForAccount(account) {
   const names = getAccountTradeNames(account);
-  return cachedTrades.filter((t) => names.has(String(t.account || ''))).length;
+  return cachedTrades.filter((t) => tradeBelongsToAccountNames(t, names)).length;
 }
 
 // Acepta un nombre de cuenta (string, uso legacy) o el objeto de cuenta completo. Cuando se
@@ -9477,9 +9791,12 @@ function getAccountExpenseStats(account) {
 function getAccountEstimatedBalance(account) {
   const names = getAccountTradeNames(account);
   const stats = getAccountWithdrawalStats(account);
-  const operationalNet = cachedTrades
-    .filter((t) => names.has(String(t.account || '')))
-    .reduce((sum, t) => sum + tradeOperationalNet(t), 0);
+  // Cada cuenta se lleva solo lo suyo: si la operación se repartió entre varias, aquí solo entra
+  // el PnL de esta.
+  const operationalNet = cachedTrades.reduce(
+    (sum, t) => sum + tradeNetForAccountNames(t, names),
+    0
+  );
   return (Number(account.capital ?? 0) || 0) + operationalNet - stats.withdrawn;
 }
 
@@ -11899,12 +12216,13 @@ function getAccountMonthOpeningBalance(account, allTrades, year, month) {
   const initialCapital = getAccountInitialCapitalValue(account);
   const monthStartIso = getMonthStartIso(year, month);
 
+  const nombres = new Set([accountName]);
   const pnlBeforeMonth = (Array.isArray(allTrades) ? allTrades : [])
     .filter((trade) => {
       const tradeDate = String(trade.date || '').slice(0, 10);
-      return trade.account === accountName && tradeDate && tradeDate < monthStartIso;
+      return tradeMatchesAccount(trade, accountName) && tradeDate && tradeDate < monthStartIso;
     })
-    .reduce((sum, trade) => sum + getTradeRealPnl(trade), 0);
+    .reduce((sum, trade) => sum + tradeNetForAccountNames(trade, nombres), 0);
 
   return initialCapital + pnlBeforeMonth;
 }
@@ -11915,9 +12233,7 @@ function getDashboardAccountsIncludedForCapital(monthTrades = []) {
 
   const tradedAccountNames = [
     ...new Set(
-      (Array.isArray(monthTrades) ? monthTrades : [])
-        .map((trade) => trade.account)
-        .filter(Boolean)
+      (Array.isArray(monthTrades) ? monthTrades : []).flatMap((trade) => tradeAccountNames(trade))
     )
   ];
 
@@ -12421,6 +12737,8 @@ async function resetNewTradeForm(presetDate = null) {
   const liveTestingEl = document.getElementById('tradeLiveTesting');
   if (liveTestingEl) liveTestingEl.checked = false;
   syncLiveTestingAccountField('create');
+  // Las cuentas extra tampoco se quedan pegadas de una operación a la siguiente.
+  resetTradeExtraAccounts('create', []);
   updateTradeScheduleHints();
 
   if (beforeEl) beforeEl.value = '';
@@ -12683,7 +13001,9 @@ function renderTradePanel(trades) {
           </div>
           <div class="trade-panel-pnl ${valueClass}">${netPnl > 0 ? '+' : ''}${netPnl.toFixed(2)}€</div>
         </div>
-        <div class="trade-panel-meta">${escapeHtmlChipText(hydrated.strategy || '-')} · ${escapeHtmlChipText(hydrated.account || '-')}</div>
+        <div class="trade-panel-meta">${escapeHtmlChipText(hydrated.strategy || '-')} · ${escapeHtmlChipText(
+          tradeAccountNames(hydrated).join(' · ') || hydrated.account || '-'
+        )}</div>
         <div class="trade-panel-times">${escapeHtmlChipText(timeLine)}</div>
         <div class="trade-panel-finance">
           <span>Bruto ${grossPnl >= 0 ? '+' : ''}${grossPnl.toFixed(2)}€</span>
@@ -18791,6 +19111,20 @@ async function openTradeForEdit(tradeId) {
   // serviría de nada. Aquí ya está todo puesto y se puede esconder (y vaciar) si toca.
   syncLiveTestingAccountField('edit');
 
+  // Reparto entre cuentas. La primera es la principal y ya está en el campo de arriba, así que
+  // sus valores se llevan a PnL y Lotaje; las demás son las filas de abajo.
+  const ejecucionesGuardadas = parseAccountExecutions(trade.account_executions);
+  if (ejecucionesGuardadas.length >= 2) {
+    const [principal, ...resto] = ejecucionesGuardadas;
+    ensureSelectHasValue(document.getElementById('editAccount'), principal.account, ' (cerrada)');
+    refreshCustomSelectForNative(document.getElementById('editAccount'));
+    setValueIfExists('editPnl', String(principal.pnl ?? 0));
+    setValueIfExists('editLotSize', principal.lotaje == null ? '' : String(principal.lotaje));
+    resetTradeExtraAccounts('edit', resto);
+  } else {
+    resetTradeExtraAccounts('edit', []);
+  }
+
   openEditTradeModal();
 }
 
@@ -18944,6 +19278,16 @@ async function saveTrade() {
     return;
   }
   Object.assign(trade, compositeMerge);
+
+  // La misma operación en varias cuentas: se aplica después de las entradas parciales porque el
+  // reparto por cuentas manda sobre el PnL total.
+  const cuentasMerge = appendAccountExecutionsToTradePayload(trade, 'create');
+  if (cuentasMerge.error) {
+    showToast(accountExecutionsErrorMessage(cuentasMerge.error), 'error');
+    return;
+  }
+  Object.assign(trade, cuentasMerge);
+
   grossPnl = Number(trade.pnl) || 0;
   lotSize = Number(trade.lotaje) || lotSize;
   fee = getTradeCommissionCalc({ lotSize, grossPnl, trade, form: 'create' });
@@ -19118,6 +19462,14 @@ async function saveEditedTrade() {
     return;
   }
   Object.assign(payload, compositeMerge);
+
+  const cuentasMergeEdit = appendAccountExecutionsToTradePayload(payload, 'edit');
+  if (cuentasMergeEdit.error) {
+    showToast(accountExecutionsErrorMessage(cuentasMergeEdit.error), 'error');
+    return;
+  }
+  Object.assign(payload, cuentasMergeEdit);
+
   grossPnl = Number(payload.pnl) || 0;
   lots = Number(payload.lotaje) || lots;
   const feeEdit = getTradeCommissionCalc({ lotSize: lots, grossPnl, trade: payload, form: 'edit' });

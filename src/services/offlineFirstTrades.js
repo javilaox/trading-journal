@@ -7,6 +7,7 @@ const {
   isCompositePositionFlag,
   parsePositionLegs,
 } = require('./positionLegsUtils');
+const { serializeAccountExecutionsForStorage } = require('./accountExecutions');
 
 function parseTs(iso) {
   if (iso == null || iso === '') return 0;
@@ -62,6 +63,8 @@ function remoteRowToSqliteValues(row, fallbackUserId) {
         : {}
     ),
     row.live_testing ? 1 : 0,
+    // Índice 22: la misma operación tomada en varias cuentas.
+    serializeAccountExecutionsForStorage(row.account_executions ?? row.accountExecutions),
   ];
 }
 
@@ -164,8 +167,8 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
 
   const insertStmt = db.prepare(`
     INSERT INTO trades
-    (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, is_composite_position, position_legs, updated_at, user_id, direction, custom_metrics, live_testing, sync_status, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
+    (id, client_uuid, remote_id, date, asset, result, be_after_result, pnl, strategy, account, lotaje, commission, pnl_net, image_before, image_after, entry_time, exit_time, is_composite_position, position_legs, updated_at, user_id, direction, custom_metrics, live_testing, account_executions, sync_status, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
   `);
 
   const updateStmt = db.prepare(`
@@ -176,6 +179,7 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
       lotaje = ?, commission = ?, pnl_net = ?, image_before = ?, image_after = ?,
       entry_time = ?, exit_time = ?, is_composite_position = ?, position_legs = ?,
       updated_at = ?, user_id = ?, direction = ?, custom_metrics = ?, live_testing = ?,
+      account_executions = ?,
       sync_status = CASE
         WHEN sync_status LIKE 'pending_%' THEN sync_status
         ELSE 'synced'
@@ -246,6 +250,7 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           vals[19],
           vals[20],
           vals[21],
+          vals[22],
         ]);
       } else if (remoteTs > localTs) {
         if (logPrefix) console.log(logPrefix, 'Update por conflicto remoto más reciente:', id);
@@ -288,6 +293,7 @@ function upsertTradesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           vals[19],
           vals[20],
           vals[21],
+          vals[22],
           id
         );
       }

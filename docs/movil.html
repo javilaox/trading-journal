@@ -576,7 +576,13 @@
 
   /** Filtro común: un trade cuenta si encaja con la cuenta y la estrategia elegidas. */
   function matchesFilters(t) {
-    if (FILTERS.account && String(t.account || '') !== FILTERS.account) return false;
+    // Una operación tomada en varias cuentas pertenece a todas: sale al filtrar por cualquiera.
+    if (FILTERS.account) {
+      var cuentas = Array.isArray(t.account_executions) && t.account_executions.length
+        ? t.account_executions.map(function (e) { return String(e && e.account || ''); })
+        : [String(t.account || '')];
+      if (cuentas.indexOf(FILTERS.account) === -1) return false;
+    }
     if (FILTERS.strategy && String(t.strategy || '') !== FILTERS.strategy) return false;
     return true;
   }
