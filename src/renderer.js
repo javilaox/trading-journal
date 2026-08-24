@@ -3145,6 +3145,10 @@ const {
 const { buildEquityCurve } = require('./services/backtestEquityCurve');
 const { renderDailyStopCard } = require('./services/dailyStopCard');
 const {
+  openTradeListModal,
+  timeLabel: tradeListTimeLabel,
+} = require('./services/tradeListModal');
+const {
   simulateChallenge,
   compareChallengeAccounts,
   tradesPerTradingDay,
@@ -11085,11 +11089,9 @@ function computeRealBeAnalysisMetrics(trades) {
 
 /* --------------------------------------------------------- listado detrás de una cifra de BE
  * Ver «BE → SL: 2» y no poder saber cuáles son deja el dato a medias: lo que se quiere hacer al
- * verlo es ir a esas dos operaciones. Las tarjetas con operaciones detrás llevan a su listado, y
- * desde el listado se abre directamente el formulario de edición.
+ * verlo es ir a esas dos operaciones. El listado en sí es el compartido
+ * (services/tradeListModal.js); aquí solo se decide qué operaciones entran en cada grupo.
  */
-
-/** Grupos de operaciones que hay detrás de cada tarjeta del Análisis BE. */
 const BE_LIST_GROUPS = {
   tp: {
     titulo: 'Operaciones BE que habrían llegado a TP',
@@ -11116,88 +11118,28 @@ const BE_LIST_GROUPS = {
   },
 };
 
-/** Las que se están enseñando, para no depender de que la caché no cambie entre pulsación y clic. */
-let beListaActual = [];
-
-function closeBeTradesModal() {
-  document.getElementById('beTradesModalOverlay')?.classList.remove('active');
-  beListaActual = [];
-}
-
 function openBeTradesModal(grupo, beTrades) {
   const cfg = BE_LIST_GROUPS[grupo] || BE_LIST_GROUPS.all;
-  const overlay = document.getElementById('beTradesModalOverlay');
-  const lista = document.getElementById('beTradesList');
-  if (!overlay || !lista) return;
-
-  beListaActual = sortTradesChronologically((beTrades || []).filter(cfg.filtro));
-
-  document.getElementById('beTradesModalTitle').textContent = cfg.titulo;
-  const sub = document.getElementById('beTradesModalSubtitle');
-  const n = beListaActual.length;
-  sub.textContent = `${n} ${n === 1 ? 'operación' : 'operaciones'} · ${cfg.subtitulo}`;
-
-  lista.innerHTML = beListaActual.length
-    ? beListaActual
-        .map((t) => {
-          const pnl = getTradeRealPnl(t);
-          const tono = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
-          const despues = sanitizeBeAfterResult(t.be_after_result);
-          const distintivo = despues
-            ? `<span class="be-after-badge ${despues.toLowerCase()}">BE → ${despues}</span>`
-            : '<span class="be-after-badge">Sin resolver</span>';
-          const horas = buildBacktestingDayTradeTime(t);
-          const meta = [
-            t.strategy || 'Sin estrategia',
-            tradeAccountNames(t).join(' · ') || 'Sin cuenta',
-            horas,
-          ]
-            .filter(Boolean)
-            .join(' · ');
-          return `
-            <li>
-              <button type="button" class="be-trade-row" data-be-trade-id="${escapeAttrChip(String(t.id))}">
-                <span class="be-trade-main">
-                  <span class="be-trade-title">
-                    ${escapeHtmlChipText(formatDateEs(String(t.date || '').slice(0, 10)))}
-                    · ${escapeHtmlChipText(t.asset || '—')}
-                    ${distintivo}
-                  </span>
-                  <span class="be-trade-meta">${escapeHtmlChipText(meta)}</span>
-                </span>
-                <span class="be-trade-pnl ${tono}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}€</span>
-              </button>
-            </li>`;
-        })
-        .join('')
-    : '<li class="muted-label">No hay operaciones en este grupo.</li>';
-
-  bindBeTradesModal();
-  overlay.classList.add('active');
-}
-
-function bindBeTradesModal() {
-  const overlay = document.getElementById('beTradesModalOverlay');
-  if (!overlay || overlay.dataset.bound === 'true') return;
-  overlay.dataset.bound = 'true';
-
-  document.getElementById('beTradesModalClose')?.addEventListener('click', closeBeTradesModal);
-  overlay.addEventListener('mousedown', (event) => {
-    if (event.target === overlay) closeBeTradesModal();
-  });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && overlay.classList.contains('active')) closeBeTradesModal();
-  });
-
-  document.getElementById('beTradesList')?.addEventListener('click', (event) => {
-    const fila = event.target.closest('[data-be-trade-id]');
-    if (!fila) return;
-    const id = Number(fila.getAttribute('data-be-trade-id'));
-    if (!Number.isFinite(id)) return;
-    // Se cierra el listado antes de abrir la edición: dos ventanas apiladas se ven mal y al
-    // guardar habría que refrescar el listado de debajo, que ya no representa nada.
-    closeBeTradesModal();
-    void openTradeForEdit(id);
+  openTradeListModal({
+    title: cfg.titulo,
+    subtitle: cfg.subtitulo,
+    trades: (beTrades || []).filter(cfg.filtro),
+    badge: (t) => {
+      const despues = sanitizeBeAfterResult(t.be_after_result);
+      return despues
+        ? { text: `BE → ${despues}`, tone: despues.toLowerCase() }
+        : { text: 'Sin resolver' };
+    },
+    meta: (t) =>
+      [
+        t.strategy || 'Sin estrategia',
+        tradeAccountNames(t).join(' · ') || 'Sin cuenta',
+        tradeListTimeLabel(t),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    getPnl: (t) => getTradeRealPnl(t),
+    onSelect: (id) => void openTradeForEdit(id),
   });
 }
 
@@ -13394,6 +13336,10 @@ async function deleteTradeFromPanel(tradeId, rowElement) {
 }
 
 window.openDayModal = openDayModal;
+// Estadísticas (stats.js) abre el formulario de edición desde sus listados. Va por window, como
+// el resto de puentes de esta parte, porque renderer.js ya importa stats.js y hacerlo al revés
+// cerraría el círculo.
+window.openTradeForEdit = openTradeForEdit;
 window.closeDayModal = closeDayModal;
 
 async function renderCalendar(year, month, useCurrentCache = false, displayTrades = null) {

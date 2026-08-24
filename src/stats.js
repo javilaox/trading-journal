@@ -52,6 +52,10 @@ const {
 } = require('./services/tradeBreakdownStats');
 const { buildStatsReport } = require('./services/exportReports');
 const { renderDailyStopCard } = require('./services/dailyStopCard');
+const {
+  openTradeListModal,
+  timeLabel: tradeListTimeLabel,
+} = require('./services/tradeListModal');
 
 const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
 let statsEventsBound = false;
@@ -252,6 +256,10 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
   const durationsOut = [];
   // Datos crudos para el resumen compartido con Backtesting (winrates + concentración horaria).
   const insightItems = [];
+  // Las operaciones de cada grupo, no solo cuántas son: la tabla lleva a su listado y desde ahí
+  // se van a corregir. Contarlas y luego tener que volver a clasificarlas para enseñarlas
+  // arriesgaría a que el listado no coincidiera con el número de al lado.
+  const tradesByStatus = { inside: [], outside: [], missing_time: [], no_schedule: [] };
 
   (Array.isArray(trades) ? trades : []).forEach((trade) => {
     const pnl = Number(trade?.pnl ?? 0) || 0;
@@ -264,6 +272,8 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
       pnl,
       entryTime,
     });
+
+    if (tradesByStatus[status]) tradesByStatus[status].push(trade);
 
     if (status === 'no_schedule') {
       tradesNoSchedule += 1;
@@ -306,6 +316,7 @@ function calculateScheduleAndDurationStats(trades, strategyByName) {
     hasDisciplineData: disciplineTotal > 0 || tradesNoSchedule > 0,
     useSelectedReference: context.useSelectedReference,
     selectedStrategyName: context.selectedStrategyName,
+    tradesByStatus,
   };
 }
 
@@ -2070,6 +2081,7 @@ async function renderScheduleStats(trades) {
   set('statTradesInSchedule', String(sched.tradesIn));
   set('statTradesOutSchedule', String(sched.tradesOut));
   set('statTradesMissingTime', String(sched.tradesMissingTime));
+  bindScheduleTradeLists(sched);
   set('statTradesNoSchedule', String(sched.tradesNoSchedule));
   set(
     'statScheduleCompliance',
@@ -2096,6 +2108,94 @@ async function renderScheduleStats(trades) {
   set('statWinrateTotal', pctOrDash(sched.winRateTotal));
 
   renderStatsHourConcentration(sched);
+}
+
+/**
+ * Las cifras de la fila «Trades» llevan al listado de esas operaciones.
+ *
+ * Ver «1 fuera de horario» y no poder saber cuál es deja el dato a medias: lo que se quiere hacer
+ * al verlo es ir a corregir esa operación. Una celda a cero no lleva a ninguna parte: no hay nada
+ * que enseñar y anunciar un listado vacío es peor que no ofrecerlo.
+ */
+const SCHEDULE_LIST_CELLS = [
+  {
+    id: 'statTradesInSchedule',
+    status: 'inside',
+    titulo: 'Operaciones dentro de horario',
+    subtitulo: 'Entraron dentro del horario configurado en su estrategia.',
+    tono: 'sl',
+  },
+  {
+    id: 'statTradesOutSchedule',
+    status: 'outside',
+    titulo: 'Operaciones fuera de horario',
+    subtitulo: 'Entraron fuera del horario configurado en su estrategia.',
+    tono: 'warn',
+  },
+  {
+    id: 'statTradesMissingTime',
+    status: 'missing_time',
+    titulo: 'Operaciones sin hora registrada',
+    subtitulo: 'No se puede saber si respetaron el horario: les falta la hora de entrada.',
+    tono: 'warn',
+  },
+];
+
+function bindScheduleTradeLists(sched) {
+  const porEstado = sched?.tradesByStatus || {};
+
+  SCHEDULE_LIST_CELLS.forEach((cfg) => {
+    const celda = document.getElementById(cfg.id);
+    if (!celda) return;
+    const lista = Array.isArray(porEstado[cfg.status]) ? porEstado[cfg.status] : [];
+
+    celda.classList.toggle('is-clickable', lista.length > 0);
+    if (lista.length) {
+      celda.setAttribute('role', 'button');
+      celda.setAttribute('tabindex', '0');
+      celda.setAttribute('title', 'Ver estas operaciones');
+    } else {
+      celda.removeAttribute('role');
+      celda.removeAttribute('tabindex');
+      celda.removeAttribute('title');
+    }
+
+    // Un solo escuchador por celda: el contenido se reescribe en cada dibujado, pero la celda
+    // es siempre la misma, así que sin esta marca se irían acumulando.
+    if (celda.dataset.scheduleListBound !== 'true') {
+      celda.dataset.scheduleListBound = 'true';
+      const abrir = () => {
+        const actuales = celda.__trades || [];
+        if (!actuales.length) return;
+        openTradeListModal({
+          title: cfg.titulo,
+          subtitle: cfg.subtitulo,
+          trades: actuales,
+          badge: (t) => {
+            const hora = tradeListTimeLabel(t);
+            return hora ? { text: hora, tone: cfg.tono } : { text: 'Sin hora', tone: 'warn' };
+          },
+          getPnl: (t) => {
+            const neto = Number(t?.pnl_net ?? t?.pnlNet);
+            if (Number.isFinite(neto)) return neto;
+            return (Number(t?.pnl) || 0) - (Number(t?.commission) || 0);
+          },
+          onSelect: (id) => {
+            if (typeof window.openTradeForEdit === 'function') void window.openTradeForEdit(id);
+          },
+        });
+      };
+      celda.addEventListener('click', abrir);
+      celda.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        abrir();
+      });
+    }
+    // Las operaciones se guardan en la celda para que el listado sea siempre el del último
+    // dibujado, sin depender de que quien escucha se haya vuelto a crear.
+    celda.__trades = lista;
+  });
 }
 
 /**

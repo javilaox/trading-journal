@@ -6881,23 +6881,33 @@
         border-radius: 16px;
       }
       body.light #backtestingView .daily-stop-card { background: rgba(148, 163, 184, 0.06); }
-      /* Listado de las operaciones que hay detrás de una cifra del Análisis BE. */
-      .be-trades-modal { width: min(680px, 100%); }
-      .be-trades-body {
+      /* Cifras de la tabla de horario que llevan a su listado. */
+      #scheduleStatsMetrics td.is-clickable {
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 4px;
+        text-decoration-color: rgba(56, 189, 248, 0.6);
+        transition: color 0.15s ease;
+      }
+      #scheduleStatsMetrics td.is-clickable:hover { color: #38bdf8; }
+      /* Listado de las operaciones que hay detrás de una cifra (Análisis BE, horario...). */
+      .trade-list-modal { width: min(680px, 100%); }
+      .trade-list-body {
         overflow-y: auto;
         padding: 0 18px 18px;
         scrollbar-width: thin;
         scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
       }
-      .be-trades-body::-webkit-scrollbar { width: 10px; }
-      .be-trades-body::-webkit-scrollbar-track { background: transparent; }
-      .be-trades-body::-webkit-scrollbar-thumb {
+      .trade-list-body::-webkit-scrollbar { width: 10px; }
+      .trade-list-body::-webkit-scrollbar-track { background: transparent; }
+      .trade-list-body::-webkit-scrollbar-thumb {
         background: rgba(148, 163, 184, 0.28);
         border-radius: 999px;
         border: 2px solid transparent;
         background-clip: padding-box;
       }
-      .be-trades-list {
+      .trade-list-items {
         list-style: none;
         margin: 0;
         padding: 0;
@@ -6905,7 +6915,7 @@
         flex-direction: column;
         gap: 8px;
       }
-      .be-trade-row {
+      .trade-list-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -6921,13 +6931,13 @@
         cursor: pointer;
         transition: border-color 0.15s ease, background 0.15s ease;
       }
-      .be-trade-row:hover {
+      .trade-list-row:hover {
         border-color: rgba(56, 189, 248, 0.45);
         background: rgba(56, 189, 248, 0.06);
       }
-      body.light .be-trade-row { background: rgba(148, 163, 184, 0.08); }
-      .be-trade-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-      .be-trade-title {
+      body.light .trade-list-row { background: rgba(148, 163, 184, 0.08); }
+      .trade-list-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+      .trade-list-title {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -6935,11 +6945,11 @@
         font-size: 14px;
         flex-wrap: wrap;
       }
-      .be-trade-meta { font-size: 12px; color: var(--text-muted); }
-      .be-trade-pnl { font-weight: 800; white-space: nowrap; }
-      .be-trade-pnl.positive { color: var(--green); }
-      .be-trade-pnl.negative { color: #ef4444; }
-      .be-after-badge {
+      .trade-list-meta { font-size: 12px; color: var(--text-muted); }
+      .trade-list-pnl { font-weight: 800; white-space: nowrap; }
+      .trade-list-pnl.positive { color: var(--green); }
+      .trade-list-pnl.negative { color: #ef4444; }
+      .trade-list-badge {
         display: inline-flex;
         align-items: center;
         padding: 1px 8px;
@@ -6950,8 +6960,10 @@
         border: 1px solid var(--border);
         color: var(--text-muted);
       }
-      .be-after-badge.tp { border-color: rgba(239, 68, 68, 0.45); color: #ef4444; }
-      .be-after-badge.sl { border-color: rgba(34, 197, 94, 0.45); color: var(--green, #22c55e); }
+      .trade-list-badge.tp { border-color: rgba(239, 68, 68, 0.45); color: #ef4444; }
+      .trade-list-badge.sl { border-color: rgba(34, 197, 94, 0.45); color: var(--green, #22c55e); }
+      .trade-list-badge.warn { border-color: rgba(251, 191, 36, 0.5); color: #fbbf24; }
+      .trade-list-badge { margin-left: 8px; }
       /* Las tarjetas del Análisis BE que llevan a un listado se comportan como un botón. */
       #beAnalysisStatsReal .stat-box.is-clickable {
         cursor: pointer;
@@ -10381,19 +10393,21 @@
          mismo que se usa para crear y se devuelve a su sitio al cerrar. Duplicarlo obligaría a
          repetir todos los identificadores y todos los escuchadores, y cualquier arreglo futuro
          habría que hacerlo dos veces. -->
-    <!-- Listado detrás de una cifra del Análisis BE. Se abre al pulsar la tarjeta y desde aquí se
-         va directo a editar la operación, que es lo que se quiere hacer al ver el número. -->
-    <div id="beTradesModalOverlay" class="modal-overlay app-modal-overlay">
-      <div class="modal app-modal be-trades-modal" role="dialog" aria-modal="true" aria-labelledby="beTradesModalTitle">
+    <!-- Listado de las operaciones que hay detrás de una cifra: el Análisis BE, la disciplina por
+         horario... Desde aquí se va directo a editar la operación, que es lo que se quiere hacer
+         al ver el número. Uno solo para todas: quien lo abre decide título, contenido y qué pasa
+         al elegir una fila. -->
+    <div id="tradeListModalOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal trade-list-modal" role="dialog" aria-modal="true" aria-labelledby="tradeListModalTitle">
         <div class="app-modal-header modal-header">
           <div>
-            <h2 id="beTradesModalTitle">Operaciones en BE</h2>
-            <p id="beTradesModalSubtitle" class="muted small"></p>
+            <h2 id="tradeListModalTitle">Operaciones</h2>
+            <p id="tradeListModalSubtitle" class="muted small"></p>
           </div>
-          <button type="button" id="beTradesModalClose" class="app-modal-close modal-close" data-i18n="close" aria-label="Cerrar">Cerrar</button>
+          <button type="button" id="tradeListModalClose" class="app-modal-close modal-close" data-i18n="close" aria-label="Cerrar">Cerrar</button>
         </div>
-        <div class="app-modal-body modal-body be-trades-body">
-          <ul id="beTradesList" class="be-trades-list"></ul>
+        <div class="app-modal-body modal-body trade-list-body">
+          <ul id="tradeListModalList" class="trade-list-items"></ul>
         </div>
       </div>
     </div>
