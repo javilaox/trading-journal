@@ -48,6 +48,7 @@ const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawal
 const {
   buildDirectionStats,
   buildStrategyMetricStats,
+  parseStrategyMetricNames,
 } = require('./services/tradeBreakdownStats');
 const { buildStatsReport } = require('./services/exportReports');
 
@@ -2253,7 +2254,27 @@ async function renderStrategyMetricStats(trades) {
   const strategyByName = await getStrategyMetaByName();
   const groups = buildStrategyMetricStats(trades, strategyByName);
 
-  if (emptyEl) emptyEl.hidden = groups.length > 0;
+  // Sin tablas hay dos motivos distintos y conviene decir cuál es: o no has creado métricas en
+  // ninguna estrategia, o sí las hay pero los filtros de arriba no dejan ninguna operación de
+  // esas estrategias. Con un solo mensaje, el segundo caso mandaba a Configuración a crear algo
+  // que ya estaba creado.
+  if (emptyEl) {
+    emptyEl.hidden = groups.length > 0;
+    if (!groups.length) {
+      const hayMetricas = [...(strategyByName instanceof Map ? strategyByName.values() : [])].some(
+        (strategy) => parseStrategyMetricNames(strategy?.custom_metrics).length > 0
+      );
+      emptyEl.textContent = hayMetricas
+        ? t(
+            'stats_metrics_empty_filtered',
+            'Ninguna operación con los filtros actuales usa una estrategia con métricas.'
+          )
+        : t(
+            'stats_metrics_empty',
+            'Ninguna estrategia tiene métricas. Créalas en Configuración › Estrategias.'
+          );
+    }
+  }
   if (!groupsEl) return;
   if (!groups.length) {
     groupsEl.innerHTML = '';

@@ -517,6 +517,7 @@
   "stats_metrics_title": "Strategy metrics analysis",
   "stats_metrics_hint": "For each metric you see how you do when you follow it and when you don't. That tells you which ones actually help.",
   "stats_metrics_empty": "No strategy has metrics yet. Create them in Settings › Strategies.",
+  "stats_metrics_empty_filtered": "No trade matching the current filters uses a strategy with metrics.",
   "stats_metrics_hit": "win rate",
   "stats_metrics_no_data": "No data yet: tick it when logging or editing your trades and it will show up here.",
   "stats_metrics_few_data": "Not enough data",

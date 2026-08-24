@@ -517,6 +517,7 @@
   "stats_metrics_title": "Análisis por métricas de estrategia",
   "stats_metrics_hint": "Para cada métrica ves cómo te va cuando la cumples y cuando no. Así sabes cuáles te aportan de verdad.",
   "stats_metrics_empty": "Ninguna estrategia tiene métricas. Créalas en Configuración › Estrategias.",
+  "stats_metrics_empty_filtered": "Ninguna operación con los filtros actuales usa una estrategia con métricas.",
   "stats_metrics_hit": "acierto",
   "stats_metrics_no_data": "Aún sin datos: márcala al registrar o editar tus trades y aparecerá aquí.",
   "stats_metrics_few_data": "Pocos datos",

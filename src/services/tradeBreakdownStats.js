@@ -116,6 +116,9 @@ function buildDirectionStats(trades) {
  * Análisis por métrica personalizada, agrupado por estrategia. Un trade cuenta en «cumplida»
  * o «no cumplida» solo si la métrica existe en su objeto: si es undefined significa que el
  * trade es anterior a la métrica y no debe contaminar la comparación.
+ *
+ * Solo salen las estrategias con operaciones entre las recibidas: una estrategia sin ninguna no
+ * tiene nada que contar y su tabla saldría entera en blanco.
  */
 function buildStrategyMetricStats(trades, strategyByName) {
   const list = Array.isArray(trades) ? trades : [];
@@ -142,6 +145,12 @@ function buildStrategyMetricStats(trades, strategyByName) {
     const metrics = parseStrategyMetricNames(strategy?.custom_metrics);
     if (!metrics.length) return;
     const strategyTrades = tradesByStrategy.get(name) || [];
+    // Solo las estrategias que aparecen en las operaciones recibidas. Antes se recorrían TODAS
+    // las configuradas, así que al filtrar por una estrategia concreta seguían saliendo las
+    // demás con «0 trades» y una tabla entera sin una sola cifra. Como las operaciones llegan ya
+    // filtradas (estrategia, cuenta, tipo de cuenta, fechas), mirar quién tiene operaciones es
+    // exactamente respetar todos esos filtros a la vez, sin tener que consultar ninguno.
+    if (!strategyTrades.length) return;
     const rows = metrics.map((metric) => {
       const yes = [];
       const no = [];
