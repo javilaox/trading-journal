@@ -3143,6 +3143,7 @@ const {
   looksLikeAccountPurchase,
 } = require('./services/accountFromExpense');
 const { buildEquityCurve } = require('./services/backtestEquityCurve');
+const { renderDailyStopCard } = require('./services/dailyStopCard');
 const {
   simulateChallenge,
   compareChallengeAccounts,
@@ -11200,23 +11201,6 @@ function bindBeTradesModal() {
   });
 }
 
-/**
- * Análisis BE dentro de la página de Estadísticas.
- *
- * Este bloque se crea desde código y se añade a #statsView. Antes se colgaba sin mas, fuera del
- * sistema de pestañas, y por eso salía en las cinco a la vez. Ahora se declara como un panel más
- * de la pestaña Resumen (`stats-tab-panel` + `data-stats-tab`), que es lo que mira la función que
- * cambia de pestaña.
- *
- * Como se crea sobre la marcha, puede nacer estando el usuario en otra pestaña: por eso su
- * visibilidad se fija tambien aquí, en vez de esperar al siguiente cambio de pestaña.
- *
- * Los estilos salen de las clases de la página (mismas tarjetas que el resto de Estadísticas) en
- * lugar de estar escritos a mano en cada elemento, que era lo que hacía que este bloque se viera
- * distinto de todos los demás.
- */
-const BE_ANALYSIS_TAB = 'summary';
-
 function renderRealBeAnalysisSection(trades) {
   // Dentro de .stats-page, no de #statsView. La página es la que reparte el espacio entre
   // secciones (es una columna con separación fija); colgando el bloque de #statsView quedaba
@@ -14234,6 +14218,18 @@ function renderBacktestingMetrics(filtered) {
       ...tr,
       pnl: getBacktestingTradePnlEuros(tr)
     }))
+  });
+
+  renderDailyStopCard({
+    scope: 'backtest',
+    host: document.getElementById('backtestingView'),
+    blockId: 'dailyStopStatsBacktesting',
+    // Pertenece a la pestaña «Estadísticas»; sin la clase saldría también en Trades y Challenges.
+    className: `card bt-tab-panel ${BT_VIEW_TAB_CLASSES.stats} daily-stop-card`,
+    trades: Array.isArray(filtered) ? filtered : [],
+    getPnl: (tr) => getBacktestingTradePnlEuros(tr),
+    visible: backtestingViewActiveTab === 'stats',
+    refreshIcons: () => void refreshLucideIcons(),
   });
 }
 

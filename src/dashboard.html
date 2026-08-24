@@ -6823,6 +6823,64 @@
         min-width: 0;
         text-align: left;
       }
+      /* «Parar el día tras varios SL»: misma tabla comparativa que el análisis por métricas. */
+      .daily-stop-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin: 14px 0 6px;
+      }
+      .daily-stop-summary { margin: 0; font-size: 14px; }
+      .daily-stop-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 6px 11px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+      }
+      .daily-stop-switch:has(input:checked) {
+        border-color: rgba(56, 189, 248, 0.5);
+        color: #38bdf8;
+      }
+      /* Tamaño fijo: en una fila flexible, una casilla sin medidas propias se estira. */
+      .daily-stop-switch input {
+        width: 15px;
+        min-width: 15px;
+        height: 15px;
+        flex: 0 0 15px;
+        margin: 0;
+        cursor: pointer;
+      }
+      .daily-stop-context { margin: 0 0 12px; }
+      .daily-stop-table tr.is-best td { background: rgba(34, 197, 94, 0.07); }
+      .daily-stop-best-tag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        border: 1px solid rgba(34, 197, 94, 0.45);
+        color: var(--green, #22c55e);
+      }
+      .daily-stop-warning { margin: 12px 0 0; line-height: 1.5; }
+      /* En Backtesting la tarjeta se cuelga al final de la vista, fuera de la rejilla. */
+      #backtestingView .daily-stop-card {
+        margin-top: 14px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.48);
+        border-radius: 16px;
+      }
+      body.light #backtestingView .daily-stop-card { background: rgba(148, 163, 184, 0.06); }
       /* Listado de las operaciones que hay detrás de una cifra del Análisis BE. */
       .be-trades-modal { width: min(680px, 100%); }
       .be-trades-body {

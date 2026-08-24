@@ -51,6 +51,7 @@ const {
   parseStrategyMetricNames,
 } = require('./services/tradeBreakdownStats');
 const { buildStatsReport } = require('./services/exportReports');
+const { renderDailyStopCard } = require('./services/dailyStopCard');
 
 const isStandaloneStatsPage = () => document.body.classList.contains('route-stats');
 let statsEventsBound = false;
@@ -2456,6 +2457,44 @@ function mountStatsExportButtons() {
   bar.appendChild(group);
 }
 
+/**
+ * «Parar el día tras varios SL» en las estadísticas reales.
+ *
+ * Se dibuja desde aquí, y no desde renderer.js como el análisis BE, porque aquí es donde están
+ * las operaciones YA filtradas: la pregunta es sobre la estrategia y el periodo que se tengan
+ * puestos arriba, así que usar el listado completo daría una respuesta que no es la que se
+ * está preguntando.
+ *
+ * Pertenece a la pestaña Resumen. Como la tarjeta se crea sobre la marcha, puede nacer estando
+ * el usuario en otra pestaña: por eso se le pone su `data-stats-tab` y se le fija la visibilidad
+ * en el mismo momento, en vez de esperar al siguiente cambio de pestaña.
+ */
+function renderRealDailyStopCard(trades) {
+  const host = document.querySelector('#statsView .stats-page')
+    || document.querySelector('.stats-page')
+    || document.getElementById('statsView');
+  if (!host) return;
+  const activa =
+    document.querySelector('.stats-tab-btn.active')?.getAttribute('data-stats-tab') || 'summary';
+
+  renderDailyStopCard({
+    scope: 'real',
+    host,
+    blockId: 'dailyStopStatsReal',
+    className: 'card panel-card stats-tab-panel',
+    trades,
+    // El dinero real de la operación: neto si está, y si no el bruto menos la comisión.
+    getPnl: (t) => {
+      const neto = Number(t?.pnl_net ?? t?.pnlNet);
+      if (Number.isFinite(neto)) return neto;
+      return (Number(t?.pnl) || 0) - (Number(t?.commission) || 0);
+    },
+    visible: activa === 'summary',
+    refreshIcons: refreshLucideIcons,
+  });
+  document.getElementById('dailyStopStatsReal')?.setAttribute('data-stats-tab', 'summary');
+}
+
 function renderAllCharts(trades, compareEnabled = compareMode) {
   console.log('Trades para gráfica:', trades);
   // Disciplina por horario: siempre sobre el listado completo (switch OFF no oculta trades aquí).
@@ -2463,6 +2502,7 @@ function renderAllCharts(trades, compareEnabled = compareMode) {
   void renderWithdrawalStats(trades);
   renderDirectionStats(trades);
   void renderStrategyMetricStats(trades);
+  renderRealDailyStopCard(trades);
   const sortedTrades = sortTradesByDate(trades);
   const dailyData = groupTradesByDay(sortedTrades);
   const daily = getDailyPnL(dailyData);
@@ -2890,6 +2930,7 @@ async function applyFilters() {
     void renderWithdrawalStats([]);
     renderDirectionStats([]);
     void renderStrategyMetricStats([]);
+    renderRealDailyStopCard([]);
     return;
   }
 
