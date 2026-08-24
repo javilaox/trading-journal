@@ -89,6 +89,26 @@ function renderDailyStopCard({
     return;
   }
 
+  /**
+   * De lo que te habrías ahorrado, qué era: «12 SL · 5 TP · 2 BE».
+   *
+   * Es lo que convierte el número en una respuesta. Evitar 19 operaciones no dice nada por sí
+   * solo; evitar 12 SL y 5 TP explica de dónde sale la diferencia. Solo se nombra lo que hay:
+   * un «0 BE» ocupa sitio y no informa.
+   */
+  const desglose = (row) => {
+    const r = row.skippedByResult || {};
+    const partes = [
+      [r.sl, 'SL'],
+      [r.tp, 'TP'],
+      [r.be, 'BE'],
+      [r.other, 'sin resultado'],
+    ]
+      .filter(([n]) => Number(n) > 0)
+      .map(([n, etiqueta]) => `${n} ${etiqueta}`);
+    return partes.length ? ` · ${partes.join(' · ')}` : '';
+  };
+
   const filas = analisis.rows
     .map((row) => {
       const mejor = row.diff > 0;
@@ -115,7 +135,7 @@ function renderDailyStopCard({
           </td>
           <td class="bt-metric-cell">
             <strong>${row.daysStopped}</strong>
-            <span class="bt-metric-sub">${row.tradesSkipped} ${row.tradesSkipped === 1 ? 'operación evitada' : 'operaciones evitadas'}</span>
+            <span class="bt-metric-sub">${row.tradesSkipped} ${row.tradesSkipped === 1 ? 'operación evitada' : 'operaciones evitadas'}${desglose(row)}</span>
           </td>
           <td>${veredicto}</td>
         </tr>`;

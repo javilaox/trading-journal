@@ -21,6 +21,13 @@ function isStopLoss(trade) {
   return String(trade?.result || '').trim().toUpperCase() === 'SL';
 }
 
+/** Resultado de una operación en las cuatro cestas que interesan al contar lo que se evitó. */
+function resultBucket(trade) {
+  const r = String(trade?.result || '').trim().toUpperCase();
+  if (r === 'SL' || r === 'TP' || r === 'BE') return r.toLowerCase();
+  return 'other';
+}
+
 /**
  * Orden dentro del día: por hora de entrada y, a igualdad, por el orden en que se guardaron.
  *
@@ -149,6 +156,9 @@ function buildDailyStopAnalysis(trades, options = {}) {
     let daysStopped = 0;
     let tradesSkipped = 0;
     let skippedPnl = 0;
+    // Cuántas de las evitadas eran cada cosa. Es lo que convierte el número en una respuesta:
+    // evitar 19 operaciones no dice nada; evitar 12 SL y 5 TP sí.
+    const skippedByResult = { sl: 0, tp: 0, be: 0, other: 0 };
 
     days.forEach((dayTrades) => {
       const corte = stopIndexForDay(dayTrades, threshold, consecutive);
@@ -161,6 +171,7 @@ function buildDailyStopAnalysis(trades, options = {}) {
       });
       evitadas.forEach((t) => {
         skippedPnl += getPnl(t);
+        skippedByResult[resultBucket(t)] += 1;
       });
     });
 
@@ -174,6 +185,7 @@ function buildDailyStopAnalysis(trades, options = {}) {
       // cambiado de signo, y se guarda aparte porque leerlo así -«lo que venía después restaba
       // 300€»- explica el resultado mejor que la diferencia a secas.
       skippedPnl,
+      skippedByResult,
     });
   }
 
@@ -200,6 +212,7 @@ function buildDailyStopAnalysis(trades, options = {}) {
 module.exports = {
   buildDailyStopAnalysis,
   isStopLoss,
+  resultBucket,
   stopIndexForDay,
   maxStreakInDay,
   sortWithinDay,
