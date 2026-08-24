@@ -11082,6 +11082,124 @@ function computeRealBeAnalysisMetrics(trades) {
   return { beTrades, beToTP, beToSL, beUnknown, beResolved, beUsefulRate, beMissedRate, pnlWithoutBE };
 }
 
+/* --------------------------------------------------------- listado detrás de una cifra de BE
+ * Ver «BE → SL: 2» y no poder saber cuáles son deja el dato a medias: lo que se quiere hacer al
+ * verlo es ir a esas dos operaciones. Las tarjetas con operaciones detrás llevan a su listado, y
+ * desde el listado se abre directamente el formulario de edición.
+ */
+
+/** Grupos de operaciones que hay detrás de cada tarjeta del Análisis BE. */
+const BE_LIST_GROUPS = {
+  tp: {
+    titulo: 'Operaciones BE que habrían llegado a TP',
+    subtitulo: 'Movidas a break even cuando el precio acabó yendo a favor.',
+    filtro: (t) => sanitizeBeAfterResult(t.be_after_result) === 'TP',
+  },
+  sl: {
+    titulo: 'Operaciones BE que habrían sido pérdida',
+    subtitulo: 'Movidas a break even cuando el precio acabó yendo en contra.',
+    filtro: (t) => sanitizeBeAfterResult(t.be_after_result) === 'SL',
+  },
+  unknown: {
+    titulo: 'Operaciones BE sin resolver',
+    subtitulo: 'Falta indicar si después habrían terminado en TP o en SL.',
+    filtro: (t) => !sanitizeBeAfterResult(t.be_after_result),
+  },
+  all: {
+    titulo: 'Todas las operaciones en BE',
+    // Sin mencionar ningún periodo a propósito: este bloque se dibuja desde loadStats() con
+    // TODAS las operaciones, no con las del rango elegido arriba. Decir «del periodo
+    // seleccionado» sería mentir sobre lo que se está enseñando.
+    subtitulo: 'Todas las que has cerrado a break even.',
+    filtro: () => true,
+  },
+};
+
+/** Las que se están enseñando, para no depender de que la caché no cambie entre pulsación y clic. */
+let beListaActual = [];
+
+function closeBeTradesModal() {
+  document.getElementById('beTradesModalOverlay')?.classList.remove('active');
+  beListaActual = [];
+}
+
+function openBeTradesModal(grupo, beTrades) {
+  const cfg = BE_LIST_GROUPS[grupo] || BE_LIST_GROUPS.all;
+  const overlay = document.getElementById('beTradesModalOverlay');
+  const lista = document.getElementById('beTradesList');
+  if (!overlay || !lista) return;
+
+  beListaActual = sortTradesChronologically((beTrades || []).filter(cfg.filtro));
+
+  document.getElementById('beTradesModalTitle').textContent = cfg.titulo;
+  const sub = document.getElementById('beTradesModalSubtitle');
+  const n = beListaActual.length;
+  sub.textContent = `${n} ${n === 1 ? 'operación' : 'operaciones'} · ${cfg.subtitulo}`;
+
+  lista.innerHTML = beListaActual.length
+    ? beListaActual
+        .map((t) => {
+          const pnl = getTradeRealPnl(t);
+          const tono = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
+          const despues = sanitizeBeAfterResult(t.be_after_result);
+          const distintivo = despues
+            ? `<span class="be-after-badge ${despues.toLowerCase()}">BE → ${despues}</span>`
+            : '<span class="be-after-badge">Sin resolver</span>';
+          const horas = buildBacktestingDayTradeTime(t);
+          const meta = [
+            t.strategy || 'Sin estrategia',
+            tradeAccountNames(t).join(' · ') || 'Sin cuenta',
+            horas,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return `
+            <li>
+              <button type="button" class="be-trade-row" data-be-trade-id="${escapeAttrChip(String(t.id))}">
+                <span class="be-trade-main">
+                  <span class="be-trade-title">
+                    ${escapeHtmlChipText(formatDateEs(String(t.date || '').slice(0, 10)))}
+                    · ${escapeHtmlChipText(t.asset || '—')}
+                    ${distintivo}
+                  </span>
+                  <span class="be-trade-meta">${escapeHtmlChipText(meta)}</span>
+                </span>
+                <span class="be-trade-pnl ${tono}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}€</span>
+              </button>
+            </li>`;
+        })
+        .join('')
+    : '<li class="muted-label">No hay operaciones en este grupo.</li>';
+
+  bindBeTradesModal();
+  overlay.classList.add('active');
+}
+
+function bindBeTradesModal() {
+  const overlay = document.getElementById('beTradesModalOverlay');
+  if (!overlay || overlay.dataset.bound === 'true') return;
+  overlay.dataset.bound = 'true';
+
+  document.getElementById('beTradesModalClose')?.addEventListener('click', closeBeTradesModal);
+  overlay.addEventListener('mousedown', (event) => {
+    if (event.target === overlay) closeBeTradesModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && overlay.classList.contains('active')) closeBeTradesModal();
+  });
+
+  document.getElementById('beTradesList')?.addEventListener('click', (event) => {
+    const fila = event.target.closest('[data-be-trade-id]');
+    if (!fila) return;
+    const id = Number(fila.getAttribute('data-be-trade-id'));
+    if (!Number.isFinite(id)) return;
+    // Se cierra el listado antes de abrir la edición: dos ventanas apiladas se ven mal y al
+    // guardar habría que refrescar el listado de debajo, que ya no representa nada.
+    closeBeTradesModal();
+    void openTradeForEdit(id);
+  });
+}
+
 /**
  * Análisis BE dentro de la página de Estadísticas.
  *
@@ -11140,23 +11258,51 @@ function renderRealBeAnalysisSection(trades) {
   }
 
   const money = `${m.pnlWithoutBE >= 0 ? '+' : ''}${m.pnlWithoutBE.toFixed(2)}€`;
-  const tarjeta = (titulo, valor, tono, pie) => `
-    <div class="stat-box">
+  // `grupo` convierte la tarjeta en un botón que lleva al listado de las operaciones que hay
+  // detrás. Una tarjeta a cero no lleva a ninguna parte: no hay nada que enseñar y anunciar un
+  // listado vacío es peor que no ofrecerlo.
+  const tarjeta = (titulo, valor, tono, pie, grupo, cuantas) => {
+    const pulsable = Boolean(grupo) && Number(cuantas) > 0;
+    return `
+    <div class="stat-box${pulsable ? ' is-clickable' : ''}"${
+      pulsable
+        ? ` data-be-group="${grupo}" role="button" tabindex="0" title="Ver estas operaciones"`
+        : ''
+    }>
       <span>${titulo}</span>
       <h2 class="${tono}">${valor}</h2>
       <small class="stat-box-sub">${pie}</small>
+      ${pulsable ? '<small class="stat-box-link">Ver operaciones</small>' : ''}
     </div>`;
+  };
 
   block.innerHTML = `
     ${cabecera}
     <div class="top-stats">
-      ${tarjeta('BE → TP', m.beToTP, 'negative', 'Operaciones que habrían llegado a TP')}
-      ${tarjeta('BE → SL', m.beToSL, 'positive', 'Pérdidas evitadas por BE')}
-      ${tarjeta('BE útil', `${m.beUsefulRate.toFixed(1)}%`, 'positive', 'Sobre BE con resultado posterior')}
-      ${tarjeta('Beneficio limitado', `${m.beMissedRate.toFixed(1)}%`, 'negative', 'BE que habría terminado en TP')}
-      ${tarjeta('BE sin resolver', m.beUnknown, 'neutral', 'Sin TP/SL posterior registrado')}
-      ${tarjeta('PnL hipotético sin BE', money, m.pnlWithoutBE >= 0 ? 'positive' : 'negative', 'Estimación basada en el PnL bruto registrado')}
+      ${tarjeta('BE → TP', m.beToTP, 'negative', 'Operaciones que habrían llegado a TP', 'tp', m.beToTP)}
+      ${tarjeta('BE → SL', m.beToSL, 'positive', 'Pérdidas evitadas por BE', 'sl', m.beToSL)}
+      ${tarjeta('BE útil', `${m.beUsefulRate.toFixed(1)}%`, 'positive', 'Sobre BE con resultado posterior', 'sl', m.beToSL)}
+      ${tarjeta('Beneficio limitado', `${m.beMissedRate.toFixed(1)}%`, 'negative', 'BE que habría terminado en TP', 'tp', m.beToTP)}
+      ${tarjeta('BE sin resolver', m.beUnknown, 'neutral', 'Sin TP/SL posterior registrado', 'unknown', m.beUnknown)}
+      ${tarjeta('PnL hipotético sin BE', money, m.pnlWithoutBE >= 0 ? 'positive' : 'negative', 'Estimación basada en el PnL bruto registrado', 'all', m.beTrades.length)}
     </div>`;
+
+  // Un solo escuchador para todas las tarjetas, y se vuelve a poner en cada dibujado porque el
+  // innerHTML de arriba se lleva por delante los nodos anteriores.
+  const abrir = (event) => {
+    const caja = event.target.closest('[data-be-group]');
+    if (!caja) return;
+    openBeTradesModal(caja.getAttribute('data-be-group'), m.beTrades);
+  };
+  block.querySelector('.top-stats')?.addEventListener('click', abrir);
+  // Con teclado: las tarjetas son role="button", así que responden a Intro y a espacio.
+  block.querySelector('.top-stats')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!event.target.closest('[data-be-group]')) return;
+    event.preventDefault();
+    abrir(event);
+  });
+
   void refreshLucideIcons();
 }
 

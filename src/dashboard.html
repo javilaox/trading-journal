@@ -6823,6 +6823,95 @@
         min-width: 0;
         text-align: left;
       }
+      /* Listado de las operaciones que hay detrás de una cifra del Análisis BE. */
+      .be-trades-modal { width: min(680px, 100%); }
+      .be-trades-body {
+        overflow-y: auto;
+        padding: 0 18px 18px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+      }
+      .be-trades-body::-webkit-scrollbar { width: 10px; }
+      .be-trades-body::-webkit-scrollbar-track { background: transparent; }
+      .be-trades-body::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .be-trades-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .be-trade-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        width: 100%;
+        text-align: left;
+        padding: 11px 13px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.22);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .be-trade-row:hover {
+        border-color: rgba(56, 189, 248, 0.45);
+        background: rgba(56, 189, 248, 0.06);
+      }
+      body.light .be-trade-row { background: rgba(148, 163, 184, 0.08); }
+      .be-trade-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+      .be-trade-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 800;
+        font-size: 14px;
+        flex-wrap: wrap;
+      }
+      .be-trade-meta { font-size: 12px; color: var(--text-muted); }
+      .be-trade-pnl { font-weight: 800; white-space: nowrap; }
+      .be-trade-pnl.positive { color: var(--green); }
+      .be-trade-pnl.negative { color: #ef4444; }
+      .be-after-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+      }
+      .be-after-badge.tp { border-color: rgba(239, 68, 68, 0.45); color: #ef4444; }
+      .be-after-badge.sl { border-color: rgba(34, 197, 94, 0.45); color: var(--green, #22c55e); }
+      /* Las tarjetas del Análisis BE que llevan a un listado se comportan como un botón. */
+      #beAnalysisStatsReal .stat-box.is-clickable {
+        cursor: pointer;
+        transition: border-color 0.15s ease, transform 0.12s ease;
+      }
+      #beAnalysisStatsReal .stat-box.is-clickable:hover {
+        border-color: rgba(56, 189, 248, 0.5);
+        transform: translateY(-1px);
+      }
+      #beAnalysisStatsReal .stat-box-link {
+        display: block;
+        margin-top: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #38bdf8;
+      }
       /* Editar una operación de backtesting: el mismo formulario, dentro de un desplegable propio,
          para no confundirlo con «Nueva operación», que está justo al lado.
          Quien desplaza es el fondo, no el cuerpo del desplegable, y a propósito: el formulario
@@ -10234,6 +10323,23 @@
          mismo que se usa para crear y se devuelve a su sitio al cerrar. Duplicarlo obligaría a
          repetir todos los identificadores y todos los escuchadores, y cualquier arreglo futuro
          habría que hacerlo dos veces. -->
+    <!-- Listado detrás de una cifra del Análisis BE. Se abre al pulsar la tarjeta y desde aquí se
+         va directo a editar la operación, que es lo que se quiere hacer al ver el número. -->
+    <div id="beTradesModalOverlay" class="modal-overlay app-modal-overlay">
+      <div class="modal app-modal be-trades-modal" role="dialog" aria-modal="true" aria-labelledby="beTradesModalTitle">
+        <div class="app-modal-header modal-header">
+          <div>
+            <h2 id="beTradesModalTitle">Operaciones en BE</h2>
+            <p id="beTradesModalSubtitle" class="muted small"></p>
+          </div>
+          <button type="button" id="beTradesModalClose" class="app-modal-close modal-close" data-i18n="close" aria-label="Cerrar">Cerrar</button>
+        </div>
+        <div class="app-modal-body modal-body be-trades-body">
+          <ul id="beTradesList" class="be-trades-list"></ul>
+        </div>
+      </div>
+    </div>
+
     <div id="btEditModalOverlay" class="modal-overlay app-modal-overlay bt-edit-modal-overlay">
       <div class="modal app-modal bt-edit-modal" role="dialog" aria-modal="true" aria-labelledby="btEditModalTitle">
         <div class="app-modal-header modal-header">
