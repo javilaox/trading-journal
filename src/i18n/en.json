@@ -628,6 +628,7 @@
   "st_metric_no_data": "No trade of this strategy has that metric answered, so there is nothing to measure.",
   "st_tag_real": "real",
   "st_tag_backtest": "backtest",
+  "st_all_sessions": "all sessions",
   "st_no_ops": "no trades",
   "st_metric_win": "win rate",
   "live_testing_label": "Live testing",

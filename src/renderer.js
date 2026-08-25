@@ -20433,19 +20433,68 @@ function stCollectStrategies() {
       ? (ops.filter((t) => String(t.result).toUpperCase() === resultado).length / ops.length) * 100
       : null;
 
+  const sesionesPorId = new Map(
+    (Array.isArray(cachedBacktestingSessions) ? cachedBacktestingSessions : []).map((x) => [
+      String(x.id),
+      x,
+    ])
+  );
+
   getBacktestingStrategies().forEach((s) => {
     const ops = backtestPorEstrategia.get(s.name) || [];
-    lista.push({
-      key: `bt:${s.name}`,
+    const comun = {
       name: s.name,
       origen: 'backtesting',
       rr: Number(s.rr) || 0,
       riskUnit: s.risk_unit === 'percent' ? 'percent' : 'eur',
       riskValue: Number(s.risk_value ?? s.risk ?? s.risk_per_trade) || 0,
+    };
+
+    // Una misma estrategia probada en varias sesiones da un acierto por sesión, y ese es el que
+    // interesa cuando se quiere ver «cómo iría con los datos de esta sesión». Juntándolas todas
+    // en un solo número no hay forma de separarlas, y la única salida era enredar con la
+    // configuración de las sesiones para que dejaran de contar.
+    const porSesion = new Map();
+    ops.forEach((t) => {
+      const sid = String(t?.session_id ?? '');
+      if (!sid) return;
+      if (!porSesion.has(sid)) porSesion.set(sid, []);
+      porSesion.get(sid).push(t);
+    });
+    // Solo se desglosa si de verdad hay más de una: con una sola, la sesión y la estrategia son
+    // lo mismo y duplicar la entrada sería ruido.
+    const varias = porSesion.size >= 2;
+
+    lista.push({
+      ...comun,
+      key: `bt:${s.name}`,
+      // Solo se anuncia «todas las sesiones» cuando hay varias entre las que elegir; si no, esa
+      // coletilla sobra y solo confunde.
+      allSessions: varias,
       winRate: proporcion(ops, 'TP'),
       beRate: proporcion(ops, 'BE'),
       trades: ops.length,
     });
+
+    if (!varias) return;
+
+    [...porSesion.entries()]
+      .sort((a, b) => {
+        const na = String(sesionesPorId.get(a[0])?.name || a[0]);
+        const nb = String(sesionesPorId.get(b[0])?.name || b[0]);
+        return na.localeCompare(nb);
+      })
+      .forEach(([sid, opsSesion]) => {
+        lista.push({
+          ...comun,
+          key: `bts:${sid}:${s.name}`,
+          sessionId: sid,
+          sessionName: String(sesionesPorId.get(sid)?.name || '').trim() || `Sesión ${sid}`,
+          winRate: proporcion(opsSesion, 'TP'),
+          beRate: proporcion(opsSesion, 'BE'),
+          trades: opsSesion.length,
+        });
+      });
   });
 
   // Estrategias reales: el acierto se mide con los trades del usuario.
@@ -20504,7 +20553,13 @@ function stFillStrategySelect(side) {
     delGrupo.forEach((s) => {
       const op = document.createElement('option');
       op.value = s.key;
-      const origen = s.origen === 'real' ? t('st_tag_real', 'real') : t('st_tag_backtest', 'backtest');
+      const origen = s.sessionName
+        ? `${t('st_tag_backtest', 'backtest')} · ${s.sessionName}`
+        : s.origen === 'real'
+          ? t('st_tag_real', 'real')
+          : s.allSessions
+            ? `${t('st_tag_backtest', 'backtest')} · ${t('st_all_sessions', 'todas las sesiones')}`
+            : t('st_tag_backtest', 'backtest');
       const cuenta = s.trades
         ? `, ${s.trades} ${s.trades === 1 ? t('st_op_one', 'operación') : t('st_op_many', 'operaciones')}`
         : `, ${t('st_no_ops', 'sin operaciones')}`;
@@ -21320,20 +21375,26 @@ async function refreshStrategyTesterView() {
   initStrategyTester();
   await loadBacktestingSettings();
 
-  // Las operaciones de backtesting hacen falta para contar cuántas tiene cada estrategia y medir
-  // su acierto. Solo se piden si aún no están cargadas: entrar aquí no tiene por qué costar una
-  // consulta si ya se ha pasado por Backtesting.
-  if (!Array.isArray(cachedBacktestingTrades) || !cachedBacktestingTrades.length) {
-    const backend = getBackendApi();
-    if (backend?.getBacktestTrades) {
-      try {
-        const lista = await backend.getBacktestTrades();
-        cachedBacktestingTrades = Array.isArray(lista) ? lista : [];
-      } catch (error) {
-        console.warn('No se pudieron cargar las operaciones de backtesting:', error);
-      }
+  // Las operaciones y las sesiones de backtesting hacen falta para contar cuántas tiene cada
+  // estrategia y medir su acierto.
+  //
+  // Se vuelven a pedir SIEMPRE al entrar, no solo si la caché está vacía, que es lo que se hacía
+  // antes: bastaba con haber pasado por Backtesting alguna vez para que el probador se quedara
+  // enseñando lo de entonces, y cualquier cambio hecho después -crear operaciones, cambiar una
+  // sesión- no aparecía por aquí. Es una lectura local, así que ahorrarla no compensaba enseñar
+  // números viejos. Si falla, se conserva lo que ya había.
+  const backend = getBackendApi();
+  if (backend?.getBacktestTrades) {
+    try {
+      const lista = await backend.getBacktestTrades();
+      if (Array.isArray(lista)) cachedBacktestingTrades = lista;
+    } catch (error) {
+      console.warn('No se pudieron cargar las operaciones de backtesting:', error);
     }
   }
+  // Las sesiones, por su función de siempre: aquí solo hacen falta para poner el nombre de cada
+  // una en el desplegable.
+  await loadBacktestingSessions();
 
   stFillStrategySelect('a');
   stFillStrategySelect('b');
