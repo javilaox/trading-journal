@@ -11288,66 +11288,92 @@ function computeBeAdvancedMetrics(trades) {
 }
 
 /**
- * Tarjeta de BE avanzado. Igual que el análisis BE de Estadísticas, se crea desde código y se
- * añade al final de la vista; hay que declararla como panel de una pestaña concreta o saldría en
- * todas. Aquí pertenece a la pestaña «Estadísticas» de Backtesting.
+ * Coloca una tarjeta creada desde código entre los demás paneles de la pestaña «Estadísticas»
+ * de Backtesting, y devuelve el .pro-card donde escribir.
+ *
+ * Las tarjetas que se generan desde JS se añadían al final de #backtestingView, fuera del
+ * contenedor donde viven las demás. Resultado: distinto ancho, distinta separación y ningún
+ * parecido con las secciones de al lado. Aquí se replica el mismo envoltorio que llevan las
+ * fijas en el HTML -.bt-tab-panel > .bt-section.pro-section > .pro-card- y se cuelgan del mismo
+ * padre, detrás del último panel de esa pestaña, para que hereden espaciado y ancho sin tener
+ * que repetir ni un estilo.
+ */
+function ensureBacktestingStatsPanel({ hostId, blockId, panelClass }) {
+  let panel = document.getElementById(blockId);
+  if (!panel) {
+    // El padre de los paneles fijos. Si no estuviera (marcado antiguo), se cae al contenedor de
+    // la vista, que es lo que se hacía antes: peor colocado, pero visible.
+    const referencia = document.getElementById('btStatsPanelAnalysis')
+      || document.getElementById('btEquityPanel')
+      || document.getElementById('btStatsPanelKpi');
+    const contenedor = referencia?.parentElement || document.getElementById(hostId);
+    if (!contenedor) return null;
+
+    panel = document.createElement('div');
+    panel.id = blockId;
+    panel.className = panelClass ? `bt-tab-panel ${panelClass}` : 'bt-tab-panel';
+    panel.innerHTML = '<div class="bt-section pro-section"><div class="pro-card"></div></div>';
+    contenedor.appendChild(panel);
+  }
+
+  // Se crea sobre la marcha, y puede nacer con el usuario en otra pestaña: su visibilidad se
+  // fija aquí en vez de esperar al siguiente cambio de pestaña.
+  if (panelClass) {
+    panel.hidden = !panel.classList.contains(BT_VIEW_TAB_CLASSES[backtestingViewActiveTab]);
+  }
+  return panel.querySelector('.pro-card');
+}
+
+/**
+ * Tarjeta de BE avanzado de Backtesting.
+ *
+ * Se crea desde código y se cuelga entre los demás paneles de la pestaña «Estadísticas», con el
+ * mismo envoltorio que ellos (.bt-tab-panel > .bt-section > .pro-card) y con las clases de las
+ * tarjetas de la vista. Antes se añadía al final de #backtestingView con los estilos escritos a
+ * mano en cada elemento -su propio borde, su propio fondo, sus propios colores-, y por eso se
+ * veía como algo pegado y no como una sección más: no respetaba ni el ancho, ni la separación,
+ * ni los colores del tema.
  *
  * `panelClass` es la clase que mira switchBacktestingViewTab() para decidir qué se ve.
  */
 function renderBeAdvancedStatsCard({ hostId, blockId, title, subtitle, trades, panelClass }) {
-  const host = document.getElementById(hostId);
-  if (!host) return;
-  let block = document.getElementById(blockId);
-  if (!block) {
-    block = document.createElement('div');
-    block.id = blockId;
-    block.className = panelClass ? `card bt-tab-panel ${panelClass}` : 'card';
-    block.style.marginTop = '14px';
-    block.style.padding = '16px';
-    block.style.border = '1px solid rgba(148,163,184,.14)';
-    block.style.background = 'rgba(15,23,42,.48)';
-    block.style.borderRadius = '14px';
-    host.appendChild(block);
-  }
-  // Se crea sobre la marcha, y puede nacer con el usuario en otra pestaña: su visibilidad se
-  // fija aquí en vez de esperar al siguiente cambio de pestaña.
-  if (panelClass) block.hidden = !block.classList.contains(BT_VIEW_TAB_CLASSES[backtestingViewActiveTab]);
+  const block = ensureBacktestingStatsPanel({ hostId, blockId, panelClass });
+  if (!block) return;
+
   const m = computeBeAdvancedMetrics(trades);
-  const hasBeData = m.beTotal > 0;
-  if (!hasBeData) {
-    block.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <h3 style="margin:0;font-size:16px;">${title}</h3>
-        <p class="muted" style="margin:0 0 4px;">${subtitle || ''}</p>
-        <div class="muted" style="padding:10px 0;">No hay operaciones BE suficientes para analizar.</div>
+  const cabecera = `
+    <div class="bt-section-title">
+      <div>
+        <h3>${escapeHtmlChipText(title)}</h3>
+        ${subtitle ? `<p>${escapeHtmlChipText(subtitle)}</p>` : ''}
       </div>
-    `;
+    </div>`;
+
+  if (!m.beTotal) {
+    block.innerHTML = `
+      ${cabecera}
+      <div class="empty-state">
+        No hay operaciones BE suficientes para analizar. Cuando registres operaciones en BE y
+        marques si después habrían ido a TP o a SL, aparecerá el análisis.
+      </div>`;
     return;
   }
+
+  const tarjeta = (etiqueta, valor, tono) => `
+    <div class="bt-kpi-card">
+      <div class="bt-kpi-label">${etiqueta}</div>
+      <div class="bt-kpi-value${tono ? ` ${tono}` : ''}">${valor}</div>
+    </div>`;
+
+  const hipotetico = `${m.hypotheticalPnL >= 0 ? '+' : ''}${m.hypotheticalPnL.toFixed(2)}€`;
   block.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
-      <h3 style="margin:0;font-size:16px;">${title}</h3>
-      <p class="muted" style="margin:0;">${subtitle || ''}</p>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE → TP</div>
-        <div style="font-size:20px;font-weight:800;color:#4ade80;">${m.beTP}</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">BE → SL</div>
-        <div style="font-size:20px;font-weight:800;color:#f87171;">${m.beSL}</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">% BE útil</div>
-        <div style="font-size:20px;font-weight:800;">${m.beSuccessRate.toFixed(1)}%</div>
-      </div>
-      <div class="card" style="padding:10px 12px;border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36);border-radius:12px;">
-        <div class="muted" style="font-size:12px;">PnL hipotético sin BE</div>
-        <div style="font-size:20px;font-weight:800;${m.hypotheticalPnL >= 0 ? 'color:#4ade80;' : 'color:#f87171;'}">${m.hypotheticalPnL >= 0 ? '+' : ''}${m.hypotheticalPnL.toFixed(2)}€</div>
-      </div>
-    </div>
-  `;
+    ${cabecera}
+    <div class="bt-kpi-mini-row">
+      ${tarjeta('BE → TP', m.beTP, 'positive')}
+      ${tarjeta('BE → SL', m.beSL, 'negative')}
+      ${tarjeta('% BE útil', `${m.beSuccessRate.toFixed(1)}%`)}
+      ${tarjeta('PnL hipotético sin BE', hipotetico, m.hypotheticalPnL >= 0 ? 'positive' : 'negative')}
+    </div>`;
 }
 
 function parseMoneyInput(value) {
@@ -14225,17 +14251,26 @@ function renderBacktestingMetrics(filtered) {
     }))
   });
 
-  renderDailyStopCard({
-    scope: 'backtest',
-    host: document.getElementById('backtestingView'),
-    blockId: 'dailyStopStatsBacktesting',
+  // Mismo envoltorio que los paneles fijos de la pestaña: el ayudante crea la estructura y
+  // devuelve la tarjeta interior, así que aquí solo se pinta dentro.
+  const stopHost = ensureBacktestingStatsPanel({
+    hostId: 'backtestingView',
+    blockId: 'dailyStopPanelBacktesting',
     // Pertenece a la pestaña «Estadísticas»; sin la clase saldría también en Trades y Challenges.
-    className: `card bt-tab-panel ${BT_VIEW_TAB_CLASSES.stats} daily-stop-card`,
-    trades: Array.isArray(filtered) ? filtered : [],
-    getPnl: (tr) => getBacktestingTradePnlEuros(tr),
-    visible: backtestingViewActiveTab === 'stats',
-    refreshIcons: () => void refreshLucideIcons(),
+    panelClass: BT_VIEW_TAB_CLASSES.stats,
   });
+  if (stopHost) {
+    renderDailyStopCard({
+      scope: 'backtest',
+      host: stopHost,
+      blockId: 'dailyStopStatsBacktesting',
+      className: 'daily-stop-block',
+      trades: Array.isArray(filtered) ? filtered : [],
+      getPnl: (tr) => getBacktestingTradePnlEuros(tr),
+      visible: true,
+      refreshIcons: () => void refreshLucideIcons(),
+    });
+  }
 }
 
 function renderBacktestingPairTable(filtered) {

@@ -5698,6 +5698,13 @@
       #backtestingView .bt-section + #btScheduleStatsSection {
         margin-top: clamp(26px, 3vw, 36px);
       }
+      /* Las secciones de la pestaña Estadísticas van cada una dentro de su .bt-tab-panel, así que
+         NO son hermanas entre sí y la regla de arriba nunca les llegaba a aplicar: se quedaban con
+         la separación base y se veían pegadas unas a otras. La separación se pide entre paneles
+         consecutivos, que sí son hermanos. */
+      #backtestingView .bt-tab-panel + .bt-tab-panel > .bt-section {
+        margin-top: clamp(26px, 3vw, 36px);
+      }
       #backtestingView .dashboard-container .section.card > .bt-section:first-of-type {
         margin-top: 0;
       }
@@ -6890,15 +6897,21 @@
         color: var(--green, #22c55e);
       }
       .daily-stop-warning { margin: 12px 0 0; line-height: 1.5; }
-      /* En Backtesting la tarjeta se cuelga al final de la vista, fuera de la rejilla. */
-      #backtestingView .daily-stop-card {
-        margin-top: 14px;
-        padding: 18px;
-        border: 1px solid var(--border);
-        background: rgba(15, 23, 42, 0.48);
-        border-radius: 16px;
+      /* En Backtesting el bloque va dentro de un .pro-card, que es quien pone el marco y el
+         relleno: aquí no se repite nada, o quedarían dos recuadros uno dentro de otro. */
+      #backtestingView .daily-stop-block { margin: 0; }
+      /* «No hay datos» con el mismo aspecto que en Estadísticas. La regla de allí está acotada a
+         #statsView, así que aquí no llegaba y el texto salía suelto, sin recuadro. */
+      #backtestingView .empty-state {
+        margin: 12px 0 0;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px dashed var(--border);
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 13px;
+        line-height: 1.5;
       }
-      body.light #backtestingView .daily-stop-card { background: rgba(148, 163, 184, 0.06); }
       /* Cifras de la tabla de horario que llevan a su listado. */
       #scheduleStatsMetrics td.is-clickable {
         cursor: pointer;
