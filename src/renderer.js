@@ -3144,6 +3144,7 @@ const {
 } = require('./services/accountFromExpense');
 const { buildEquityCurve } = require('./services/backtestEquityCurve');
 const { renderDailyStopCard } = require('./services/dailyStopCard');
+const { openPortalPanel, closePortalPanel } = require('./services/popupPortal');
 const {
   openTradeListModal,
   timeLabel: tradeListTimeLabel,
@@ -4376,14 +4377,16 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
   const trigger = container.querySelector('.dashboard-multiselect-trigger');
   const menu = container.querySelector('.dashboard-multiselect-menu');
 
+  // Igual que en el selector propio: el panel se guarda aparte porque mientras está abierto
+  // cuelga del <body>.
+  container.__menuPanel = menu;
+
   trigger?.addEventListener('click', (event) => {
     event.stopPropagation();
-
-    document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
-      if (el !== container) el.classList.remove('open');
-    });
-
-    container.classList.toggle('open');
+    const willOpen = !container.classList.contains('open');
+    closeAllDashboardMultiselects();
+    container.classList.toggle('open', willOpen);
+    if (willOpen) openPortalPanel(trigger, menu, { minWidth: 220 });
   });
 
   menu?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -5359,10 +5362,27 @@ function refreshLucideIcons() {
   }
 }
 
+/**
+ * Cierra los desplegables de varias opciones del Dashboard.
+ *
+ * Una sola función porque se cierran desde tres sitios -al abrir otro, al pulsar fuera y con
+ * Escape- y los tres tienen que devolver además el panel a su sitio en el DOM. Cuando eso estaba
+ * escrito tres veces, bastaba con olvidarse en uno para dejar un panel suelto colgando del body.
+ */
+function closeAllDashboardMultiselects() {
+  document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
+    el.classList.remove('open');
+    closePortalPanel(el.__menuPanel || el.querySelector('.dashboard-multiselect-menu'));
+  });
+}
+
 function closeAllCustomSelects(exceptElement = null) {
   document.querySelectorAll('.custom-select.open').forEach((select) => {
     if (!exceptElement || select !== exceptElement) {
       select.classList.remove('open');
+      // El panel está colgado del <body> mientras está abierto: hay que devolverlo a su sitio,
+      // porque quitar la clase `open` ya no basta para esconderlo.
+      closePortalPanel(select.__optionsPanel || select.querySelector('.select-options'));
     }
   });
 }
@@ -6048,6 +6068,15 @@ function refreshCustomSelectForNative(nativeSelect) {
     return;
   }
 
+  // Si este selector se está redibujando con su lista abierta, primero se devuelve el panel a su
+  // sitio: mientras está abierto cuelga del <body>, y rehacer el selector sin cerrarlo dejaría el
+  // panel viejo suelto en el body para siempre.
+  const previo = nativeSelect.nextElementSibling;
+  if (previo?.classList?.contains('custom-select')) {
+    previo.classList.remove('open');
+    closePortalPanel(previo.__optionsPanel);
+  }
+
   let custom = nativeSelect.nextElementSibling;
   if (!custom || !custom.classList.contains('custom-select')) {
     custom = document.createElement('div');
@@ -6128,6 +6157,10 @@ function refreshCustomSelectForNative(nativeSelect) {
     optionsContainer.appendChild(optionElement);
   });
 
+  // Se guarda la referencia al panel: mientras está abierto vive colgado del <body>, así que
+  // buscarlo desde el contenedor ya no lo encuentra.
+  custom.__optionsPanel = optionsContainer;
+
   selected.onclick = (event) => {
     // Ver comentario arriba: preventDefault() evita que un <label> ancestro reenvíe el click
     // al <select> nativo oculto.
@@ -6136,6 +6169,11 @@ function refreshCustomSelectForNative(nativeSelect) {
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects(custom);
     custom.classList.toggle('open', willOpen);
+    // Fuera del contenedor que lo recortaba: dentro de una tarjeta, de una zona con
+    // desplazamiento o de un modal, la lista se cortaba por el borde en cuanto había unas
+    // cuantas opciones.
+    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160 });
+    else closePortalPanel(optionsContainer);
   };
 }
 
@@ -11690,6 +11728,15 @@ function setBtSessionPairDropdownOpen(open) {
   const root = document.getElementById('btSessionPairMultiSelect');
   if (!root) return;
   root.classList.toggle('open', Boolean(open));
+
+  // Este vive dentro de un modal con desplazamiento: sin sacarlo, la lista de pares se corta por
+  // el borde del modal en cuanto hay unos cuantos.
+  const dropdown = root.__dropdownPanel || document.getElementById('btSessionPairMultiSelectDropdown');
+  const wrapper = document.getElementById('btSessionPairInputWrapper');
+  if (!dropdown) return;
+  root.__dropdownPanel = dropdown;
+  if (open && wrapper) openPortalPanel(wrapper, dropdown, { minWidth: 240 });
+  else closePortalPanel(dropdown);
 }
 
 function syncBtSessionPairMultiSelectUI() {
@@ -11918,6 +11965,7 @@ function initAssetCombobox() {
   function closePanel() {
     open = false;
     panel.classList.remove('is-open');
+    closePortalPanel(panel);
     btn.setAttribute('aria-expanded', 'false');
     searchInput.value = '';
   }
@@ -11928,12 +11976,17 @@ function initAssetCombobox() {
     btn.setAttribute('aria-expanded', 'true');
     searchInput.value = '';
     renderPairDropdown();
+    // Fuera del contenedor que lo recortaba: el panel de pares es alto y dentro de una tarjeta o
+    // de un formulario con desplazamiento se cortaba por abajo.
+    openPortalPanel(btn, panel, { minWidth: 240 });
     setTimeout(() => searchInput.focus(), 0);
   }
 
   function onDocClick(e) {
     if (!open) return;
-    if (wrap.contains(e.target)) return;
+    // El panel cuelga del <body> mientras está abierto, así que ya no está dentro de `wrap`:
+    // sin mirarlo aparte, buscar o elegir un par cerraría el desplegable.
+    if (wrap.contains(e.target) || panel.contains(e.target)) return;
     closePanel();
   }
 
@@ -12087,6 +12140,7 @@ function initBacktestingAssetCombobox() {
   function closePanel() {
     open = false;
     panel.classList.remove('is-open');
+    closePortalPanel(panel);
     btn.setAttribute('aria-expanded', 'false');
     searchInput.value = '';
   }
@@ -12097,12 +12151,17 @@ function initBacktestingAssetCombobox() {
     btn.setAttribute('aria-expanded', 'true');
     searchInput.value = '';
     renderPairDropdown();
+    // Fuera del contenedor que lo recortaba: el panel de pares es alto y dentro de una tarjeta o
+    // de un formulario con desplazamiento se cortaba por abajo.
+    openPortalPanel(btn, panel, { minWidth: 240 });
     setTimeout(() => searchInput.focus(), 0);
   }
 
   function onDocClick(e) {
     if (!open) return;
-    if (wrap.contains(e.target)) return;
+    // El panel cuelga del <body> mientras está abierto, así que ya no está dentro de `wrap`:
+    // sin mirarlo aparte, buscar o elegir un par cerraría el desplegable.
+    if (wrap.contains(e.target) || panel.contains(e.target)) return;
     closePanel();
   }
 
@@ -18931,7 +18990,9 @@ function openBacktestingSessionModal(sessionId) {
     if (st) st.value = 'in_progress';
     btSessionSelectedPairs = [];
     syncBtSessionPairMultiSelectUI();
-    document.getElementById('btSessionPairMultiSelect')?.classList.remove('open');
+    // Por la función, no quitando la clase a mano: el panel cuelga del <body> mientras está
+    // abierto y hay que devolverlo a su sitio además de esconderlo.
+    setBtSessionPairDropdownOpen(false);
     applyBacktestingSessionQuickRange('1m');
   }
   // Estrategia/Estado usan el mismo desplegable "custom-select" que el resto de la app (antes
@@ -22132,12 +22193,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 document.addEventListener('click', (event) => {
   if (!(event.target instanceof Element)) return;
-  if (!event.target.closest('.dashboard-multiselect')) {
-    document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
-      el.classList.remove('open');
-    });
+  // El panel abierto cuelga del <body>, así que ya no está dentro de .dashboard-multiselect:
+  // hay que mirarlo aparte o marcar una casilla de la lista cerraría el desplegable.
+  if (!event.target.closest('.dashboard-multiselect') && !event.target.closest('.dashboard-multiselect-menu')) {
+    closeAllDashboardMultiselects();
   }
-  if (!event.target.closest('.custom-select')) {
+  if (!event.target.closest('.custom-select') && !event.target.closest('.select-options')) {
     closeAllCustomSelects();
   }
   // El popup abierto cuelga del <body>, así que ya no está dentro de .custom-datepicker:
@@ -22173,9 +22234,7 @@ document.addEventListener('keydown', (event) => {
     closeTradeTimepickers();
     assetComboboxState?.closePanel?.();
     backtestingAssetComboboxState?.closePanel?.();
-    document.querySelectorAll('.dashboard-multiselect.open').forEach((el) => {
-      el.classList.remove('open');
-    });
+    closeAllDashboardMultiselects();
   }
 });
 

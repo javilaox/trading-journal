@@ -4303,6 +4303,24 @@
       .custom-select.open .select-options {
         display: block;
       }
+      /* Mientras está abierto, el panel cuelga del <body> (ver services/popupPortal.js): ya no
+         desciende de .custom-select.open, así que la regla de arriba deja de aplicarle y hay que
+         devolverle el display aquí. El z-index va por encima de los modales (9999) para que un
+         selector dentro de un modal siga viéndose. */
+      .select-options.is-portaled,
+      .dashboard-multiselect-menu.is-portaled,
+      .multi-select-dropdown.is-portaled {
+        display: block;
+        position: fixed;
+        z-index: 10050;
+      }
+      /* Este va en flex, no en block: lleva buscador arriba y lista debajo, y con `block` la
+         lista deja de repartirse el alto y se sale del panel. */
+      .asset-dropdown-panel.is-portaled {
+        display: flex;
+        position: fixed;
+        z-index: 10050;
+      }
       .select-option {
         padding: 10px 12px;
         transition: background 0.2s;

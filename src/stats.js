@@ -52,6 +52,7 @@ const {
 } = require('./services/tradeBreakdownStats');
 const { buildStatsReport } = require('./services/exportReports');
 const { renderDailyStopCard } = require('./services/dailyStopCard');
+const { openPortalPanel, closePortalPanel } = require('./services/popupPortal');
 const {
   openTradeListModal,
   timeLabel: tradeListTimeLabel,
@@ -458,12 +459,24 @@ function closeAllCustomSelects(exceptElement = null) {
   document.querySelectorAll('.custom-select.open').forEach((select) => {
     if (!exceptElement || select !== exceptElement) {
       select.classList.remove('open');
+      // El panel está colgado del <body> mientras está abierto: hay que devolverlo a su sitio,
+      // porque quitar la clase `open` ya no basta para esconderlo.
+      closePortalPanel(select.__optionsPanel || select.querySelector('.select-options'));
     }
   });
 }
 
 function refreshCustomSelectForNative(nativeSelect) {
   if (!nativeSelect || nativeSelect.tagName !== 'SELECT') return;
+
+  // Si este selector se está redibujando con su lista abierta, primero se devuelve el panel a su
+  // sitio: mientras está abierto cuelga del <body>, y rehacer el selector sin cerrarlo dejaría el
+  // panel viejo suelto en el body para siempre.
+  const previo = nativeSelect.nextElementSibling;
+  if (previo?.classList?.contains('custom-select')) {
+    previo.classList.remove('open');
+    closePortalPanel(previo.__optionsPanel);
+  }
 
   let custom = nativeSelect.nextElementSibling;
   if (!custom || !custom.classList.contains('custom-select')) {
@@ -537,11 +550,17 @@ function refreshCustomSelectForNative(nativeSelect) {
     optionsContainer.appendChild(optionElement);
   });
 
+  // Mientras está abierto, el panel cuelga del <body> (ver popupPortal): se guarda la
+  // referencia porque buscarlo desde el contenedor ya no lo encuentra.
+  custom.__optionsPanel = optionsContainer;
+
   selected.onclick = (event) => {
     event.stopPropagation();
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects(custom);
     custom.classList.toggle('open', willOpen);
+    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160 });
+    else closePortalPanel(optionsContainer);
   };
 }
 
