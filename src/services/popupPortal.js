@@ -26,9 +26,29 @@ const SEPARACION = 6;
 /** Estado de los paneles abiertos: dónde vivía cada uno, para devolverlo a su sitio al cerrar. */
 const abiertos = new Map();
 
+/**
+ * ¿Sigue viéndose el campo al que está pegado el panel?
+ *
+ * Con un margen de cortesía: mientras asome un poco, el panel se queda; en cuanto el campo se ha
+ * ido de la pantalla, mantenerlo abierto solo deja una lista flotando en mitad de la nada, sin
+ * nada a lo que pertenecer.
+ */
+function triggerVisible(rect) {
+  const asomaAlgo = 8;
+  return rect.bottom > asomaAlgo && rect.top < window.innerHeight - asomaAlgo;
+}
+
 function colocar(trigger, panel, options) {
   if (!trigger?.isConnected || !panel) return;
   const rect = trigger.getBoundingClientRect();
+
+  // El campo ya no se ve: se avisa a quien abrió para que cierre como cierra siempre (quitando su
+  // clase, devolviendo el panel a su sitio...). Cerrar desde aquí dejaría el desplegable «abierto»
+  // para el resto de la aplicación.
+  if (!triggerVisible(rect)) {
+    options.onDismiss?.();
+    return;
+  }
 
   const ancho = options.matchTriggerWidth
     ? Math.max(Number(options.minWidth) || 0, Math.round(rect.width))
@@ -61,6 +81,8 @@ function colocar(trigger, panel, options) {
  * @param {boolean} [options.matchTriggerWidth=true] el panel toma el ancho del campo
  * @param {number} [options.minWidth=0]
  * @param {number} [options.maxHeight] tope de alto; si no, se respeta el del CSS
+ * @param {Function} [options.onDismiss] se llama cuando el campo se sale de la pantalla al
+ *   desplazar, para que quien lo abrió lo cierre por su camino habitual
  */
 function openPortalPanel(trigger, panel, options = {}) {
   if (!trigger || !panel) return;

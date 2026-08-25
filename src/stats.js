@@ -559,7 +559,7 @@ function refreshCustomSelectForNative(nativeSelect) {
     const willOpen = !custom.classList.contains('open');
     closeAllCustomSelects(custom);
     custom.classList.toggle('open', willOpen);
-    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160 });
+    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160, onDismiss: () => closeAllCustomSelects() });
     else closePortalPanel(optionsContainer);
   };
 }

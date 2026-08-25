@@ -4386,7 +4386,7 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
     const willOpen = !container.classList.contains('open');
     closeAllDashboardMultiselects();
     container.classList.toggle('open', willOpen);
-    if (willOpen) openPortalPanel(trigger, menu, { minWidth: 220 });
+    if (willOpen) openPortalPanel(trigger, menu, { minWidth: 220, onDismiss: closeAllDashboardMultiselects });
   });
 
   menu?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -6172,7 +6172,7 @@ function refreshCustomSelectForNative(nativeSelect) {
     // Fuera del contenedor que lo recortaba: dentro de una tarjeta, de una zona con
     // desplazamiento o de un modal, la lista se cortaba por el borde en cuanto había unas
     // cuantas opciones.
-    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160 });
+    if (willOpen) openPortalPanel(selected, optionsContainer, { minWidth: 160, onDismiss: () => closeAllCustomSelects() });
     else closePortalPanel(optionsContainer);
   };
 }
@@ -11761,7 +11761,12 @@ function setBtSessionPairDropdownOpen(open) {
   const wrapper = document.getElementById('btSessionPairInputWrapper');
   if (!dropdown) return;
   root.__dropdownPanel = dropdown;
-  if (open && wrapper) openPortalPanel(wrapper, dropdown, { minWidth: 240 });
+  if (open && wrapper) {
+    openPortalPanel(wrapper, dropdown, {
+      minWidth: 240,
+      onDismiss: () => setBtSessionPairDropdownOpen(false),
+    });
+  }
   else closePortalPanel(dropdown);
 }
 
@@ -12004,7 +12009,7 @@ function initAssetCombobox() {
     renderPairDropdown();
     // Fuera del contenedor que lo recortaba: el panel de pares es alto y dentro de una tarjeta o
     // de un formulario con desplazamiento se cortaba por abajo.
-    openPortalPanel(btn, panel, { minWidth: 240 });
+    openPortalPanel(btn, panel, { minWidth: 240, onDismiss: () => closePanel() });
     setTimeout(() => searchInput.focus(), 0);
   }
 
@@ -12179,7 +12184,7 @@ function initBacktestingAssetCombobox() {
     renderPairDropdown();
     // Fuera del contenedor que lo recortaba: el panel de pares es alto y dentro de una tarjeta o
     // de un formulario con desplazamiento se cortaba por abajo.
-    openPortalPanel(btn, panel, { minWidth: 240 });
+    openPortalPanel(btn, panel, { minWidth: 240, onDismiss: () => closePanel() });
     setTimeout(() => searchInput.focus(), 0);
   }
 
