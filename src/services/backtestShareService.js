@@ -67,6 +67,10 @@ function sanitizeTradeForShare(trade = {}) {
     strategy: trade.strategy || '',
     direction: trade.direction || '',
     result: trade.result || '',
+    // Hace falta para el análisis de BE del informe: sin saber si después habría ido a TP o a SL,
+    // no se puede decir si mover a break even protegió o limitó. Los enlaces creados antes de
+    // esto no lo traen, y el visor lo contempla escondiendo ese bloque.
+    be_after_result: trade.be_after_result || '',
     pnl: Number(trade.pnl || 0),
     rr_planned: Number(trade.rr_planned || 0),
     rr_result: Number(trade.rr_result || 0),
@@ -122,11 +126,16 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
 
   const url = buildShareUrl(viewerBaseUrl, token);
 
-  // Las capturas se copian al bucket público del informe. Si falla, el enlace sigue siendo
-  // válido: simplemente se verá sin imágenes.
-  const images = await syncShareReportImages(token, list).catch((err) => {
+  // Las capturas se copian al bucket público del informe, pero SIN hacer esperar al enlace.
+  //
+  // Se copian de una en una, y cada una es una descarga y una subida: con unas cuantas decenas
+  // de operaciones eso son minutos. Esperando aquí, la ventana se quedaba en «Generando
+  // enlace...» todo ese rato aunque el informe ya estuviera creado, y parecía que no funcionaba.
+  //
+  // El enlace es válido desde el primer momento; como es «en vivo», lo que falte por copiar se
+  // sube solo la próxima vez que se entre en Backtesting (syncAllLiveShareImages).
+  syncShareReportImages(token, list).catch((err) => {
     console.warn('⚠️ no se pudieron copiar las imágenes del informe:', err?.message || err);
-    return { copied: 0 };
   });
 
   return {
@@ -135,7 +144,9 @@ async function createBacktestShareLink({ title, trades, sessions, metrics, capit
       token,
       url,
       password,
-      images: images.copied,
+      // null = «copiándose por su cuenta», que no es lo mismo que 0 («ninguna que copiar»).
+      images: null,
+      pendingImages: list.some((t) => t?.image_before || t?.image_after),
       live: live !== false,
       maxDevices: Number(maxDevices) || 3,
       trades: list.length,

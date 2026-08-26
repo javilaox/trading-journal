@@ -16713,17 +16713,29 @@ async function generateBacktestShareLink() {
       return;
     }
 
-    document.getElementById('btShareUrl').value = result.data.url;
-    document.getElementById('btSharePassword').value = result.data.password;
-    document.getElementById('btShareResult').hidden = false;
+    setValueIfExists('btShareUrl', result.data.url || '');
+    setValueIfExists('btSharePassword', result.data.password || '');
+    const caja = document.getElementById('btShareResult');
+    if (caja) caja.hidden = false;
     if (msg) {
       const gotUrl = Boolean(result.data.url);
+      const capturas = result.data.pendingImages
+        ? ' Las capturas se están copiando por su cuenta; si aún no se ven, entra en Backtesting y se terminan de subir.'
+        : '';
       msg.textContent = gotUrl
-        ? `Enlace listo${result.data.images ? ` (${result.data.images} capturas incluidas)` : ''}. Envía el enlace y la contraseña por separado.`
+        ? `Enlace listo. Envía el enlace y la contraseña por separado.${capturas}`
         : 'Informe creado, pero esta versión no tiene configurada la página del visor.';
       msg.className = gotUrl ? 'form-hint success' : 'form-hint error';
     }
     void refreshBacktestShareList();
+  } catch (error) {
+    // Sin esto, cualquier fallo dejaba el mensaje en «Generando enlace...» para siempre y no
+    // había forma de saber si había pasado algo.
+    console.error('❌ generateBacktestShareLink:', error);
+    if (msg) {
+      msg.textContent = `No se pudo generar el enlace: ${error?.message || error}`;
+      msg.className = 'form-hint error';
+    }
   } finally {
     btn.disabled = false;
   }

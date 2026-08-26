@@ -227,6 +227,27 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       <tbody></tbody></table></div>
   </section>
 
+  <section class="card" id="beCard" style="display:none">
+    <h2>Break even</h2>
+    <p class="muted small">Si mover una operación a break even protegió capital o limitó beneficios.</p>
+    <div class="kpis" id="beKpis"></div>
+  </section>
+
+  <section class="card" id="dailyStopCard" style="display:none">
+    <h2>Parar el día tras varios SL</h2>
+    <p class="muted small">Recorta cada día en el punto donde se habría parado y lo compara con lo que pasó de verdad.</p>
+    <p id="dailyStopSummary"></p>
+    <p class="muted small" id="dailyStopContext"></p>
+    <div class="table-scroll"><table id="dailyStopTable">
+      <thead><tr>
+        <th class="no-sort">Si se para tras</th><th class="num no-sort">PnL del periodo</th>
+        <th class="num no-sort">Diferencia</th><th class="num no-sort">Días en que se habría parado</th>
+        <th class="no-sort">Conclusión</th>
+      </tr></thead>
+      <tbody></tbody></table></div>
+    <p class="muted small">Es un repaso de lo que ya pasó: supone que las operaciones posteriores habrían ocurrido igual. Cuantos menos días afectados, menos fiable es la conclusión.</p>
+  </section>
+
   <section class="card">
     <h2>Operaciones</h2>
     <div class="filters">
@@ -579,6 +600,8 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     renderPairs(TRADES);
     renderHours(TRADES);
     renderMetrics(TRADES, p.metrics || []);
+    renderBe(TRADES);
+    renderDailyStop(TRADES);
     renderChallenge(p);
     renderTrades();
 
@@ -679,6 +702,13 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     });
   }
 
+  /* Una caja de cifra, con el mismo marcado que el Resumen: las tarjetas nuevas se ven igual que
+     las de arriba sin repetir el HTML en cada sitio. */
+  function kpi(etiqueta, valor, clase) {
+    return '<div class="kpi"><span>' + esc(etiqueta) + '</span><strong class="' + (clase || '') +
+      '">' + esc(valor) + '</strong></div>';
+  }
+
   function renderKpis(list, p) {
     var s = summarize(list);
     // Rachas en orden cronologico; los BE no cortan (misma funcion que usa la aplicacion).
@@ -698,7 +728,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       items.push(['Rentabilidad', ((s.pnl / p.capital) * 100).toFixed(2) + '%', tone(s.pnl)]);
     }
     document.getElementById('kpis').innerHTML = items.map(function (i) {
-      return '<div class="kpi"><span>' + esc(i[0]) + '</span><strong class="' + i[2] + '">' + esc(i[1]) + '</strong></div>';
+      return kpi(i[0], i[1], i[2]);
     }).join('');
   }
 
@@ -818,6 +848,122 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
         cell(b) + '</td><td>' + verdict + '</td></tr>';
     });
     document.querySelector('#metricsTable tbody').innerHTML = rows.join('');
+  }
+
+  // Mismas reglas que en la aplicación (services/dailyStopAnalysis.js): orden real dentro del
+  // día, la operación que hace saltar el stop cuenta, y el tope de filas es el mayor número de SL
+  // que se han juntado en un día.
+  function renderDailyStop(list) {
+    var card = document.getElementById('dailyStopCard');
+    var porDia = {};
+    list.forEach(function (t) {
+      var d = String(t.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      (porDia[d] = porDia[d] || []).push(t);
+    });
+    var dias = Object.keys(porDia).sort().map(function (d) {
+      return porDia[d].slice().sort(function (a, b) {
+        var ha = hhmm(a.entry_time), hb = hhmm(b.entry_time);
+        if (ha !== hb) return ha < hb ? -1 : 1;
+        return (Number(a.id) || 0) - (Number(b.id) || 0);
+      });
+    });
+    if (!dias.length) { card.style.display = 'none'; return; }
+
+    var real = 0, maxSl = 0;
+    dias.forEach(function (ops) {
+      ops.forEach(function (t) { real += Number(t.pnl) || 0; });
+      var sl = ops.filter(esSL).length;
+      if (sl > maxSl) maxSl = sl;
+    });
+    if (!maxSl) { card.style.display = 'none'; return; }
+
+    var filas = [], mejor = null;
+    for (var n = 1; n <= Math.min(maxSl, 10); n++) {
+      var pnl = 0, diasParados = 0, evitadas = 0, desglose = { SL: 0, TP: 0, BE: 0 };
+      dias.forEach(function (ops) {
+        var corte = -1, cuenta = 0;
+        for (var i = 0; i < ops.length; i++) {
+          if (esSL(ops[i])) { cuenta++; if (cuenta >= n) { corte = i + 1; break; } }
+        }
+        var operadas = corte === -1 ? ops : ops.slice(0, corte);
+        var fuera = corte === -1 ? [] : ops.slice(corte);
+        if (fuera.length) diasParados++;
+        evitadas += fuera.length;
+        operadas.forEach(function (t) { pnl += Number(t.pnl) || 0; });
+        fuera.forEach(function (t) {
+          var r = String(t.result || '').toUpperCase();
+          if (desglose[r] !== undefined) desglose[r]++;
+        });
+      });
+      var dif = pnl - real;
+      if (dif > 0 && (!mejor || dif > mejor.dif)) mejor = { n: n, dif: dif };
+      filas.push({ n: n, pnl: pnl, dif: dif, dias: diasParados, evitadas: evitadas, desglose: desglose });
+    }
+
+    document.getElementById('dailyStopSummary').innerHTML = mejor
+      ? 'Parar tras <strong>' + mejor.n + ' SL</strong> habría dejado <strong class="pos">' + money(mejor.dif) + '</strong> más.'
+      : 'Ningún umbral habría mejorado el resultado: seguir operando salió a cuenta.';
+    document.getElementById('dailyStopContext').textContent =
+      dias.length + (dias.length === 1 ? ' día con operaciones' : ' días con operaciones') +
+      ' · máximo de ' + maxSl + ' SL en un mismo día';
+
+    document.querySelector('#dailyStopTable tbody').innerHTML = filas.map(function (f) {
+      var partes = [];
+      ['SL', 'TP', 'BE'].forEach(function (k) { if (f.desglose[k]) partes.push(f.desglose[k] + ' ' + k); });
+      var pocos = f.dias > 0 && f.dias < 5;
+      var veredicto = Math.abs(f.dif) < 0.005
+        ? '<span class="muted">No habría cambiado nada</span>'
+        : (f.dif > 0 ? '<span class="pos">Mejor parar' : '<span class="neg">Mejor seguir') +
+          (pocos ? ' · pocos días aún' : '') + '</span>';
+      return '<tr><td>' + f.n + ' SL' + (mejor && mejor.n === f.n ? ' <span class="pos small">(mejor)</span>' : '') +
+        '</td><td class="num"><strong class="' + tone(f.pnl) + '">' + money(f.pnl) + '</strong></td>' +
+        '<td class="num"><strong class="' + tone(f.dif) + '">' + money(f.dif) + '</strong></td>' +
+        '<td class="num">' + f.dias + '<br><span class="muted small">' + f.evitadas +
+        (f.evitadas === 1 ? ' operación evitada' : ' operaciones evitadas') +
+        (partes.length ? ' · ' + partes.join(' · ') : '') + '</span></td>' +
+        '<td>' + veredicto + '</td></tr>';
+    }).join('');
+    card.style.display = '';
+  }
+
+  function esSL(t) { return String(t.result || '').toUpperCase() === 'SL'; }
+
+  function hhmm(v) {
+    var m = /^(\d{1,2}):(\d{2})/.exec(String(v == null ? '' : v).trim());
+    return m ? (m[1].length === 1 ? '0' + m[1] : m[1]) + ':' + m[2] : '99:99';
+  }
+
+  // Análisis de BE. Los enlaces generados antes de que el informe incluyera «qué pasó después
+  // del BE» no traen ese dato: en ese caso la tarjeta no se enseña, en vez de dar por hecho que
+  // ninguna se resolvió y presentar ceros como si fueran un resultado.
+  function renderBe(list) {
+    var card = document.getElementById('beCard');
+    var be = list.filter(function (t) { return String(t.result || '').toUpperCase() === 'BE'; });
+    var tieneCampo = list.some(function (t) { return t.be_after_result !== undefined; });
+    if (!be.length || !tieneCampo) { card.style.display = 'none'; return; }
+
+    var despues = function (t) { return String(t.be_after_result || '').toUpperCase(); };
+    var tp = be.filter(function (t) { return despues(t) === 'TP'; }).length;
+    var sl = be.filter(function (t) { return despues(t) === 'SL'; }).length;
+    var sinResolver = be.length - tp - sl;
+    var resueltas = tp + sl;
+    var hipotetico = be.reduce(function (acc, t) {
+      var mov = Math.abs(Number(t.pnl) || 0);
+      if (despues(t) === 'TP') return acc + mov;
+      if (despues(t) === 'SL') return acc - mov;
+      return acc;
+    }, 0);
+
+    document.getElementById('beKpis').innerHTML = [
+      kpi('Operaciones en BE', String(be.length), ''),
+      kpi('BE → TP', String(tp), 'neg'),
+      kpi('BE → SL', String(sl), 'pos'),
+      kpi('BE útil', resueltas ? (sl / resueltas * 100).toFixed(1) + '%' : '—', 'pos'),
+      kpi('Sin resolver', String(sinResolver), ''),
+      kpi('PnL hipotético sin BE', money(hipotetico), tone(hipotetico)),
+    ].join('');
+    card.style.display = '';
   }
 
   function filtered() {
