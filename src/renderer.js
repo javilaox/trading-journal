@@ -3144,7 +3144,11 @@ const {
 } = require('./services/accountFromExpense');
 const { buildEquityCurve } = require('./services/backtestEquityCurve');
 const { renderDailyStopCard } = require('./services/dailyStopCard');
-const { openPortalPanel, closePortalPanel } = require('./services/popupPortal');
+const {
+  openPortalPanel,
+  closePortalPanel,
+  closeAllPortalPanels,
+} = require('./services/popupPortal');
 const {
   openTradeListModal,
   timeLabel: tradeListTimeLabel,
@@ -4352,6 +4356,13 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
         .map((opt) => escapeHtmlChipText(opt.label))
         .join(', ');
 
+  // Antes de rehacer el contenido: si este desplegable estaba abierto, su panel vive colgado del
+  // <body>. Reescribir el interior crearía uno nuevo dentro y dejaría el viejo suelto ahí fuera,
+  // visible y sin nadie que pueda cerrarlo, que es justo lo que pasaba al marcar una casilla
+  // (marcar vuelve a dibujar los filtros).
+  const estabaAbierto = container.classList.contains('open');
+  closePortalPanel(container.__menuPanel);
+
   container.innerHTML = `
     <button type="button" class="dashboard-multiselect-trigger">
       <span>${selectedLabels || escapeHtmlChipText(allLabel)}</span>
@@ -4380,6 +4391,12 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
   // Igual que en el selector propio: el panel se guarda aparte porque mientras está abierto
   // cuelga del <body>.
   container.__menuPanel = menu;
+
+  // Y si estaba abierto, se vuelve a abrir con el panel nuevo: marcar una casilla no debe cerrar
+  // la lista, porque lo normal es marcar varias seguidas.
+  if (estabaAbierto && trigger && menu) {
+    openPortalPanel(trigger, menu, { minWidth: 220, onDismiss: closeAllDashboardMultiselects });
+  }
 
   trigger?.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -6191,6 +6208,9 @@ function refreshBacktestingCustomSelect(select) {
   while (next?.classList?.contains('custom-select')) {
     const rm = next;
     next = next.nextElementSibling;
+    // Antes de quitarlo: si tenía la lista abierta, esa lista vive colgada del <body> y borrar
+    // su dueño la dejaría suelta ahí para siempre.
+    closePortalPanel(rm.__optionsPanel);
     rm.remove();
   }
 
@@ -10982,6 +11002,10 @@ function showView(viewId) {
   if (previousView === 'stats' && currentView !== 'stats') {
     unmountStatsView();
   }
+
+  // Al cambiar de pantalla no queda ningún desplegable a cuento, y su campo puede desaparecer
+  // con el cambio: si eso pasara con el panel abierto, se quedaría colgado del body sin dueño.
+  closeAllPortalPanels();
 
   normalizeSidebarStructure(currentView);
   setSidebarActiveView(currentView);

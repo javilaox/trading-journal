@@ -39,7 +39,18 @@ function triggerVisible(rect) {
 }
 
 function colocar(trigger, panel, options) {
-  if (!trigger?.isConnected || !panel) return;
+  if (!panel) return;
+
+  // El campo ya no existe en la página. Pasa cuando quien lo dibujó se rehace entero -por
+  // ejemplo, un filtro que se vuelve a pintar al cambiar su selección-: el panel se quedaría
+  // colgado del body para siempre, visible y sin dueño, y ningún camino de cierre podría
+  // alcanzarlo porque el elemento al que pertenecía ya no está.
+  if (!trigger?.isConnected) {
+    options.onDismiss?.();
+    closePortalPanel(panel);
+    return;
+  }
+
   const rect = trigger.getBoundingClientRect();
 
   // El campo ya no se ve: se avisa a quien abrió para que cierre como cierra siempre (quitando su
@@ -122,7 +133,25 @@ function closePortalPanel(panel) {
     window.removeEventListener('scroll', estado.seguir, true);
     window.removeEventListener('resize', estado.seguir);
   }
-  if (estado.parent) estado.parent.insertBefore(panel, estado.next);
+
+  // Devolverlo a su hueco exacto, y si ese hueco ya no existe, quitarlo de en medio.
+  //
+  // El sitio del que salió puede haber cambiado mientras estaba fuera: su contenedor se rehace,
+  // o el vecino junto al que estaba desaparece. Un insertBefore con un vecino que ya no es hijo
+  // de ese padre lanza una excepción, y entonces no se llegaba a limpiar nada: el panel se
+  // quedaba colgado del <body>, a la vista y sin dueño, que es exactamente el desplegable que se
+  // queda abierto para siempre.
+  const { parent, next } = estado;
+  try {
+    if (parent?.isConnected) {
+      if (next && next.parentNode === parent) parent.insertBefore(panel, next);
+      else parent.appendChild(panel);
+    } else {
+      panel.remove();
+    }
+  } catch (_err) {
+    panel.remove();
+  }
 
   panel.classList.remove('is-portaled');
   panel.style.position = '';
@@ -133,9 +162,20 @@ function closePortalPanel(panel) {
   abiertos.delete(panel);
 }
 
+/**
+ * Cierra todos los paneles abiertos.
+ *
+ * Red de seguridad para los cambios grandes de pantalla (cambiar de vista, abrir un modal): ahí
+ * el panel abierto ya no viene a cuento, y si quien lo abrió desaparece con el cambio, nadie
+ * volvería a poder cerrarlo.
+ */
+function closeAllPortalPanels() {
+  [...abiertos.keys()].forEach((panel) => closePortalPanel(panel));
+}
+
 /** ¿Está este panel colgado del body ahora mismo? */
 function isPortaled(panel) {
   return Boolean(panel && abiertos.has(panel));
 }
 
-module.exports = { openPortalPanel, closePortalPanel, isPortaled };
+module.exports = { openPortalPanel, closePortalPanel, closeAllPortalPanels, isPortaled };
