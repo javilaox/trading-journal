@@ -5698,13 +5698,10 @@
       #backtestingView .bt-section + #btScheduleStatsSection {
         margin-top: clamp(26px, 3vw, 36px);
       }
-      /* Las secciones de la pestaña Estadísticas van cada una dentro de su .bt-tab-panel, así que
-         NO son hermanas entre sí y la regla de arriba nunca les llegaba a aplicar: se quedaban con
-         la separación base y se veían pegadas unas a otras. La separación se pide entre paneles
-         consecutivos, que sí son hermanos. */
-      #backtestingView .bt-tab-panel + .bt-tab-panel > .bt-section {
-        margin-top: clamp(26px, 3vw, 36px);
-      }
+      /* Los paneles de las pestañas son hijos directos del contenedor de la vista, que es una
+         columna flexible con su propia separación: la distancia entre secciones la pone ese `gap`
+         y no hace falta ningún margen aquí. Añadirlo sumaría a la separación y quedaría el doble
+         de aire entre unas tarjetas y otras. */
       #backtestingView .dashboard-container .section.card > .bt-section:first-of-type {
         margin-top: 0;
       }
@@ -9612,6 +9609,7 @@
                 </div>
               </section>
             </div>
+            </div>
 
             <!-- Curva de capital: va justo despues de los KPIs porque es la lectura rapida de
                  "como ha ido esto", antes de entrar en analisis por horario o por metricas. -->
@@ -9639,7 +9637,7 @@
             </div>
             </div>
 
-            <section id="btScheduleStatsSection" class="schedule-discipline-card card bt-section pro-section">
+            <section id="btScheduleStatsSection" class="bt-tab-panel bt-tab-panel-stats schedule-discipline-card card bt-section pro-section">
               <h2 class="section-title title-with-icon schedule-discipline-title">
                 <i data-lucide="clock"></i>
                 <span data-i18n="schedule_discipline_title">Disciplina por horario</span>
@@ -9720,7 +9718,6 @@
               </div>
               <div id="btHourConcentration" class="hour-concentration" hidden></div>
             </section>
-            </div>
 
             <div class="bt-tab-panel bt-tab-panel-trades" id="btTradesPanel">
             <div class="bt-section pro-section">
