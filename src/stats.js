@@ -545,7 +545,11 @@ function refreshCustomSelectForNative(nativeSelect) {
       custom.dataset.value = option.value;
       optionsContainer.querySelectorAll('.select-option').forEach((node) => node.classList.remove('active'));
       optionElement.classList.add('active');
+      // Cerrar es quitar la clase Y devolver el panel a su sitio: mientras está abierto cuelga
+      // del <body> y su regla de CSS lo mantiene visible por sí sola, así que quitando solo la
+      // clase la lista se quedaba abierta después de elegir.
       custom.classList.remove('open');
+      closePortalPanel(optionsContainer);
     });
     optionsContainer.appendChild(optionElement);
   });

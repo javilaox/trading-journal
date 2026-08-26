@@ -97,16 +97,20 @@ function openPortalPanel(trigger, panel, options = {}) {
   panel.style.position = 'fixed';
   if (Number.isFinite(opts.maxHeight)) panel.style.maxHeight = `${opts.maxHeight}px`;
 
-  colocar(trigger, panel, opts);
-
-  // Al desplazar o redimensionar, el campo se mueve y el panel se quedaría flotando donde ya no
-  // hay nada. `capture` para enterarse también del desplazamiento de contenedores interiores,
-  // que no burbujea.
+  // El orden importa: primero se deja el estado y los escuchadores montados, y solo después se
+  // coloca. Colocar puede acabar avisando de que el campo no se ve, y ese aviso cierra el panel,
+  // lo que borra el estado; si se leyera el estado después, ya no existiría y esto reventaría.
+  // Pasaba de verdad al abrir un desplegable con su campo fuera de la pantalla.
+  //
+  // `capture` para enterarse también del desplazamiento de contenedores interiores, que no
+  // burbujea.
   const seguir = () => colocar(trigger, panel, opts);
   const estado = abiertos.get(panel);
-  estado.seguir = seguir;
+  if (estado) estado.seguir = seguir;
   window.addEventListener('scroll', seguir, true);
   window.addEventListener('resize', seguir);
+
+  colocar(trigger, panel, opts);
 }
 
 /** Cierra el panel y lo devuelve exactamente al sitio del que salió. */
