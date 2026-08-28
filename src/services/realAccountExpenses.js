@@ -7,6 +7,34 @@
  * de "account_size" (10K/25K/50K/100K/150K).
  */
 
+/**
+ * Tipos de gasto. El tipo decide qué se pregunta al registrarlo: solo los de prop necesitan la
+ * prop y el tamaño de cuenta; una formación no tiene ni una cosa ni la otra, y pedirlas invita a
+ * inventarse un dato para poder guardar.
+ *
+ * Lista cerrada a propósito. Para etiquetar con más detalle ya está la categoría, que sí es
+ * libre; el tipo solo existe para saber qué campos tienen sentido.
+ */
+const EXPENSE_KINDS = ['prop', 'formacion', 'herramientas', 'otros'];
+
+/** Los de prop son los únicos que llevan prop y tamaño de cuenta. */
+function expenseKindNeedsProp(kind) {
+  return normalizeExpenseKind(kind) === 'prop';
+}
+
+/**
+ * Un tipo válido, siempre.
+ *
+ * Lo que no se reconozca -y, sobre todo, lo que venga vacío- se lee como «prop». No es un
+ * capricho: los gastos guardados antes de que esto existiera no tienen tipo, y todos son de prop,
+ * porque el formulario no permitía otra cosa. Leerlos así deja sus cifras y su prop exactamente
+ * igual que estaban.
+ */
+function normalizeExpenseKind(kind) {
+  const v = String(kind ?? '').trim().toLowerCase();
+  return EXPENSE_KINDS.includes(v) ? v : 'prop';
+}
+
 function isExpenseRowHidden(row) {
   if (!row) return true;
   const deletedAt = row.deleted_at;
@@ -18,14 +46,22 @@ function isExpenseRowHidden(row) {
 function normalizeExpenseInput(raw = {}, userId) {
   const amount = Number(raw.amount);
   const date = String(raw.date || '').trim().slice(0, 10);
-  const accountName = String(raw.account_name || raw.accountName || '').trim();
-  const accountSize = raw.account_size != null ? String(raw.account_size).trim() : '';
+  const kind = normalizeExpenseKind(raw.expense_kind ?? raw.expenseKind);
+  // Fuera de los gastos de prop no hay prop ni tamaño que valgan: se descartan en vez de
+  // guardarse a medias, para que un gasto de formación no acabe contando en el balance de una
+  // prop por un valor que quedó ahí de un cambio de tipo.
+  const accountName = expenseKindNeedsProp(kind)
+    ? String(raw.account_name || raw.accountName || '').trim()
+    : '';
+  const accountSize =
+    expenseKindNeedsProp(kind) && raw.account_size != null ? String(raw.account_size).trim() : '';
   const category = raw.category != null ? String(raw.category).trim() : '';
   const note = raw.note != null ? String(raw.note).trim() : '';
   const clientUuid = raw.client_uuid ? String(raw.client_uuid).trim() : '';
 
   if (!userId) return { error: 'NO_USER_ID' };
-  if (!accountName) return { error: 'MISSING_ACCOUNT' };
+  // La prop solo es obligatoria en los gastos de prop.
+  if (expenseKindNeedsProp(kind) && !accountName) return { error: 'MISSING_ACCOUNT' };
   if (!date) return { error: 'MISSING_DATE' };
   if (!Number.isFinite(amount) || amount <= 0) return { error: 'INVALID_AMOUNT' };
 
@@ -39,6 +75,7 @@ function normalizeExpenseInput(raw = {}, userId) {
         : null,
     account_name: accountName,
     account_size: accountSize || null,
+    expense_kind: kind,
     amount,
     date,
     category: category || null,
@@ -59,6 +96,9 @@ function mapExpenseRowToResponse(row) {
     account_name: row.account_name || '',
     accountName: row.account_name || '',
     account_size: row.account_size || '',
+    // Sin tipo guardado es un gasto de los de antes, y esos son todos de prop.
+    expense_kind: normalizeExpenseKind(row.expense_kind),
+    expenseKind: normalizeExpenseKind(row.expense_kind),
     amount: Number(row.amount ?? 0) || 0,
     date: row.date || '',
     category: row.category || '',
@@ -93,6 +133,7 @@ function supabaseRowFromPayload(payload) {
     account_client_uuid: payload.account_client_uuid ? String(payload.account_client_uuid) : null,
     account_name: String(payload.account_name || ''),
     account_size: payload.account_size != null ? String(payload.account_size) : null,
+    expense_kind: normalizeExpenseKind(payload.expense_kind),
     amount: Number(payload.amount) || 0,
     date: String(payload.date || '').slice(0, 10),
     category: payload.category != null ? String(payload.category) : null,
@@ -114,8 +155,8 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
 
   const insert = db.prepare(`
     INSERT INTO real_account_expenses
-    (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
+    (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, expense_kind, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL)
   `);
 
   const update = db.prepare(`
@@ -125,6 +166,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
       account_id = COALESCE(?, account_id),
       account_name = ?,
       account_size = ?,
+      expense_kind = ?,
       amount = ?,
       date = ?,
       category = ?,
@@ -165,6 +207,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           r?.account_id ? String(r.account_id) : null,
           String(r?.account_name || ''),
           r?.account_size != null ? String(r.account_size) : null,
+          normalizeExpenseKind(r?.expense_kind),
           Number(r?.amount ?? 0) || 0,
           String(r?.date || '').slice(0, 10),
           r?.category != null ? String(r.category) : null,
@@ -179,6 +222,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           r?.account_id ? String(r.account_id) : null,
           String(r?.account_name || ''),
           r?.account_size != null ? String(r.account_size) : null,
+          normalizeExpenseKind(r?.expense_kind),
           Number(r?.amount ?? 0) || 0,
           String(r?.date || '').slice(0, 10),
           r?.category != null ? String(r.category) : null,
@@ -202,8 +246,12 @@ function calculateExpenseMetrics(expenses = []) {
   const sorted = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const last = sorted[0] || null;
 
+  // Solo los gastos de prop entran en el desglose por prop. Un gasto de formación no tiene prop,
+  // y meterlo con la clave «—» inventaría una prop que no existe en una tabla que se lee como
+  // «cuánto me he gastado en cada firma».
   const byAccount = {};
   for (const e of list) {
+    if (!expenseKindNeedsProp(e.expense_kind ?? e.expenseKind)) continue;
     const key = String(e.account_name || e.accountName || '—');
     if (!byAccount[key]) byAccount[key] = { total: 0, count: 0, last: null };
     byAccount[key].total += Number(e.amount) || 0;
@@ -226,13 +274,25 @@ function calculateExpenseMetrics(expenses = []) {
     byCategory[key] = (byCategory[key] || 0) + (Number(e.amount) || 0);
   }
 
-  return { total, count, average: avg, last, byAccount, byMonth, byCategory };
+  // Por tipo entra TODO, que es justo lo que el desglose por prop no puede contar. Se devuelven
+  // las claves internas ('prop', 'formacion'...) y no los nombres: quien pinta es quien sabe en
+  // qué idioma está la aplicación.
+  const byKind = {};
+  for (const e of list) {
+    const key = normalizeExpenseKind(e.expense_kind ?? e.expenseKind);
+    byKind[key] = (byKind[key] || 0) + (Number(e.amount) || 0);
+  }
+
+  return { total, count, average: avg, last, byAccount, byMonth, byCategory, byKind };
 }
 
 module.exports = {
   isExpenseRowHidden,
   normalizeExpenseInput,
   mapExpenseRowToResponse,
+  EXPENSE_KINDS,
+  normalizeExpenseKind,
+  expenseKindNeedsProp,
   getExpensesFromLocal,
   supabaseRowFromPayload,
   upsertExpensesIntoLocal,

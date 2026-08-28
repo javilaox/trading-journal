@@ -33,6 +33,11 @@ import {
 
 const { mountStatsView, unmountStatsView, applyFilters: applyStatsFilters } = require('./stats.js');
 const { calculateWithdrawalMetrics } = require('./services/realAccountWithdrawals');
+const {
+  EXPENSE_KINDS,
+  normalizeExpenseKind,
+  expenseKindNeedsProp,
+} = require('./services/realAccountExpenses');
 const { calculateExpenseMetrics } = require('./services/realAccountExpenses');
 const {
   getCurrentUserSafe,
@@ -8841,6 +8846,19 @@ function renderExpensesSummary(list) {
 }
 
 function renderExpensesAnalytics(metrics) {
+  const byKindEl = document.getElementById('expenseAnalyticsByKind');
+  if (byKindEl) {
+    const entries = Object.entries(metrics?.byKind || {}).sort((a, b) => b[1] - a[1]);
+    byKindEl.innerHTML = entries.length
+      ? entries
+          .map(
+            ([kind, total]) =>
+              `<li><span>${escapeHtmlChipText(expenseKindLabel(kind))}</span><strong>${formatExpenseEuro(total)}</strong></li>`
+          )
+          .join('')
+      : '<li>—</li>';
+  }
+
   const byAccountEl = document.getElementById('expenseAnalyticsByAccount');
   if (byAccountEl) {
     const entries = Object.entries(metrics?.byAccount || {}).sort((a, b) => b[1].total - a[1].total);
@@ -8890,6 +8908,18 @@ function updateExpensesLayoutState(hasAnyExpenses) {
   if (filterBar) filterBar.hidden = !hasAnyExpenses;
 }
 
+/** Nombre visible de un tipo de gasto. */
+function expenseKindLabel(kind) {
+  const k = normalizeExpenseKind(kind);
+  const etiquetas = {
+    prop: t('expenses_kind_prop', 'Prop firm'),
+    formacion: t('expenses_kind_formacion', 'Formación'),
+    herramientas: t('expenses_kind_herramientas', 'Herramientas y software'),
+    otros: t('expenses_kind_otros', 'Otros'),
+  };
+  return etiquetas[k] || etiquetas.prop;
+}
+
 function renderExpensesTable(list) {
   const tbody = document.getElementById('expensesTableBody');
   if (!tbody) return;
@@ -8906,7 +8936,13 @@ function renderExpensesTable(list) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtmlChipText(formatDateEs(e.date))}</td>
-      <td>${escapeHtmlChipText(e.account_name || e.accountName || '')}</td>
+      <td>${
+        // En un gasto que no es de prop no hay prop que enseñar, y dejar la celda vacía o con un
+        // guion no dice nada: se enseña de qué era el gasto, que es la información que falta.
+        expenseKindNeedsProp(e.expense_kind ?? e.expenseKind)
+          ? escapeHtmlChipText(e.account_name || e.accountName || '—')
+          : `<span class="expense-kind-badge">${escapeHtmlChipText(expenseKindLabel(e.expense_kind ?? e.expenseKind))}</span>`
+      }</td>
       <td>${escapeHtmlChipText(e.account_size || '—')}</td>
       <td>${
         // Cuenta creada a partir de este gasto, si la hubo: es lo que hace visible la relación
@@ -8991,6 +9027,10 @@ function openExpenseModal({ editId = null } = {}) {
     const amountInput = document.getElementById('expenseFormAmount');
     const categoryInput = document.getElementById('expenseFormCategory');
     const noteInput = document.getElementById('expenseFormNote');
+    // Los gastos guardados antes de que existiera el tipo no lo traen y se leen como de prop,
+    // que es lo que son: el formulario no permitía registrar otra cosa.
+    const kindSelect = document.getElementById('expenseFormKind');
+    if (kindSelect) kindSelect.value = normalizeExpenseKind(e.expense_kind ?? e.expenseKind);
     if (accountInput) accountInput.value = e.account_name || e.accountName || '';
     if (accountSizeInput) accountSizeInput.value = e.account_size || '';
     if (dateInput) dateInput.value = e.date || '';
@@ -9008,11 +9048,54 @@ function openExpenseModal({ editId = null } = {}) {
   // "Tamaño de cuenta" se asigna arriba con .value = ... directamente (sin evento change), así
   // que el custom-select que lo envuelve no se entera solo: hay que refrescarlo.
   refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
+  refreshCustomSelectForNative(document.getElementById('expenseFormKind'));
+  syncExpenseFormKind();
   syncCustomDatepicker('expenseFormDate');
   syncExpenseCreateAccount({ auto: true });
   overlay.classList.add('active');
   document.getElementById('expenseFormAccount')?.focus();
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/**
+ * El tipo de gasto decide qué se pregunta.
+ *
+ * Fuera de los gastos de prop no hay prop, ni tamaño de cuenta, ni cuenta que crear: esos campos
+ * se esconden y además se vacían. Esconder sin vaciar es peor que no esconder, porque lo que
+ * quedara escrito se guardaría igual y acabaría contando en el balance de una prop que no pinta
+ * nada en una formación.
+ */
+function syncExpenseFormKind() {
+  const select = document.getElementById('expenseFormKind');
+  const esDeProp = expenseKindNeedsProp(select?.value);
+
+  const campos = [
+    ['expenseFormAccountField', 'expenseFormAccount'],
+    ['expenseFormAccountSizeField', 'expenseFormAccountSize'],
+    ['expenseFormCreateAccountField', null],
+  ];
+  campos.forEach(([contenedorId, inputId]) => {
+    const contenedor = document.getElementById(contenedorId);
+    if (contenedor) contenedor.hidden = !esDeProp;
+    if (esDeProp || !inputId) return;
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+  });
+
+  if (!esDeProp) {
+    // La casilla de crear cuenta también: una formación no da de alta ninguna cuenta.
+    const check = document.getElementById('expenseFormCreateAccount');
+    if (check) {
+      check.checked = false;
+      delete check.dataset.touched;
+    }
+    const numero = document.getElementById('expenseFormAccountNumber');
+    if (numero) numero.value = '';
+    const wrap = document.getElementById('expenseFormAccountNumberWrap');
+    if (wrap) wrap.hidden = true;
+  }
+
+  refreshCustomSelectForNative(document.getElementById('expenseFormAccountSize'));
 }
 
 function closeExpenseModal() {
@@ -9046,6 +9129,11 @@ function resetExpenseForm({ keepEditingId = false } = {}) {
   if (accountSizeInput) accountSizeInput.value = '';
   const saveBtn = document.getElementById('saveExpenseBtn');
   if (saveBtn) saveBtn.textContent = t('expenses_add_btn', 'Añadir gasto');
+  // Un gasto nuevo empieza en «Prop firm», que es el caso más habitual y el que había antes.
+  const kindSelect = document.getElementById('expenseFormKind');
+  if (kindSelect) kindSelect.value = 'prop';
+  refreshCustomSelectForNative(kindSelect);
+  syncExpenseFormKind();
   syncCustomDatepicker('expenseFormDate');
   setExpenseModalTitle(false);
 }
@@ -9157,17 +9245,29 @@ function getAccountForExpense(expense) {
 }
 
 async function saveExpenseAction() {
-  const account = document.getElementById('expenseFormAccount')?.value?.trim();
-  const accountSize = document.getElementById('expenseFormAccountSize')?.value?.trim() || '';
+  const kind = normalizeExpenseKind(document.getElementById('expenseFormKind')?.value);
+  const esDeProp = expenseKindNeedsProp(kind);
+  // Fuera de los gastos de prop estos campos están escondidos y vacíos: se leen igualmente para
+  // no depender de que el vaciado haya ocurrido, pero no se exigen ni se validan.
+  const account = esDeProp ? document.getElementById('expenseFormAccount')?.value?.trim() : '';
+  const accountSize = esDeProp
+    ? document.getElementById('expenseFormAccountSize')?.value?.trim() || ''
+    : '';
   const date = document.getElementById('expenseFormDate')?.value;
   const amount = Number(document.getElementById('expenseFormAmount')?.value);
   const category = document.getElementById('expenseFormCategory')?.value?.trim() || '';
   const note = document.getElementById('expenseFormNote')?.value?.trim() || '';
-  if (!account || !date || !Number.isFinite(amount) || amount <= 0) {
+
+  if (!date || !Number.isFinite(amount) || amount <= 0) {
+    showToast(t('expenses_validation_error_basic', 'Completa fecha e importe válido'), 'error');
+    return;
+  }
+  // La prop solo es obligatoria cuando el gasto es de una prop.
+  if (esDeProp && !account) {
     showToast(t('expenses_validation_error', 'Completa cuenta, fecha e importe válido'), 'error');
     return;
   }
-  if (expenseFormAccountSuggestHandle && !expenseFormAccountSuggestHandle.isValid()) {
+  if (esDeProp && expenseFormAccountSuggestHandle && !expenseFormAccountSuggestHandle.isValid()) {
     showToast(
       t('prop_selector_invalid', 'Selecciona una Prop de la lista (o créala antes en Configuración > Props y categorías)'),
       'error'
@@ -9176,7 +9276,15 @@ async function saveExpenseAction() {
   }
   const backend = getBackendApi();
   if (!backend) return;
-  const payload = { account_name: account, account_size: accountSize, date, amount, category, note };
+  const payload = {
+    account_name: account,
+    account_size: accountSize,
+    expense_kind: kind,
+    date,
+    amount,
+    category,
+    note,
+  };
   let res;
   if (editingExpenseId) {
     const existing = expensesCache.find((e) => e.id === editingExpenseId);
@@ -9487,6 +9595,8 @@ function initExpensesUI() {
   ['expenseFormAccount', 'expenseFormAccountNumber'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', () => syncExpenseCreateAccount());
   });
+  document.getElementById('expenseFormKind')?.addEventListener('change', () => syncExpenseFormKind());
+
   document.getElementById('expenseFormCreateAccount')?.addEventListener('change', (event) => {
     event.target.dataset.touched = '1';
     syncExpenseCreateAccount();

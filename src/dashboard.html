@@ -1833,7 +1833,8 @@
         color: var(--green);
       }
       #expenseSummaryTotal, #expenseSummaryAvg, #expenseSummaryLast,
-      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong, #expenseAnalyticsByCategory strong {
+      #expenseAnalyticsByAccount strong, #expenseAnalyticsByMonth strong,
+      #expenseAnalyticsByCategory strong, #expenseAnalyticsByKind strong {
         color: var(--red);
       }
       .withdrawals-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
@@ -2051,6 +2052,24 @@
       #managementView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
       #managementView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
       #withdrawalModalOverlay .modal.withdrawal-modal,
+      /* Campos que solo tienen sentido en un gasto de prop. Como .field declara un display, hay
+         que devolverle el display:none al ocultarlo (si no, el atributo hidden no hace nada). */
+      /* Distintivo del tipo en el listado, para los gastos que no son de una prop. */
+      .expense-kind-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      #expenseFormAccountField[hidden],
+      #expenseFormAccountSizeField[hidden],
+      #expenseFormCreateAccountField[hidden] { display: none; }
       #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
         max-height: min(86vh, 560px);
@@ -8941,7 +8960,7 @@
                       <thead>
                         <tr>
                           <th data-i18n="withdrawals_col_date">Fecha</th>
-                          <th data-i18n="expenses_col_prop">Prop</th>
+                          <th data-i18n="expenses_col_prop">Prop / tipo</th>
                           <th data-i18n="expenses_col_size">Tamaño</th>
                           <th data-i18n="expenses_col_linked_account">Cuenta creada</th>
                           <th data-i18n="expenses_col_category">Categoría</th>
@@ -8958,6 +8977,12 @@
                 <aside class="card wd-analytics-card" id="expensesAnalyticsSection">
                   <h2 class="wd-panel-title" data-i18n="expenses_analytics_title">Estadísticas de gastos</h2>
                   <div class="wd-analytics-stack">
+                    <div class="wd-analytics-block">
+                      <h3 data-i18n="expenses_by_kind">Por tipo</h3>
+                      <ul id="expenseAnalyticsByKind" class="withdrawal-report-list"><li>—</li></ul>
+                    </div>
+                    <!-- Aquí solo entran los gastos de prop: los de formación o herramientas no
+                         tienen prop, y aparecen arriba en «Por tipo». -->
                     <div class="wd-analytics-block">
                       <h3 data-i18n="expenses_by_prop">Por prop</h3>
                       <ul id="expenseAnalyticsByAccount" class="withdrawal-report-list"><li>—</li></ul>
@@ -11046,14 +11071,25 @@
           <button id="closeExpenseModalBtn" class="modal-close app-modal-close" type="button" data-i18n="close">Cerrar</button>
         </div>
         <div class="withdrawal-modal-form">
+          <!-- El tipo va primero porque decide qué se pregunta debajo: una formación no tiene ni
+               prop ni tamaño de cuenta, y preguntarlas invita a inventarse un dato. -->
           <div class="field">
+            <label for="expenseFormKind" data-i18n="expenses_kind">Tipo de gasto</label>
+            <select id="expenseFormKind" class="input">
+              <option value="prop" data-i18n="expenses_kind_prop">Prop firm</option>
+              <option value="formacion" data-i18n="expenses_kind_formacion">Formación</option>
+              <option value="herramientas" data-i18n="expenses_kind_herramientas">Herramientas y software</option>
+              <option value="otros" data-i18n="expenses_kind_otros">Otros</option>
+            </select>
+          </div>
+          <div class="field" id="expenseFormAccountField">
             <label for="expenseFormAccount" data-i18n="expenses_prop">Prop</label>
             <div class="suggest-wrap suggest-wrap--select">
               <input id="expenseFormAccount" class="input" type="text" autocomplete="off" data-i18n-placeholder="expenses_prop_placeholder" placeholder="Selecciona una prop" />
               <div id="expenseFormAccountSuggest" class="suggest-panel" hidden></div>
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="expenseFormAccountSizeField">
             <label for="expenseFormAccountSize" data-i18n="expenses_account_size">Tamaño de cuenta (opcional)</label>
             <select id="expenseFormAccountSize" class="input">
               <option value="" data-i18n="expenses_account_size_placeholder">Selecciona tamaño</option>
@@ -11086,7 +11122,7 @@
 
           <!-- Comprar un challenge son dos cosas a la vez: un gasto y una cuenta nueva. Esto
                evita tener que ir despues a Configuracion a crearla a mano. -->
-          <div class="field field-full expense-create-account">
+          <div class="field field-full expense-create-account" id="expenseFormCreateAccountField">
             <label class="toggle-row" for="expenseFormCreateAccount">
               <input id="expenseFormCreateAccount" type="checkbox" />
               <span data-i18n="expenses_create_account">Crear también la cuenta de esta compra</span>

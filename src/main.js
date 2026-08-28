@@ -1708,8 +1708,8 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
   const info = db
     .prepare(
       `INSERT INTO real_account_expenses
-       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
+       (user_id, client_uuid, remote_id, account_id, account_client_uuid, account_name, account_size, expense_kind, amount, date, category, note, created_at, updated_at, sync_status, deleted_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', NULL)`
     )
     .run(
       String(userId),
@@ -1718,6 +1718,7 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
       accountMeta.account_client_uuid,
       normalized.account_name,
       normalized.account_size,
+      normalized.expense_kind,
       normalized.amount,
       normalized.date,
       normalized.category,
@@ -1733,6 +1734,7 @@ ipcMain.handle('add-expense-local', async (_event, raw) => {
     account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     account_size: normalized.account_size,
+    expense_kind: normalized.expense_kind,
     amount: normalized.amount,
     date: normalized.date,
     category: normalized.category,
@@ -1801,6 +1803,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
       account_client_uuid = ?,
       account_name = ?,
       account_size = ?,
+      expense_kind = ?,
       amount = ?,
       date = ?,
       category = ?,
@@ -1816,6 +1819,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
     accountMeta.account_client_uuid,
     normalized.account_name,
     normalized.account_size,
+    normalized.expense_kind,
     normalized.amount,
     normalized.date,
     normalized.category,
@@ -1833,6 +1837,7 @@ ipcMain.handle('update-expense-local', async (_event, raw) => {
     account_client_uuid: accountMeta.account_client_uuid,
     account_name: normalized.account_name,
     account_size: normalized.account_size,
+    expense_kind: normalized.expense_kind,
     amount: normalized.amount,
     date: normalized.date,
     category: normalized.category,

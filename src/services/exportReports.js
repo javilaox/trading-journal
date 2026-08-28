@@ -22,6 +22,7 @@
  */
 
 const { tradeAccountNames } = require('./accountExecutions');
+const { normalizeExpenseKind } = require('./realAccountExpenses');
 
 const COL = (key, header, type = 'text') => ({ key, header, type });
 
@@ -74,8 +75,17 @@ function buildManagementReport({ withdrawals = [], expenses = [], filters = {} }
 
   // Los gastos se guardan como importe positivo, pero en un informe restan: se exportan con
   // signo negativo para que se lean de un vistazo (y en rojo, tanto en Excel como en PDF).
+  // El tipo también viaja al informe: sin él, un gasto de formación sale con la prop en blanco y
+  // no hay forma de saber de qué era.
+  const kindLabels = {
+    prop: 'Prop firm',
+    formacion: 'Formación',
+    herramientas: 'Herramientas y software',
+    otros: 'Otros',
+  };
   const expenseRows = expenses.map((e) => ({
     date: toEsDate(e.date),
+    kind: kindLabels[normalizeExpenseKind(e.expense_kind ?? e.expenseKind)] || kindLabels.prop,
     account: e.account_name || e.accountName || '',
     size: e.account_size || '',
     category: e.category || '',
@@ -116,6 +126,7 @@ function buildManagementReport({ withdrawals = [], expenses = [], filters = {} }
         name: 'Gastos',
         columns: [
           COL('date', 'Fecha', 'date'),
+          COL('kind', 'Tipo'),
           COL('account', 'Prop / Broker'),
           COL('size', 'Tamaño cuenta'),
           COL('category', 'Categoría'),

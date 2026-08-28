@@ -272,6 +272,10 @@ function ensureOfflineTables() {
     ['account_client_uuid', 'account_client_uuid TEXT'],
     ['account_name', 'account_name TEXT'],
     ['account_size', 'account_size TEXT'],
+    // Tipo de gasto (prop / formacion / herramientas / otros). Los que ya estaban guardados se
+    // quedan sin valor y se leen como 'prop', que es lo que son todos: el formulario no permitía
+    // registrar otra cosa. Así ninguna cifra ya guardada cambia.
+    ['expense_kind', "expense_kind TEXT DEFAULT 'prop'"],
     ['amount', 'amount REAL'],
     ['date', 'date TEXT'],
     ['category', 'category TEXT'],
@@ -530,6 +534,7 @@ db.prepare(`
     account_client_uuid TEXT,
     account_name TEXT NOT NULL,
     account_size TEXT,
+    expense_kind TEXT DEFAULT 'prop',
     amount REAL NOT NULL,
     date TEXT NOT NULL,
     category TEXT,
