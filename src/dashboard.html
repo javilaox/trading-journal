@@ -2051,9 +2051,6 @@
       #managementView .wd-analytics-block .withdrawal-report-list { font-size: 0.82rem; }
       #managementView .wd-analytics-block .withdrawal-report-list li { padding: 5px 0; }
       #managementView .withdrawals-analytics-value { font-size: 0.95rem; font-weight: 700; margin: 0; }
-      #withdrawalModalOverlay .modal.withdrawal-modal,
-      /* Campos que solo tienen sentido en un gasto de prop. Como .field declara un display, hay
-         que devolverle el display:none al ocultarlo (si no, el atributo hidden no hace nada). */
       /* Distintivo del tipo en el listado, para los gastos que no son de una prop. */
       .expense-kind-badge {
         display: inline-flex;
@@ -2067,9 +2064,14 @@
         font-weight: 700;
         white-space: nowrap;
       }
+      /* Campos que solo tienen sentido en un gasto de prop. Como .field declara un display, hay
+         que devolverle el display:none al ocultarlo (si no, el atributo hidden no hace nada). */
       #expenseFormAccountField[hidden],
       #expenseFormAccountSizeField[hidden],
       #expenseFormCreateAccountField[hidden] { display: none; }
+      /* OJO al tocar esto: la regla de abajo tiene DOS selectores, uno por modal. Meter algo
+         entre ellos parte la lista y el primero se lleva los estilos de lo que se haya colado. */
+      #withdrawalModalOverlay .modal.withdrawal-modal,
       #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
         max-height: min(86vh, 560px);
