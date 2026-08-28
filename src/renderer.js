@@ -7709,7 +7709,11 @@ function fillWithdrawalAccountSelects() {
     if (prev && props.includes(prev)) filterSel.value = prev;
   }
 
-  const names = getAccounts().map((account) => account.name);
+  // De una cuenta solo se retira si de ella se puede sacar dinero: fondeadas y capital propio.
+  // Un challenge no paga nada -es una evaluación- y una cuenta perdida por máximo DD tampoco,
+  // así que ofrecerlas solo invita a vincular un retiro a una cuenta de la que ese dinero no
+  // pudo salir, y ahí ya no cuadra ningún saldo.
+  const names = getAccounts().filter(isAccountPayable).map((account) => account.name);
   const formSel = document.getElementById('withdrawalFormAccount');
   if (formSel) {
     const prev = formSel.value;
@@ -8037,7 +8041,13 @@ function openWithdrawalModal({ editId = null } = {}) {
     const amountInput = document.getElementById('withdrawalFormAmount');
     const noteInput = document.getElementById('withdrawalFormNote');
     if (propInput) propInput.value = w.account_name || w.accountName || '';
-    if (accountLinkSelect) accountLinkSelect.value = findLinkedAccountNameForWithdrawal(w);
+    // Un retiro antiguo puede estar vinculado a una cuenta que hoy ya no se ofrece -se perdió por
+    // máximo DD, o era un challenge de cuando el desplegable las incluía todas-. Se vuelve a
+    // añadir solo para este retiro, marcada, en vez de dejar el campo vacío y perder el vínculo
+    // al guardar.
+    if (accountLinkSelect) {
+      ensureSelectHasValue(accountLinkSelect, findLinkedAccountNameForWithdrawal(w), ' (cerrada)');
+    }
     if (dateInput) dateInput.value = w.date || '';
     if (amountInput) amountInput.value = String(w.amount ?? '');
     if (noteInput) noteInput.value = w.note || '';
@@ -10074,6 +10084,18 @@ function isAccountDisabled(account) {
  * Es el mismo criterio que usa la pestaña «Activas» de Configuración › Cuentas, a propósito: si
  * una cuenta no sale en «Activas», tampoco debería poder elegirse al registrar un trade.
  */
+/**
+ * Cuentas de las que se puede sacar dinero, que es lo que pide un retiro.
+ *
+ * Solo las fondeadas y las de capital propio: un challenge es una evaluación y no paga, y una
+ * cuenta perdida por máximo DD ya no paga nada aunque antes fuera fondeada.
+ */
+function isAccountPayable(account) {
+  if (isAccountDisabled(account)) return false;
+  const tipo = String(account?.account_type || '');
+  return tipo === 'funded' || tipo === 'own_capital';
+}
+
 function isAccountOperable(account) {
   if (isAccountDisabled(account)) return false;
   if (account?.account_type === 'challenge' && account?.challenge_passed) return false;
