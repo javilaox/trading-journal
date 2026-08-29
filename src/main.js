@@ -3369,8 +3369,12 @@ async function pullRemoteData(userId, { assumeOnline = false } = {}) {
       .is('deleted_at', null),
     supabase
       .from('real_account_expenses')
+      // OJO: esta lista de columnas es exhaustiva, no un `*`. Una columna nueva que no se añada
+      // aquí no llega nunca del servidor, y al escribir la fila local se guarda su valor por
+      // defecto encima del que tenía: el dato se pierde solo, sin ningún error. Es justo lo que
+      // pasó con `expense_kind`, que devolvía cada gasto de formación a «prop» al sincronizar.
       .select(
-        'id, user_id, account_id, account_client_uuid, account_name, account_size, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
+        'id, user_id, account_id, account_client_uuid, account_name, account_size, expense_kind, client_uuid, amount, date, category, note, created_at, updated_at, deleted_at'
       )
       .eq('user_id', String(userId))
       .is('deleted_at', null),

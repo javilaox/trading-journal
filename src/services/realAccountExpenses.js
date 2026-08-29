@@ -166,7 +166,10 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
       account_id = COALESCE(?, account_id),
       account_name = ?,
       account_size = ?,
-      expense_kind = ?,
+      -- Solo se pisa si el servidor trae tipo. Mientras la columna no exista allí -o mientras la
+      -- migración no se haya aplicado- la fila remota llega sin él, y machacar con el valor por
+      -- defecto convertiría en «prop» un gasto que el usuario marcó como formación.
+      expense_kind = COALESCE(?, expense_kind),
       amount = ?,
       date = ?,
       category = ?,
@@ -196,6 +199,10 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
       }
       if (localHit && String(localHit.sync_status || '').startsWith('pending_')) continue;
 
+      // null = «el servidor no ha dicho nada del tipo», que no es lo mismo que «es de prop».
+      const kindRemoto =
+        r?.expense_kind == null ? null : normalizeExpenseKind(r.expense_kind);
+
       const updatedAt = r?.updated_at ? String(r.updated_at) : new Date().toISOString();
       const createdAt = r?.created_at ? String(r.created_at) : updatedAt;
 
@@ -222,7 +229,7 @@ function upsertExpensesIntoLocal(db, remoteRows, userId, logPrefix = '') {
           r?.account_id ? String(r.account_id) : null,
           String(r?.account_name || ''),
           r?.account_size != null ? String(r.account_size) : null,
-          normalizeExpenseKind(r?.expense_kind),
+          kindRemoto,
           Number(r?.amount ?? 0) || 0,
           String(r?.date || '').slice(0, 10),
           r?.category != null ? String(r.category) : null,
