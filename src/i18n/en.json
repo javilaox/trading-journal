@@ -647,5 +647,8 @@
   "account_lifespan": "Lasted",
   "day_one": "day",
   "day_many": "days",
-  "account_lifespan_hint": "From the first to the last trade of this account"
+  "account_lifespan_hint": "From the first to the last trade of this account",
+  "bt_autopnl_sin_riesgo": "Not calculated automatically: the strategy has no risk per trade set.",
+  "bt_autopnl_sin_capital": "Not calculated automatically: risk is a %, and this session has no account capital.",
+  "bt_autopnl_sin_rr": "Not calculated automatically: the strategy has no target RR, and the TP needs it."
 }

@@ -39,6 +39,7 @@ const {
   expenseKindNeedsProp,
 } = require('./services/realAccountExpenses');
 const { calculateExpenseMetrics } = require('./services/realAccountExpenses');
+const { computeAutoPnl, MOTIVOS: AUTO_PNL_MOTIVOS } = require('./services/backtestAutoPnl');
 const {
   getCurrentUserSafe,
   clearAuthUserCache,
@@ -3830,6 +3831,8 @@ let backtestingCurrentMonth = new Date().getMonth();
 let backtestingCurrentYear = new Date().getFullYear();
 let selectedBacktestingDate = '';
 let editingBacktestingTradeId = null;
+/** Sesión de la operación que se está editando; null si se está creando una nueva. */
+let editingBacktestingTradeSessionId = null;
 /**
  * Valor del antiguo campo "Horario" (etiquetas tipo Londres/NY) de la operación que se está
  * editando. El campo ya no está en el formulario, pero las operaciones guardadas antes de
@@ -16129,6 +16132,11 @@ function openBacktestingTradeEditor(trade) {
 
   const idNum = Number(trade.id);
   editingBacktestingTradeId = Number.isFinite(idNum) && idNum > 0 ? idNum : trade.id;
+  // La sesión de ESTA operación, que no tiene por qué ser la que esté abierta. Al editar desde el
+  // calendario o desde un listado se puede estar tocando una operación de otra sesión, y el
+  // riesgo en % necesita el capital de la suya: con el de otra, la cuenta saldría mal.
+  editingBacktestingTradeSessionId =
+    trade.session_id != null && trade.session_id !== '' ? trade.session_id : null;
 
   const hid = document.getElementById('btEditId');
   if (hid) hid.value = String(editingBacktestingTradeId);
@@ -17717,7 +17725,7 @@ function openBacktestingOutsideScheduleModal() {
 
 function getBacktestingStrategyRiskEuroForForm(strategy) {
   if (!strategy) return '';
-  const cap = getActiveBacktestingSessionCapital();
+  const cap = getBacktestingCapitalForForm();
   const unit = String(strategy.risk_unit ?? strategy.riskUnit ?? 'eur').toLowerCase() === 'percent' ? 'percent' : 'eur';
   const rv = Number(
     strategy.risk_value ??
@@ -18355,27 +18363,91 @@ function normalizeBacktestingPnlByResult(pnlValue, result) {
  * Riesgo € o, si está vacío, de la estrategia) y el RR objetivo de la estrategia: TP = riesgo
  * × RR, SL = riesgo, BE = 0. Se expresa en las mismas unidades que el modo actual de "PnL
  * estimado" (€ o %), para poder escribirla directamente en ese campo. */
-function computeBacktestingAutoPnlMagnitude(result) {
-  if (result !== 'TP' && result !== 'SL') return 0;
+/**
+ * Capital sobre el que se calcula el riesgo en el formulario.
+ *
+ * Al editar manda la sesión de la propia operación; solo si no se sabe cuál es se recurre a la
+ * sesión abierta. Antes se usaba siempre la abierta, así que editar una operación de otra sesión
+ * -o hacerlo con el filtro en «todas»- dejaba el capital en cero y el cálculo no salía.
+ */
+function getBacktestingCapitalForForm() {
+  if (editingBacktestingTradeSessionId != null && editingBacktestingTradeSessionId !== '') {
+    const suya = (cachedBacktestingSessions || []).find(
+      (sess) => String(sess.id) === String(editingBacktestingTradeSessionId)
+    );
+    const cap = Number(suya?.account_capital ?? suya?.capital ?? suya?.initial_capital ?? 0);
+    if (Number.isFinite(cap) && cap > 0) return cap;
+  }
+  return getActiveBacktestingSessionCapital();
+}
 
+/**
+ * Qué importe le tocaría a la operación y, si no sale, por qué.
+ *
+ * El «por qué» es la parte que faltaba: el cálculo necesita riesgo, unidad, capital y RR, y con
+ * cualquiera de ellos a cero el campo se quedaba vacío sin decir cuál era. La cuenta en sí vive
+ * en services/backtestAutoPnl.js, donde se puede probar sin navegador.
+ */
+function describeBacktestingAutoPnl(result) {
   const strategyName = document.getElementById('btStrategy')?.value || '';
   const strategy = getBacktestingStrategies().find((s) => s.name === strategyName);
 
-  let riskEuro = Number(document.getElementById('btRisk')?.value);
-  if (!Number.isFinite(riskEuro) || riskEuro <= 0) {
-    riskEuro = Number(getBacktestingStrategyRiskEuroForForm(strategy)) || 0;
-  }
-  if (!riskEuro || riskEuro <= 0) return 0;
+  // Un riesgo escrito a mano en el formulario manda sobre el de la estrategia: es lo que se puso
+  // para esta operación en concreto.
+  const riesgoManual = Number(document.getElementById('btRisk')?.value);
+  const usaManual = Number.isFinite(riesgoManual) && riesgoManual > 0;
 
-  const rr = Number(strategy?.rr) > 0 ? Number(strategy.rr) : 2;
-  const magnitudeEuro = result === 'TP' ? riskEuro * rr : riskEuro;
+  return computeAutoPnl({
+    result,
+    riskValue: usaManual ? riesgoManual : (strategy?.risk_value ?? strategy?.riskValue ?? 0),
+    riskUnit: usaManual ? 'eur' : (strategy?.risk_unit ?? strategy?.riskUnit ?? 'eur'),
+    capital: getBacktestingCapitalForForm(),
+    rr: strategy?.rr,
+    mode: document.getElementById('btPnlMode')?.value || 'money',
+  });
+}
 
-  const mode = document.getElementById('btPnlMode')?.value || 'money';
-  if (mode === 'percent') {
-    const capital = getActiveBacktestingSessionCapital();
-    return capital > 0 ? (magnitudeEuro / capital) * 100 : 0;
-  }
-  return magnitudeEuro;
+function computeBacktestingAutoPnlMagnitude(result) {
+  return describeBacktestingAutoPnl(result).amount || 0;
+}
+
+/**
+ * Explica en el propio formulario por qué no ha salido ningún importe.
+ *
+ * Sin esto, un riesgo en % con una sesión sin capital se veía exactamente igual que si la
+ * función no existiera: campo vacío y a adivinar.
+ */
+function explainBacktestingAutoPnl() {
+  const hint = document.getElementById('btPnlConvertedHint');
+  const pnlInput = getBacktestingPnlInputElement();
+  const result = document.getElementById('btResult')?.value || '';
+  if (!hint || !pnlInput) return false;
+
+  // Solo cuando había algo que calcular y el campo sigue vacío: si hay un importe escrito, el
+  // aviso estorbaría y ese hueco lo ocupa la conversión de € a %.
+  if (result !== 'TP' && result !== 'SL') return false;
+  if (parseBacktestingNumber(pnlInput.value) !== 0) return false;
+
+  const { reason } = describeBacktestingAutoPnl(result);
+  const textos = {
+    [AUTO_PNL_MOTIVOS.SIN_RIESGO]: t(
+      'bt_autopnl_sin_riesgo',
+      'No se calcula solo: la estrategia no tiene riesgo por operación configurado.'
+    ),
+    [AUTO_PNL_MOTIVOS.SIN_CAPITAL]: t(
+      'bt_autopnl_sin_capital',
+      'No se calcula solo: el riesgo va en % y esta sesión no tiene capital de cuenta.'
+    ),
+    [AUTO_PNL_MOTIVOS.SIN_RR]: t(
+      'bt_autopnl_sin_rr',
+      'No se calcula solo: la estrategia no tiene RR objetivo, y el TP lo necesita.'
+    ),
+  };
+  const texto = textos[reason];
+  if (!texto) return false;
+
+  hint.textContent = texto;
+  return true;
 }
 
 /** Rellena "PnL estimado" con la magnitud calculada arriba, solo si el campo sigue "vacío"
@@ -18391,7 +18463,11 @@ function applyBacktestingAutoPnlIfUnset() {
   if (parseBacktestingNumber(pnlInput.value) !== 0) return;
 
   const magnitude = computeBacktestingAutoPnlMagnitude(result);
-  if (!magnitude) return;
+  if (!magnitude) {
+    // No ha salido: que al menos se diga por qué, en vez de dejar el campo vacío sin explicación.
+    explainBacktestingAutoPnl();
+    return;
+  }
 
   pnlInput.value = String(magnitude);
   markBacktestingPnlAsAuto(pnlInput);
@@ -18609,7 +18685,10 @@ function updateBacktestingPnlConversionHint() {
 
   if (!pnlInput || !modeInput || !hint) return;
 
-  const capital = getActiveBacktestingSessionCapital();
+  // Si el importe no ha salido solo, este hueco lo ocupa la explicación de por qué.
+  if (explainBacktestingAutoPnl()) return;
+
+  const capital = getBacktestingCapitalForForm();
   const raw = parseBacktestingNumber(pnlInput.value);
 
   if (!capital || !Number.isFinite(raw)) {
@@ -18841,6 +18920,7 @@ function resetBacktestFormForNextTrade() {
 
 function clearBacktestForm() {
   editingBacktestingTradeId = null;
+  editingBacktestingTradeSessionId = null;
   editingBacktestingTradeLegacySession = '';
   btManagementCollapsed = true;
   btResultCollapsed = false;

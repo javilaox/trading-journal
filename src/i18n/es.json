@@ -647,5 +647,8 @@
   "account_lifespan": "Duró",
   "day_one": "día",
   "day_many": "días",
-  "account_lifespan_hint": "De la primera a la última operación de esta cuenta"
+  "account_lifespan_hint": "De la primera a la última operación de esta cuenta",
+  "bt_autopnl_sin_riesgo": "No se calcula solo: la estrategia no tiene riesgo por operación configurado.",
+  "bt_autopnl_sin_capital": "No se calcula solo: el riesgo va en % y esta sesión no tiene capital de cuenta.",
+  "bt_autopnl_sin_rr": "No se calcula solo: la estrategia no tiene RR objetivo, y el TP lo necesita."
 }

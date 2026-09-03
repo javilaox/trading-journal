@@ -91,11 +91,11 @@
         color: var(--text);
         font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
         overflow-x: hidden;
-        /* El desplegable nativo de <input type="date"/time"> (Chromium) usa su propio tema
-           claro/oscuro según color-scheme, independientemente del CSS del propio input; sin
-           esto, el popup del calendario se veía siempre blanco/sin tematizar. */
+        
         color-scheme: dark;
-      }
+      /* El desplegable nativo de <input type="date"/time"> (Chromium) usa su propio tema
+           claro/oscuro según color-scheme, independientemente del CSS del propio input; sin
+           esto, el popup del calendario se veía siempre blanco/sin tematizar. */}
       body.light {
         color-scheme: light;
       }
@@ -117,16 +117,16 @@
         transition: width 0.25s ease, padding 0.25s ease;
         align-items: stretch;
         box-sizing: border-box;
-        /* En una pantalla baja la barra no cabe entera y el pie -tema, idioma, cerrar sesión- se
-           quedaba por debajo del borde de la ventana, sin forma de llegar hasta él: la barra mide
-           100vh y no se podía desplazar. Ahora se desplaza por dentro. Cuando cabe entera, el pie
-           vuelve a quedarse pegado abajo por su margin-top:auto y no se nota ningún cambio. */
+        
         overflow-y: auto;
         overflow-x: hidden;
         overscroll-behavior: contain;
         scrollbar-width: thin;
         scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
-      }
+      /* En una pantalla baja la barra no cabe entera y el pie -tema, idioma, cerrar sesión- se
+           quedaba por debajo del borde de la ventana, sin forma de llegar hasta él: la barra mide
+           100vh y no se podía desplazar. Ahora se desplaza por dentro. Cuando cabe entera, el pie
+           vuelve a quedarse pegado abajo por su margin-top:auto y no se nota ningún cambio. */}
       .sidebar::-webkit-scrollbar { width: 8px; }
       .sidebar::-webkit-scrollbar-track { background: transparent; }
       .sidebar::-webkit-scrollbar-thumb {
@@ -149,11 +149,11 @@
         min-width: var(--sidebar-collapsed-width);
         padding: 14px 10px;
         align-items: center;
-        /* Plegada tampoco puede quedarse sin desplazamiento: lo que hay que recortar es el ancho
-           (las etiquetas durante la transición), no el alto. */
+        
         overflow-x: hidden;
         overflow-y: auto;
-      }
+      /* Plegada tampoco puede quedarse sin desplazamiento: lo que hay que recortar es el ancho
+           (las etiquetas durante la transición), no el alto. */}
       .sidebar-header {
         display: flex;
         align-items: center;
@@ -972,7 +972,7 @@
       #dashboardView > .section.card,
       #tradeView > .section.card,
       #configView > .section.card,
-      #backtestingView > .dashboard-container > .section.card,
+      :is(#backtestingView, .bt-edit-modal-body) > .dashboard-container > .section.card,
       #backtestingConfigView > .section.card,
       .stats-page > .section.card,
       .card.section {
@@ -981,7 +981,7 @@
       #dashboardView > .section.card + .section.card,
       #tradeView > .section.card + .section.card,
       #configView > .section.card + .section.card,
-      #backtestingView > .dashboard-container > .section.card + .section.card,
+      :is(#backtestingView, .bt-edit-modal-body) > .dashboard-container > .section.card + .section.card,
       #backtestingConfigView > .section.card + .section.card,
       .stats-page > .section.card + .section.card {
         margin-top: var(--section-gap);
@@ -1330,7 +1330,7 @@
       .btn.btn-danger:hover {
         background: rgba(239, 68, 68, 0.18);
       }
-      #backtestingView #btSaveBacktest.btn.btn-primary {
+      :is(#backtestingView, .bt-edit-modal-body) #btSaveBacktest.btn.btn-primary {
         width: 100%;
       }
       /* La sección "Configuración" en sí (#configView > .card) actúa solo como contenedor de
@@ -2075,12 +2075,12 @@
       #expenseModalOverlay .modal.withdrawal-modal {
         width: min(440px, 100%);
         max-height: min(86vh, 560px);
-        /* La base .modal/.app-modal tiene overflow:hidden (para las esquinas redondeadas);
-           aquí lo convertimos en columna flex para que solo el formulario haga scroll interno
-           y la cabecera y los botones de acción queden siempre visibles y fijos. */
+        
         display: flex;
         flex-direction: column;
-      }
+      /* La base .modal/.app-modal tiene overflow:hidden (para las esquinas redondeadas);
+           aquí lo convertimos en columna flex para que solo el formulario haga scroll interno
+           y la cabecera y los botones de acción queden siempre visibles y fijos. */}
       #withdrawalModalOverlay .modal-header.app-modal-header,
       #expenseModalOverlay .modal-header.app-modal-header {
         flex-shrink: 0;
@@ -2504,7 +2504,7 @@
         display: block !important;
         margin-top: var(--space-sm);
       }
-      #backtestingView .schedule-discipline-metrics .advanced-item {
+      :is(#backtestingView, .bt-edit-modal-body) .schedule-discipline-metrics .advanced-item {
         background: var(--card-bg);
         border: 1px solid var(--border);
         border-radius: 12px;
@@ -3154,13 +3154,13 @@
       .calendar-nav-btn:hover { transform: translateY(-1px); filter: brightness(1.08); }
       .dashboard-filter-row {
         display: grid;
-        /* auto-fit: al añadir el filtro de Tipo de cuenta pasan a ser 3; en pantallas estrechas
-           se reparten solos en varias filas en vez de quedar apretados. */
+        
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 14px;
         align-items: end;
         margin: 14px 0 16px;
-      }
+      /* auto-fit: al añadir el filtro de Tipo de cuenta pasan a ser 3; en pantallas estrechas
+           se reparten solos en varias filas en vez de quedar apretados. */}
 
       .dashboard-filter-row .field {
         display: flex;
@@ -4586,10 +4586,7 @@
         height: 15px;
       }
       .timepicker-popup {
-        /* position: fixed (no absolute): el formulario de "Nueva operación" en Backtesting
-           tiene overflow:hidden en su tarjeta contenedora (.bt-operation-card), así que un
-           popup absoluto quedaría recortado/invisible. La posición real (top/left) la calcula
-           initTradeTimepicker en JS a partir de getBoundingClientRect() del trigger. */
+        
         position: fixed;
         top: 0;
         left: 0;
@@ -4601,7 +4598,10 @@
         padding: 10px;
         z-index: 2000;
         display: none;
-      }
+      /* position: fixed (no absolute): el formulario de "Nueva operación" en Backtesting
+           tiene overflow:hidden en su tarjeta contenedora (.bt-operation-card), así que un
+           popup absoluto quedaría recortado/invisible. La posición real (top/left) la calcula
+           initTradeTimepicker en JS a partir de getBoundingClientRect() del trigger. */}
       .custom-timepicker.open .timepicker-popup {
         display: block;
       }
@@ -5607,35 +5607,35 @@
         overflow-x: hidden;
         box-sizing: border-box;
       }
-      #backtestingView > .dashboard-container {
+      :is(#backtestingView, .bt-edit-modal-body) > .dashboard-container {
         padding: clamp(12px, 2vw, 20px) clamp(16px, 2.5vw, 28px);
         max-width: 100%;
       }
-      #backtestingView > .dashboard-container > .section.card.pro-backtesting-shell {
+      :is(#backtestingView, .bt-edit-modal-body) > .dashboard-container > .section.card.pro-backtesting-shell {
         display: flex;
         flex-direction: column;
         gap: clamp(22px, 2.8vw, 36px);
         padding: clamp(18px, 2.2vw, 28px);
       }
-      #backtestingView #btScheduleStatsSection.schedule-discipline-card {
+      :is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection.schedule-discipline-card {
         padding: clamp(20px, 2.4vw, 28px);
         margin-top: clamp(20px, 2.5vw, 32px);
         border-radius: 16px;
       }
-      #backtestingView #btScheduleStatsSection .schedule-discipline-title {
+      :is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection .schedule-discipline-title {
         margin: 0 0 12px;
       }
-      #backtestingView #btScheduleStatsSection .schedule-discipline-metrics {
+      :is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection .schedule-discipline-metrics {
         display: block !important;
         width: 100%;
       }
-      #backtestingView #btScheduleStatsSection .schedule-discipline-empty {
+      :is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection .schedule-discipline-empty {
         margin: 8px 0 4px;
         padding: 12px 0;
       }
       /* Veredicto de horarios: la conclusión debe leerse de un vistazo, sin interpretar métricas.
          El color comunica el mensaje (rojo = operar fuera te resta; verde = disciplina/positivo). */
-      #backtestingView .bt-schedule-verdict {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict {
         margin: 4px 0 4px;
         padding: 16px 18px;
         border-radius: 14px;
@@ -5643,66 +5643,66 @@
         background: rgba(148, 163, 184, 0.07);
         border-left: 4px solid var(--text-muted);
       }
-      #backtestingView .bt-schedule-verdict[hidden] { display: none; }
-      #backtestingView .bt-schedule-verdict.is-negative {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict[hidden] { display: none; }
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-negative {
         border-left-color: var(--red);
         background: rgba(239, 68, 68, 0.08);
       }
-      #backtestingView .bt-schedule-verdict.is-positive {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-positive {
         border-left-color: var(--green);
         background: rgba(34, 197, 94, 0.08);
       }
-      #backtestingView .bt-schedule-verdict-headline {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict-headline {
         font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.35;
         color: var(--text);
       }
-      #backtestingView .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #fca5a5; }
-      #backtestingView .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #86efac; }
-      body.light #backtestingView .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #b91c1c; }
-      body.light #backtestingView .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #15803d; }
-      #backtestingView .bt-schedule-verdict-detail {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #fca5a5; }
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #86efac; }
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-negative .bt-schedule-verdict-headline { color: #b91c1c; }
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict.is-positive .bt-schedule-verdict-headline { color: #15803d; }
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict-detail {
         margin-top: 6px;
         font-size: 0.88rem;
         color: var(--text-muted);
         line-height: 1.45;
       }
-      #backtestingView .bt-schedule-verdict-compare {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict-compare {
         display: flex;
         flex-wrap: wrap;
         gap: 8px 22px;
         margin-top: 12px;
         font-size: 0.85rem;
       }
-      #backtestingView .bt-schedule-verdict-compare span {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict-compare span {
         color: var(--text-muted);
       }
-      #backtestingView .bt-schedule-verdict-compare strong {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-schedule-verdict-compare strong {
         color: var(--text);
         font-variant-numeric: tabular-nums;
       }
-      #backtestingView *,
-      #backtestingView *::before,
-      #backtestingView *::after {
+      :is(#backtestingView, .bt-edit-modal-body) *,
+      :is(#backtestingView, .bt-edit-modal-body) *::before,
+      :is(#backtestingView, .bt-edit-modal-body) *::after {
         box-sizing: border-box;
       }
-      #backtestingView > .dashboard-container > .section.card {
+      :is(#backtestingView, .bt-edit-modal-body) > .dashboard-container > .section.card {
         max-width: 100%;
         overflow-x: hidden;
         min-width: 0;
       }
-      #backtestingView .backtesting-filter-bar {
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-filter-bar {
         margin: 0;
       }
-      #backtestingView .bt-filter-row {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-filter-row {
         display: flex;
         align-items: flex-end;
         gap: 14px;
         margin-top: 18px;
         margin-bottom: 22px;
       }
-      #backtestingView .bt-filter-row label {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-filter-row label {
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -5712,30 +5712,30 @@
         font-weight: var(--fw-medium);
         color: var(--text-muted);
       }
-      #backtestingView .bt-section {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section {
         margin-top: clamp(24px, 2.8vw, 32px);
       }
-      #backtestingView .bt-section + .bt-section,
-      #backtestingView .bt-section + #btScheduleStatsSection {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section + .bt-section,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section + #btScheduleStatsSection {
         margin-top: clamp(26px, 3vw, 36px);
       }
       /* Los paneles de las pestañas son hijos directos del contenedor de la vista, que es una
          columna flexible con su propia separación: la distancia entre secciones la pone ese `gap`
          y no hace falta ningún margen aquí. Añadirlo sumaría a la separación y quedaría el doble
          de aire entre unas tarjetas y otras. */
-      #backtestingView .dashboard-container .section.card > .bt-section:first-of-type {
+      :is(#backtestingView, .bt-edit-modal-body) .dashboard-container .section.card > .bt-section:first-of-type {
         margin-top: 0;
       }
       /* Pestañas Trades / Estadísticas dentro de una sesión de backtesting: separan el
          calendario + registro de operaciones (mucho ruido visual si van todo seguido) de los
          KPIs, disciplina por horario, análisis y simulaciones. */
-      #backtestingView .bt-view-tabs {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-view-tabs {
         display: flex;
         gap: 8px;
         margin: clamp(24px, 2.8vw, 32px) 0 20px;
         border-bottom: 1px solid var(--border);
       }
-      #backtestingView .bt-view-tab-btn {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-view-tab-btn {
         appearance: none;
         border: none;
         background: transparent;
@@ -5747,65 +5747,65 @@
         border-bottom: 2px solid transparent;
         cursor: pointer;
       }
-      #backtestingView .bt-view-tab-btn:hover {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-view-tab-btn:hover {
         color: var(--text);
       }
-      #backtestingView .bt-view-tab-btn.active {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-view-tab-btn.active {
         color: var(--text);
         border-bottom-color: var(--green);
       }
-      #backtestingView .bt-section-title {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section-title {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 14px;
         margin-bottom: 14px;
       }
-      #backtestingView .bt-section-title h3 {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section-title h3 {
         margin: 0;
         font-size: 17px;
         font-weight: 800;
       }
-      #backtestingView .bt-section-title p {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section-title p {
         margin: 4px 0 0;
         color: var(--text-muted);
         font-size: 13px;
       }
-      #backtestingView .bt-sessions-panel {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-sessions-panel {
         padding: 20px;
         border-radius: 18px;
         border: 1px solid var(--border);
         background: rgba(15, 23, 42, 0.22);
       }
-      body.light #backtestingView .bt-sessions-panel {
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-sessions-panel {
         background: rgba(255, 255, 255, 0.45);
       }
-      #backtestingView .bt-sessions-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-sessions-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 320px));
         gap: 16px;
         align-items: stretch;
       }
-      #backtestingView .bt-session-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-session-card {
         min-height: 190px;
       }
-      #backtestingView .cards-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 20px;
         margin-top: 0;
         width: 100%;
       }
-      #backtestingView .cards-grid .kpi-card {
+      :is(#backtestingView, .bt-edit-modal-body) .cards-grid .kpi-card {
         min-height: 104px;
       }
       @media (max-width: 1200px) {
-        #backtestingView .cards-grid {
+        :is(#backtestingView, .bt-edit-modal-body) .cards-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
       @media (max-width: 700px) {
-        #backtestingView .cards-grid {
+        :is(#backtestingView, .bt-edit-modal-body) .cards-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -5835,9 +5835,9 @@
       .backtesting-dist-card span {
         color: var(--text-muted);
       }
-      #backtestingView .grid-2,
-      #backtestingView .bt-workspace,
-      #backtestingView .bt-work-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .grid-2,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-grid {
         display: grid;
         grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.95fr);
         gap: 20px;
@@ -5847,35 +5847,35 @@
         overflow: hidden;
         min-width: 0;
       }
-      #backtestingView .bt-workspace-left,
-      #backtestingView .bt-work-left,
-      #backtestingView .bt-workspace-right,
-      #backtestingView .bt-work-right {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-left,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-right {
         min-width: 0;
       }
-      #backtestingView .bt-workspace-left,
-      #backtestingView .bt-work-left {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-left {
         display: flex;
         flex-direction: column;
         gap: 16px;
       }
-      #backtestingView .bt-workspace-right,
-      #backtestingView .bt-work-right {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-right {
         display: flex;
         flex-direction: column;
         gap: 18px;
       }
-      #backtestingView .bt-day-trades-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-day-trades-card {
         width: 100%;
         margin-top: 0;
       }
-      #backtestingView .bt-day-trades-card .backtesting-day-list {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-day-trades-card .backtesting-day-list {
         max-height: min(320px, 42vh);
       }
-      #backtestingView .bt-operation-form-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-card {
         width: 100%;
       }
-      #backtestingView .backtesting-side-panel {
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-side-panel {
         display: flex;
         flex-direction: column;
         gap: 18px;
@@ -6626,11 +6626,11 @@
       .bt-strategy-actions .danger:hover {
         background: rgba(239, 68, 68, 0.16);
       }
-      #backtestingView .bt-work-calendar-card,
-      #backtestingView .bt-calendar-wrapper,
-      #backtestingView .bt-calendar-card,
-      #backtestingView .backtesting-calendar-card.bt-calendar-card,
-      #backtestingView .calendar-card.card.backtesting-calendar-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-calendar-card,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-wrapper,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-card,
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-calendar-card.bt-calendar-card,
+      :is(#backtestingView, .bt-edit-modal-body) .calendar-card.card.backtesting-calendar-card {
         width: 100%;
         min-width: 0;
         max-width: 100%;
@@ -6640,83 +6640,83 @@
         border: 1px solid var(--border);
         background: rgba(15, 23, 42, 0.22);
       }
-      #backtestingView .bt-calendar-scroll,
-      #backtestingView #backtestingCalendarGrid.calendar-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-scroll,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid {
         min-width: 0;
         max-width: 100%;
       }
-      #backtestingView .bt-calendar-scroll {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-scroll {
         padding: 0;
         border: none;
         background: transparent;
         overflow: visible;
         width: 100%;
       }
-      body.light #backtestingView .bt-calendar-card,
-      body.light #backtestingView .backtesting-calendar-card.bt-calendar-card,
-      body.light #backtestingView .calendar-card.card.backtesting-calendar-card {
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-card,
+      body.light :is(#backtestingView, .bt-edit-modal-body) .backtesting-calendar-card.bt-calendar-card,
+      body.light :is(#backtestingView, .bt-edit-modal-body) .calendar-card.card.backtesting-calendar-card {
         background: rgba(15, 23, 42, 0.04);
       }
       /* Calendario Backtesting: columnas flexibles, sin heredar min-width global del calendario real. */
-      #backtestingView #backtestingCalendarGrid.calendar-grid {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid {
         margin-top: 4px;
         min-width: 0;
         display: flex;
         flex-direction: column;
         gap: clamp(6px, 0.8vw, 12px);
       }
-      #backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row,
-      #backtestingView #backtestingCalendarHeader.calendar-weekdays,
-      #backtestingView #backtestingCalendarHeader.calendar-header-row {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarHeader.calendar-weekdays,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarHeader.calendar-header-row {
         display: grid;
         grid-template-columns: repeat(6, minmax(72px, 1fr));
         gap: clamp(6px, 0.8vw, 12px);
       }
-      #backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row {
         margin-bottom: 0;
       }
-      #backtestingView #backtestingCalendarHeader.calendar-weekdays {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarHeader.calendar-weekdays {
         margin-bottom: 8px;
       }
-      #backtestingView #backtestingCalendarGrid .day-cell {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell {
         min-width: 0;
         min-height: clamp(72px, 8vw, 112px);
         height: auto;
         padding: clamp(7px, 0.8vw, 12px);
         overflow: hidden;
       }
-      #backtestingView #backtestingCalendarGrid .day-cell .day-number {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell .day-number {
         font-size: clamp(10px, 0.85vw, 13px);
       }
-      #backtestingView #backtestingCalendarGrid .day-cell .day-content,
-      #backtestingView #backtestingCalendarGrid .day-cell .trade-count,
-      #backtestingView #backtestingCalendarGrid .day-cell .day-pnl,
-      #backtestingView #backtestingCalendarGrid .day-cell .day-r {
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell .day-content,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell .trade-count,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell .day-pnl,
+      :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid .day-cell .day-r {
         font-size: clamp(10px, 0.85vw, 13px);
         line-height: 1.15;
       }
-      #backtestingView .bt-work-side,
-      #backtestingView .bt-workspace-right,
-      #backtestingView .bt-operation-panel,
-      #backtestingView .bt-operation-form-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-work-side,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-panel,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-card {
         min-width: 0;
         max-width: 100%;
       }
-      #backtestingView .backtesting-side-panel .card,
-      #backtestingView .bt-workspace-left .card,
-      #backtestingView .bt-workspace-right .card,
-      #backtestingView .bt-operation-card,
-      #backtestingView .new-backtest-operation-card {
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-side-panel .card,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left .card,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right .card,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-card,
+      :is(#backtestingView, .bt-edit-modal-body) .new-backtest-operation-card {
         width: 100%;
         max-width: 100%;
         min-width: 0;
         overflow: hidden;
       }
-      #backtestingView .backtesting-side-panel .form-grid,
-      #backtestingView .bt-workspace-left .form-grid,
-      #backtestingView .bt-workspace-right .form-grid,
-      #backtestingView .bt-operation-form-grid,
-      #backtestingView .backtesting-form-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-side-panel .form-grid,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left .form-grid,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right .form-grid,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-grid,
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-form-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 14px;
@@ -6724,26 +6724,26 @@
         max-width: 100%;
         min-width: 0;
       }
-      #backtestingView .bt-operation-form-section {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-section {
         padding-top: 14px;
         margin-top: 14px;
         border-top: 1px solid rgba(148, 163, 184, 0.14);
       }
-      #backtestingView .bt-operation-card > .bt-operation-form-section:first-of-type {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-card > .bt-operation-form-section:first-of-type {
         padding-top: 0;
         margin-top: 0;
         border-top: 0;
       }
-      #backtestingView .bt-form-section-heading {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-form-section-heading {
         margin: 0 0 12px !important;
         font-size: 13px !important;
         font-weight: 700;
         color: var(--text-muted);
       }
-      #backtestingView .form-grid .field-full,
-      #backtestingView .bt-operation-form-grid .full,
-      #backtestingView .backtesting-form-grid .full,
-      #backtestingView .form-grid .full {
+      :is(#backtestingView, .bt-edit-modal-body) .form-grid .field-full,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-grid .full,
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-form-grid .full,
+      :is(#backtestingView, .bt-edit-modal-body) .form-grid .full {
         grid-column: 1 / -1;
       }
       /* Métricas personalizadas del formulario de backtesting.
@@ -6752,20 +6752,20 @@
          iba de alto y no se leía como una lista. Ahora es una rejilla que reparte las métricas
          en columnas, con el mismo aspecto que el checklist del formulario real, y separando las
          de marcar de las que piden un valor, que son dos cosas distintas. */
-      #backtestingView .bt-custom-metrics,
-      #backtestingView .bt-metrics-fields {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-custom-metrics,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-fields {
         display: block;
         margin-top: 4px;
       }
-      #backtestingView .bt-metrics-hint {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-hint {
         margin: 0 0 12px;
         font-size: 11px;
         color: var(--text-muted);
       }
-      #backtestingView .bt-metrics-group + .bt-metrics-group {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-group + .bt-metrics-group {
         margin-top: 14px;
       }
-      #backtestingView .bt-metrics-group-title {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-group-title {
         display: block;
         margin: 0 0 8px;
         font-size: 10px;
@@ -6774,7 +6774,7 @@
         text-transform: uppercase;
         color: var(--text-muted);
       }
-      #backtestingView .bt-metrics-group-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-group-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
         gap: 8px;
@@ -6782,7 +6782,7 @@
       }
       /* Métrica de marcar: la casilla y su nombre dentro del mismo recuadro, para saber dónde
          acaba una y empieza la siguiente. */
-      #backtestingView .bt-metric-check {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-check {
         display: flex;
         align-items: flex-start;
         gap: 10px;
@@ -6796,12 +6796,12 @@
         cursor: pointer;
         transition: border-color 0.15s ease, background 0.15s ease;
       }
-      #backtestingView .bt-metric-check:hover {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-check:hover {
         border-color: rgba(56, 189, 248, 0.45);
       }
       /* Tamaño fijo: en un contenedor flexible, una casilla sin medidas propias se estira y
          empuja el texto. */
-      #backtestingView .bt-metric-check input[type='checkbox'] {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-check input[type='checkbox'] {
         width: 16px;
         min-width: 16px;
         max-width: 16px;
@@ -6811,43 +6811,43 @@
         cursor: pointer;
         accent-color: var(--green, #22c55e);
       }
-      #backtestingView .bt-metric-check.is-checked {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-check.is-checked {
         border-color: rgba(34, 197, 94, 0.5);
         background: rgba(34, 197, 94, 0.08);
       }
-      body.light #backtestingView .bt-metric-check {
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-metric-check {
         background: rgba(148, 163, 184, 0.08);
       }
       /* Métrica con valor: nombre encima, campo debajo. */
-      #backtestingView .bt-metric-field {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-field {
         display: flex;
         flex-direction: column;
         gap: 6px;
         margin: 0;
         min-width: 0;
       }
-      #backtestingView .bt-metric-field > span {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-field > span {
         font-size: 12px;
         font-weight: 600;
         color: var(--text-muted);
       }
-      #backtestingView .bt-metric-field .input {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-field .input {
         width: 100%;
       }
-      #backtestingView .bt-metric-name {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-name {
         min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 2px;
         overflow-wrap: anywhere;
       }
-      #backtestingView .bt-metric-desc {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metric-desc {
         font-size: 11px;
         line-height: 1.4;
         color: var(--text-muted);
       }
       /* Contador «2 de 3» en la cabecera del desplegable, para verlo también plegado. */
-      #backtestingView .bt-metrics-count {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-count {
         flex: 0 0 auto;
         margin-left: 10px;
         font-size: 11px;
@@ -6860,8 +6860,8 @@
         border: 1px solid var(--border);
         white-space: nowrap;
       }
-      #backtestingView .bt-metrics-count[hidden] { display: none; }
-      #backtestingView .bt-form-accordion-header > span:first-child {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-metrics-count[hidden] { display: none; }
+      :is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion-header > span:first-child {
         flex: 1;
         min-width: 0;
         text-align: left;
@@ -6917,10 +6917,10 @@
       .daily-stop-warning { margin: 12px 0 0; line-height: 1.5; }
       /* En Backtesting el bloque va dentro de un .pro-card, que es quien pone el marco y el
          relleno: aquí no se repite nada, o quedarían dos recuadros uno dentro de otro. */
-      #backtestingView .daily-stop-block { margin: 0; }
+      :is(#backtestingView, .bt-edit-modal-body) .daily-stop-block { margin: 0; }
       /* «No hay datos» con el mismo aspecto que en Estadísticas. La regla de allí está acotada a
          #statsView, así que aquí no llegaba y el texto salía suelto, sin recuadro. */
-      #backtestingView .empty-state {
+      :is(#backtestingView, .bt-edit-modal-body) .empty-state {
         margin: 12px 0 0;
         padding: 12px 14px;
         border-radius: 10px;
@@ -7057,11 +7057,12 @@
         width: min(880px, 100%);
         max-height: none;
         /* .app-modal lleva overflow:hidden para redondear las esquinas; aquí estorba, porque es
-           justo lo que recortaría los desplegables. */
+           justo lo que recortaría los desplegables del propio formulario. */
         overflow: visible;
       }
       .bt-edit-modal-body {
-        padding: 0 18px 18px;
+        /* Arriba respira: sin ese hueco, «Datos base» queda pegado a la cabecera. */
+        padding: 4px 22px 22px;
       }
       /* Dentro del desplegable la tarjeta pierde su marco: el marco ya lo pone el propio
          desplegable, y dos recuadros uno dentro de otro se ven mal. */
@@ -7094,58 +7095,58 @@
         color: var(--text-muted);
         font-size: 13px;
       }
-      #backtestingView .bt-analysis-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-analysis-grid {
         display: grid;
         grid-template-columns: 1fr;
         gap: 18px;
         margin-top: 28px;
       }
-      #backtestingView .bt-section > .bt-analysis-grid {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-section > .bt-analysis-grid {
         margin-top: 0;
       }
-      #backtestingView .bt-analysis-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-analysis-card {
         padding: 18px;
         border-radius: 18px;
         border: 1px solid var(--border);
         background: rgba(15, 23, 42, 0.22);
         overflow-x: auto;
       }
-      body.light #backtestingView .bt-analysis-card {
+      body.light :is(#backtestingView, .bt-edit-modal-body) .bt-analysis-card {
         background: rgba(255, 255, 255, 0.45);
       }
-      #backtestingView .bt-analysis-grid .backtesting-stats-extra {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-analysis-grid .backtesting-stats-extra {
         margin-top: 0;
       }
-      #backtestingView .field {
+      :is(#backtestingView, .bt-edit-modal-body) .field {
         min-width: 0;
       }
       @media (max-width: 900px) {
-        #backtestingView .backtesting-side-panel .form-grid,
-        #backtestingView .bt-workspace-left .form-grid,
-        #backtestingView .bt-workspace-right .form-grid,
-        #backtestingView .bt-operation-form-grid,
-        #backtestingView .backtesting-form-grid {
+        :is(#backtestingView, .bt-edit-modal-body) .backtesting-side-panel .form-grid,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left .form-grid,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right .form-grid,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-grid,
+        :is(#backtestingView, .bt-edit-modal-body) .backtesting-form-grid {
           grid-template-columns: 1fr;
         }
       }
-      #backtestingView input,
-      #backtestingView select,
-      #backtestingView textarea,
-      #backtestingView .custom-select,
-      #backtestingView .custom-select .select-selected,
-      #backtestingView .custom-select .select-options,
-      #backtestingView .custom-select-trigger {
+      :is(#backtestingView, .bt-edit-modal-body) input,
+      :is(#backtestingView, .bt-edit-modal-body) select,
+      :is(#backtestingView, .bt-edit-modal-body) textarea,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select .select-selected,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select .select-options,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select-trigger {
         max-width: 100%;
         min-width: 0;
       }
-      #backtestingView input,
-      #backtestingView select,
-      #backtestingView textarea,
-      #backtestingView .custom-asset-trigger,
-      #backtestingView .custom-select .select-selected {
+      :is(#backtestingView, .bt-edit-modal-body) input,
+      :is(#backtestingView, .bt-edit-modal-body) select,
+      :is(#backtestingView, .bt-edit-modal-body) textarea,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-asset-trigger,
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select .select-selected {
         width: 100%;
       }
-      #backtestingView .custom-asset-wrap {
+      :is(#backtestingView, .bt-edit-modal-body) .custom-asset-wrap {
         display: flex;
         flex-direction: column;
         width: 100%;
@@ -7153,36 +7154,36 @@
         min-width: 0;
         gap: 0;
       }
-      #backtestingView #btCustomAssetWrap > select#btAsset {
+      :is(#backtestingView, .bt-edit-modal-body) #btCustomAssetWrap > select#btAsset {
         display: none !important;
       }
-      #backtestingView select.native-select-hidden {
+      :is(#backtestingView, .bt-edit-modal-body) select.native-select-hidden {
         display: none !important;
       }
-      #backtestingView .native-select-hidden + .custom-select {
+      :is(#backtestingView, .bt-edit-modal-body) .native-select-hidden + .custom-select {
         width: 100%;
         max-width: 100%;
         min-width: 0;
       }
-      #backtestingView .native-select-hidden + .custom-select + .custom-select {
+      :is(#backtestingView, .bt-edit-modal-body) .native-select-hidden + .custom-select + .custom-select {
         display: none !important;
       }
-      #backtestingView .custom-select {
+      :is(#backtestingView, .bt-edit-modal-body) .custom-select {
         width: 100%;
         max-width: 100%;
         min-width: 0;
       }
-      #backtestingView .backtesting-form-actions {
+      :is(#backtestingView, .bt-edit-modal-body) .backtesting-form-actions {
         flex-wrap: wrap;
         max-width: 100%;
       }
-      #backtestingView button.secondary,
+      :is(#backtestingView, .bt-edit-modal-body) button.secondary,
       #backtestingConfigView button.secondary {
         background: rgba(148, 163, 184, 0.08);
         color: var(--text-muted);
         border: 1px solid var(--border);
       }
-      #backtestingView button.danger,
+      :is(#backtestingView, .bt-edit-modal-body) button.danger,
       #backtestingConfigView button.danger {
         background: rgba(239, 68, 68, 0.1);
         color: #ef4444;
@@ -8130,11 +8131,11 @@
         display: grid;
         gap: 8px;
         margin: 0;
-        /* Sin esto, las filas del grid se estiran para rellenar la celda: el campo "RR objetivo"
-           (2 hijos) crecía hasta igualar al de "Riesgo por operación" (3 hijos, con su ayuda),
-           y el input quedaba desproporcionadamente alto y desalineado. */
+        
         align-content: start;
-      }
+      /* Sin esto, las filas del grid se estiran para rellenar la celda: el campo "RR objetivo"
+           (2 hijos) crecía hasta igualar al de "Riesgo por operación" (3 hijos, con su ayuda),
+           y el input quedaba desproporcionadamente alto y desalineado. */}
       .bt-strategy-modal label.field > span {
         color: var(--text-muted);
         font-size: 11.5px;
@@ -8248,17 +8249,17 @@
       .bt-strategy-modal .bt-risk-unit-toggle button:hover {
         color: var(--text);
       }
-      #backtestingView .bt-pnl-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-card {
         position: relative;
       }
-      #backtestingView .bt-pnl-main {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-main {
         font-size: 26px;
         font-weight: 750;
         margin-bottom: 10px;
         line-height: 1.1;
       }
-      #backtestingView .bt-pnl-net-row,
-      #backtestingView .bt-pnl-commission-row {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-net-row,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-commission-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -8267,20 +8268,20 @@
         color: var(--text-muted);
         padding-top: 6px;
       }
-      #backtestingView .bt-pnl-net-row strong,
-      #backtestingView .bt-pnl-commission-row strong {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-net-row strong,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-commission-row strong {
         font-weight: 700;
         color: var(--text);
       }
-      #backtestingView .bt-pnl-net-row .positive,
-      #backtestingView .bt-pnl-main.positive {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-net-row .positive,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-main.positive {
         color: var(--green);
       }
-      #backtestingView .bt-pnl-net-row .negative,
-      #backtestingView .bt-pnl-main.negative {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-net-row .negative,
+      :is(#backtestingView, .bt-edit-modal-body) .bt-pnl-main.negative {
         color: #ef4444;
       }
-      #backtestingView .bt-commission-config-btn {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-commission-config-btn {
         margin-top: 10px;
         width: 100%;
         height: 30px;
@@ -8293,11 +8294,11 @@
         font-weight: 600;
         cursor: pointer;
       }
-      #backtestingView .bt-commission-config-btn:hover {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-commission-config-btn:hover {
         border-color: rgba(34, 197, 94, 0.3);
         color: var(--text);
       }
-      #backtestingView .bt-kpi-card.feature.bt-pnl-card {
+      :is(#backtestingView, .bt-edit-modal-body) .bt-kpi-card.feature.bt-pnl-card {
         min-height: auto;
       }
       .data-table {
@@ -8329,33 +8330,33 @@
         color: var(--green);
       }
       @media (max-width: 1250px) {
-        #backtestingView .grid-2,
-        #backtestingView .bt-workspace,
-        #backtestingView .bt-work-grid {
+        :is(#backtestingView, .bt-edit-modal-body) .grid-2,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-workspace,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-work-grid {
           grid-template-columns: 1fr;
         }
-        #backtestingView .bt-work-right,
-        #backtestingView .bt-workspace-right {
+        :is(#backtestingView, .bt-edit-modal-body) .bt-work-right,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right {
           order: 2;
         }
-        #backtestingView .bt-work-left,
-        #backtestingView .bt-workspace-left {
+        :is(#backtestingView, .bt-edit-modal-body) .bt-work-left,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left {
           order: 1;
         }
-        #backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row,
-        #backtestingView #backtestingCalendarHeader.calendar-weekdays {
+        :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row,
+        :is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarHeader.calendar-weekdays {
           grid-template-columns: repeat(6, minmax(68px, 1fr));
         }
       }
       @media (max-width: 850px) {
-        #backtestingView .bt-calendar-scroll {
+        :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-scroll {
           overflow-x: auto;
           max-width: 100%;
           padding-bottom: 8px;
           -webkit-overflow-scrolling: touch;
         }
-        #backtestingView .bt-calendar-scroll #backtestingCalendarHeader,
-        #backtestingView .bt-calendar-scroll #backtestingCalendarGrid {
+        :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-scroll #backtestingCalendarHeader,
+        :is(#backtestingView, .bt-edit-modal-body) .bt-calendar-scroll #backtestingCalendarGrid {
           min-width: 620px;
         }
       }
