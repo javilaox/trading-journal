@@ -18,6 +18,7 @@
 const MOTIVOS = {
   OK: 'ok',
   SIN_RESULTADO: 'sin-resultado',
+  SIN_ESTRATEGIA: 'sin-estrategia',
   SIN_RIESGO: 'sin-riesgo',
   SIN_CAPITAL: 'sin-capital',
   SIN_RR: 'sin-rr',
@@ -31,6 +32,7 @@ function numero(value) {
 /**
  * @param {object} params
  * @param {string} params.result 'TP', 'SL', 'BE'...
+ * @param {boolean} [params.strategyFound] si el nombre de estrategia de la operación existe hoy
  * @param {number|string} params.riskValue el riesgo de la estrategia, en su unidad
  * @param {string} params.riskUnit 'percent' o 'eur'
  * @param {number|string} params.capital capital de la sesión; solo hace falta si el riesgo va en %
@@ -38,12 +40,25 @@ function numero(value) {
  * @param {string} [params.mode] 'money' (por defecto) o 'percent', según cómo se escriba el PnL
  * @returns {{amount:number, riskEuro:number, rr:number, reason:string}}
  */
-function computeAutoPnl({ result, riskValue, riskUnit, capital, rr, mode = 'money' } = {}) {
+function computeAutoPnl({
+  result,
+  riskValue,
+  riskUnit,
+  capital,
+  rr,
+  mode = 'money',
+  strategyFound = true,
+} = {}) {
   const vacio = { amount: 0, riskEuro: 0, rr: 0, reason: MOTIVOS.SIN_RESULTADO };
 
   const res = String(result || '').trim().toUpperCase();
   // Un BE es cero de verdad, no un cálculo que falta: no hay nada que rellenar ni que explicar.
   if (res !== 'TP' && res !== 'SL') return vacio;
+
+  // Que la estrategia no exista y que exista sin riesgo son cosas distintas, y decir lo segundo
+  // cuando pasa lo primero manda a mirar donde no es. Ocurre al renombrar una estrategia: la
+  // operación se queda apuntando a un nombre que ya no está.
+  if (!strategyFound) return { ...vacio, reason: MOTIVOS.SIN_ESTRATEGIA };
 
   const riesgo = numero(riskValue);
   if (riesgo <= 0) return { ...vacio, reason: MOTIVOS.SIN_RIESGO };

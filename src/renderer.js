@@ -56,27 +56,27 @@ function injectBacktestingProStyles() {
   overflow-x:hidden;
   box-sizing:border-box;
 }
-#backtestingView *,#backtestingConfigView *{box-sizing:border-box}
-#backtestingView .pro-backtesting-shell,#backtestingConfigView .pro-config-shell{
+:is(#backtestingView, .bt-edit-modal-body) *,#backtestingConfigView *{box-sizing:border-box}
+:is(#backtestingView, .bt-edit-modal-body) .pro-backtesting-shell,#backtestingConfigView .pro-config-shell{
   border-radius:18px;
 }
-#backtestingView .pro-panel,#backtestingConfigView .pro-panel{
+:is(#backtestingView, .bt-edit-modal-body) .pro-panel,#backtestingConfigView .pro-panel{
   padding:0 0 4px;
   margin-bottom:4px;
 }
-#backtestingView .pro-section{
+:is(#backtestingView, .bt-edit-modal-body) .pro-section{
   margin-top:clamp(22px,2.6vw,32px);
 }
-#backtestingView .dashboard-container>.pro-backtesting-shell>.bt-section:first-child,
-#backtestingView .pro-section:first-of-type{margin-top:0}
-#backtestingView>.dashboard-container{
+:is(#backtestingView, .bt-edit-modal-body) .dashboard-container>.pro-backtesting-shell>.bt-section:first-child,
+:is(#backtestingView, .bt-edit-modal-body) .pro-section:first-of-type{margin-top:0}
+:is(#backtestingView, .bt-edit-modal-body)>.dashboard-container{
   padding:clamp(12px,2vw,20px) clamp(16px,2.5vw,28px);
 }
-#backtestingView>.dashboard-container>.section.card.pro-backtesting-shell{
+:is(#backtestingView, .bt-edit-modal-body)>.dashboard-container>.section.card.pro-backtesting-shell{
   gap:clamp(22px,2.8vw,36px);
   padding:clamp(18px,2.2vw,28px);
 }
-#backtestingView .pro-card,#backtestingConfigView .pro-card{
+:is(#backtestingView, .bt-edit-modal-body) .pro-card,#backtestingConfigView .pro-card{
   background:var(--card-bg,rgba(15,23,42,.55));
   border:1px solid var(--border,rgba(148,163,184,.18));
   border-radius:16px;
@@ -84,22 +84,22 @@ function injectBacktestingProStyles() {
   box-shadow:0 4px 24px rgba(0,0,0,.12);
   max-width:100%;
 }
-#backtestingView .pro-card--compact{padding:14px 18px}
-#backtestingView .pro-card--flush{padding:0;border:none;background:transparent;box-shadow:none}
-#backtestingView .pro-section-title,#backtestingConfigView .pro-section-title{
+:is(#backtestingView, .bt-edit-modal-body) .pro-card--compact{padding:14px 18px}
+:is(#backtestingView, .bt-edit-modal-body) .pro-card--flush{padding:0;border:none;background:transparent;box-shadow:none}
+:is(#backtestingView, .bt-edit-modal-body) .pro-section-title,#backtestingConfigView .pro-section-title{
   margin:0 0 12px;
   font-size:clamp(15px,1.05vw,17px);
   font-weight:800;
   letter-spacing:-.02em;
   color:var(--text,#e2e8f0);
 }
-#backtestingView .pro-section-sub,#backtestingConfigView .pro-section-sub{
+:is(#backtestingView, .bt-edit-modal-body) .pro-section-sub,#backtestingConfigView .pro-section-sub{
   margin:4px 0 0;
   font-size:13px;
   color:var(--text-muted,var(--muted,#94a3b8));
   line-height:1.45;
 }
-#backtestingView .pro-section-head,#backtestingConfigView .pro-section-head{
+:is(#backtestingView, .bt-edit-modal-body) .pro-section-head,#backtestingConfigView .pro-section-head{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
@@ -107,12 +107,12 @@ function injectBacktestingProStyles() {
   margin-bottom:14px;
   flex-wrap:wrap;
 }
-#backtestingView .pro-grid,#backtestingConfigView .pro-grid{
+:is(#backtestingView, .bt-edit-modal-body) .pro-grid,#backtestingConfigView .pro-grid{
   display:grid;
   gap:16px;
   grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));
 }
-#backtestingView .kpi-row.cards-grid{
+:is(#backtestingView, .bt-edit-modal-body) .kpi-row.cards-grid{
   grid-template-columns:repeat(4,minmax(0,1fr));
 }
 @media(max-width:1200px){
@@ -121,7 +121,7 @@ function injectBacktestingProStyles() {
 @media(max-width:700px){
   #backtestingView .kpi-row.cards-grid{grid-template-columns:1fr}
 }
-#backtestingView .pro-kpi-card,#backtestingView .kpi-card.pro-kpi-card{
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-card,:is(#backtestingView, .bt-edit-modal-body) .kpi-card.pro-kpi-card{
   min-height:104px;
   border-radius:14px;
   padding:14px 16px;
@@ -133,18 +133,18 @@ function injectBacktestingProStyles() {
   border:1px solid var(--border,rgba(148,163,184,.14));
   box-shadow:0 2px 12px rgba(0,0,0,.08);
 }
-#backtestingView .pro-kpi-card .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.85}
-#backtestingView .pro-kpi-card .kpi-value{font-size:clamp(18px,2vw,22px);font-weight:800;font-variant-numeric:tabular-nums}
-#backtestingView .pro-kpi-val--pos{color:var(--green,#22c55e)!important}
-#backtestingView .pro-kpi-val--neg{color:var(--red,#ef4444)!important}
-#backtestingView .pro-kpi-val--neutral{color:var(--text,#e2e8f0)}
-#backtestingView .backtesting-dist-grid .card.backtesting-dist-card{
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-card .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.85}
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-card .kpi-value{font-size:clamp(18px,2vw,22px);font-weight:800;font-variant-numeric:tabular-nums}
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-val--pos{color:var(--green,#22c55e)!important}
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-val--neg{color:var(--red,#ef4444)!important}
+:is(#backtestingView, .bt-edit-modal-body) .pro-kpi-val--neutral{color:var(--text,#e2e8f0)}
+:is(#backtestingView, .bt-edit-modal-body) .backtesting-dist-grid .card.backtesting-dist-card{
   border-radius:12px;
   padding:12px 14px;
   font-weight:700;
 }
-#backtestingView .grid-2.bt-workspace,
-#backtestingView .bt-work-grid{
+:is(#backtestingView, .bt-edit-modal-body) .grid-2.bt-workspace,
+:is(#backtestingView, .bt-edit-modal-body) .bt-work-grid{
   display:grid;
   grid-template-columns:minmax(0,1.55fr) minmax(360px,0.95fr);
   gap:20px;
@@ -154,18 +154,18 @@ function injectBacktestingProStyles() {
   overflow:hidden;
   min-width:0;
 }
-#backtestingView .bt-workspace-left.bt-work-left,
-#backtestingView .bt-work-left{display:flex;flex-direction:column;gap:16px;min-width:0}
-#backtestingView .bt-workspace-right.bt-work-right,
-#backtestingView .bt-work-right{display:flex;flex-direction:column;gap:18px;min-width:0}
-#backtestingView .bt-day-trades-card{width:100%;margin-top:0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-workspace-left.bt-work-left,
+:is(#backtestingView, .bt-edit-modal-body) .bt-work-left{display:flex;flex-direction:column;gap:16px;min-width:0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-workspace-right.bt-work-right,
+:is(#backtestingView, .bt-edit-modal-body) .bt-work-right{display:flex;flex-direction:column;gap:18px;min-width:0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trades-card{width:100%;margin-top:0}
 @media(max-width:1250px){
   #backtestingView .grid-2.bt-workspace,
   #backtestingView .bt-work-grid{grid-template-columns:1fr}
   #backtestingView .bt-workspace-right,#backtestingView .bt-work-right{order:2}
   #backtestingView .bt-workspace-left,#backtestingView .bt-work-left{order:1}
 }
-#backtestingView .calendar-card.card.backtesting-calendar-card,#backtestingView .bt-calendar-card{
+:is(#backtestingView, .bt-edit-modal-body) .calendar-card.card.backtesting-calendar-card,:is(#backtestingView, .bt-edit-modal-body) .bt-calendar-card{
   min-width:0;
   overflow:visible;
   border-radius:16px;
@@ -174,45 +174,45 @@ function injectBacktestingProStyles() {
   background:var(--card-bg,rgba(15,23,42,.42));
   box-shadow:0 4px 20px rgba(0,0,0,.1);
 }
-#backtestingView .calendar-toolbar{
+:is(#backtestingView, .bt-edit-modal-body) .calendar-toolbar{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:12px;
   margin-bottom:12px;
 }
-#backtestingView .calendar-title-block{text-align:center;flex:1;min-width:0}
-#backtestingView .calendar-month-label{font-weight:800;font-size:1rem}
+:is(#backtestingView, .bt-edit-modal-body) .calendar-title-block{text-align:center;flex:1;min-width:0}
+:is(#backtestingView, .bt-edit-modal-body) .calendar-month-label{font-weight:800;font-size:1rem}
 /* Misma rejilla Semana+Lun-Vie que el Dashboard; tercera fila opcional solo Backtesting para agregados R */
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell:not(.day-empty) .day-r{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell:not(.day-empty) .day-r{
   font-size:11px;
   opacity:.88;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell:not(.day-empty).selected:not(.day-today){
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell:not(.day-empty).selected:not(.day-today){
   box-shadow:inset 0 0 0 2px rgba(59,130,246,.55);
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-neutral .day-r{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-neutral .day-r{
   color:#94a3b8;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.day-profit:not(.bt-date-locked){
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.day-profit:not(.bt-date-locked){
   background:rgba(34,197,94,.13)!important;
   border-color:rgba(34,197,94,.35)!important;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.day-loss:not(.bt-date-locked){
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.day-loss:not(.bt-date-locked){
   background:rgba(239,68,68,.11)!important;
   border-color:rgba(239,68,68,.30)!important;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .day-pnl,
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .trade-count,
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .day-r{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .day-pnl,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .trade-count,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-profit:not(.bt-date-locked) .day-r{
   color:#4ade80;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .day-pnl,
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .trade-count,
-#backtestingView #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .day-r{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .day-pnl,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .trade-count,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .day-cell.day-loss:not(.bt-date-locked) .day-r{
   color:#f87171;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked{
   position:relative;
   opacity:.55;
   background:rgba(15,23,42,.16)!important;
@@ -220,7 +220,7 @@ function injectBacktestingProStyles() {
   cursor:not-allowed;
   overflow:hidden;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked::after{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked::after{
   content:'';
   position:absolute;
   inset:0;
@@ -234,18 +234,18 @@ function injectBacktestingProStyles() {
   pointer-events:none;
   z-index:0;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.day-profit,
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.day-loss,
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.positive,
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.negative{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.day-profit,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.day-loss,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.positive,
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked.negative{
   background:rgba(15,23,42,.16)!important;
   border-color:rgba(148,163,184,.12)!important;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked:hover{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked:hover{
   transform:none!important;
   box-shadow:none!important;
 }
-#backtestingView .bt-locked-watermark{
+:is(#backtestingView, .bt-edit-modal-body) .bt-locked-watermark{
   position:absolute;
   right:10px;
   bottom:8px;
@@ -258,33 +258,33 @@ function injectBacktestingProStyles() {
   pointer-events:none;
   z-index:1;
 }
-#backtestingView #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked > .day-number{
+:is(#backtestingView, .bt-edit-modal-body) #backtestingCalendarGrid.calendar-grid .calendar-row .day-cell.bt-date-locked > .day-number{
   position:relative;
   z-index:1;
 }
-#backtestingView > .dashboard-container > .section.card.pro-backtesting-shell{
+:is(#backtestingView, .bt-edit-modal-body) > .dashboard-container > .section.card.pro-backtesting-shell{
   background:transparent;
   border:none;
   box-shadow:none;
   padding-left:0;
   padding-right:0;
 }
-#backtestingView .bt-operation-card.new-backtest-operation-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-operation-card.new-backtest-operation-card{
   border-radius:16px;
   padding:clamp(14px,1.8vw,20px);
 }
-#backtestingView .bt-operation-form-section{
+:is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-section{
   border-top:1px solid rgba(148,163,184,.12);
 }
-#backtestingView .bt-form-section-heading{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-section-heading{
   font-size:11px!important;
   text-transform:uppercase;
   letter-spacing:.08em;
   font-weight:700!important;
   color:var(--text-muted,#94a3b8)!important;
 }
-#backtestingView label.bt-direction-label,
-#backtestingView .bt-direction-label{
+:is(#backtestingView, .bt-edit-modal-body) label.bt-direction-label,
+:is(#backtestingView, .bt-edit-modal-body) .bt-direction-label{
   display:flex;
   flex-direction:column;
   gap:6px;
@@ -293,14 +293,14 @@ function injectBacktestingProStyles() {
   color:var(--text-muted,var(--muted,#94a3b8));
   margin-bottom:0;
 }
-#backtestingView .bt-direction-toggle{
+:is(#backtestingView, .bt-edit-modal-body) .bt-direction-toggle{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:8px;
   width:100%;
   max-width:100%;
 }
-#backtestingView .bt-dir-btn{
+:is(#backtestingView, .bt-edit-modal-body) .bt-dir-btn{
   height:42px;
   border-radius:12px;
   border:1px solid var(--border,rgba(148,163,184,.2));
@@ -310,30 +310,30 @@ function injectBacktestingProStyles() {
   cursor:pointer;
   transition:background .18s ease,border-color .18s ease,color .18s ease;
 }
-#backtestingView .bt-dir-btn.active{
+:is(#backtestingView, .bt-edit-modal-body) .bt-dir-btn.active{
   background:rgba(34,197,94,.16);
   border-color:rgba(34,197,94,.55);
   color:var(--green,#22c55e);
 }
-#backtestingView .bt-dir-btn[data-value="SHORT"].active{
+:is(#backtestingView, .bt-edit-modal-body) .bt-dir-btn[data-value="SHORT"].active{
   background:rgba(239,68,68,.14);
   border-color:rgba(239,68,68,.45);
   color:#ef4444;
 }
-#backtestingView .bt-input-with-mode{
+:is(#backtestingView, .bt-edit-modal-body) .bt-input-with-mode{
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;
   gap:8px;
   align-items:center;
 }
-#backtestingView .bt-mode-toggle{
+:is(#backtestingView, .bt-edit-modal-body) .bt-mode-toggle{
   display:inline-flex;
   padding:3px;
   border-radius:12px;
   border:1px solid var(--border,rgba(148,163,184,.18));
   background:rgba(15,23,42,.25);
 }
-#backtestingView .bt-mode-toggle button{
+:is(#backtestingView, .bt-edit-modal-body) .bt-mode-toggle button{
   height:32px;
   min-width:58px;
   border:0;
@@ -343,21 +343,21 @@ function injectBacktestingProStyles() {
   font-weight:800;
   cursor:pointer;
 }
-#backtestingView .bt-mode-toggle button.active{
+:is(#backtestingView, .bt-edit-modal-body) .bt-mode-toggle button.active{
   background:rgba(34,197,94,.18);
   color:var(--green,#22c55e);
 }
-#backtestingView .bt-converted-hint{
+:is(#backtestingView, .bt-edit-modal-body) .bt-converted-hint{
   margin-top:6px;
   font-size:12px;
   color:var(--text-muted,#94a3b8);
 }
-#backtestingView .bt-form-accordion{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion{
   border-top:1px solid rgba(148,163,184,.14);
   margin-top:14px;
   padding-top:12px;
 }
-#backtestingView .bt-form-accordion-header{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion-header{
   width:100%;
   height:38px;
   border:0;
@@ -374,20 +374,20 @@ function injectBacktestingProStyles() {
   text-transform:uppercase;
   cursor:pointer;
 }
-#backtestingView .bt-form-accordion-header svg{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion-header svg{
   width:16px;
   height:16px;
   flex-shrink:0;
   transition:transform .18s ease;
 }
-#backtestingView .bt-form-accordion.open .bt-form-accordion-header svg{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion.open .bt-form-accordion-header svg{
   transform:rotate(180deg);
 }
-#backtestingView .bt-form-accordion-body{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion-body{
   display:none;
   margin-top:10px;
 }
-#backtestingView .bt-form-accordion.open .bt-form-accordion-body{
+:is(#backtestingView, .bt-edit-modal-body) .bt-form-accordion.open .bt-form-accordion-body{
   display:block;
 }
 @media(max-width:900px){
@@ -396,44 +396,44 @@ function injectBacktestingProStyles() {
     grid-template-columns:1fr!important;
   }
 }
-#backtestingView .form-grid,#backtestingView .bt-operation-form-grid,#backtestingView .backtesting-form-grid{
+:is(#backtestingView, .bt-edit-modal-body) .form-grid,:is(#backtestingView, .bt-edit-modal-body) .bt-operation-form-grid,:is(#backtestingView, .bt-edit-modal-body) .backtesting-form-grid{
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:12px 14px;
 }
 @media(max-width:900px){
   #backtestingView .bt-operation-form-grid,#backtestingView .backtesting-form-grid{grid-template-columns:1fr}
 }
-#backtestingView input.input,#backtestingView select.input,#backtestingView textarea.input{
+:is(#backtestingView, .bt-edit-modal-body) input.input,:is(#backtestingView, .bt-edit-modal-body) select.input,:is(#backtestingView, .bt-edit-modal-body) textarea.input{
   min-height:42px;
   border-radius:10px;
 }
-#backtestingView .bt-metric-check,#backtestingView .bt-metric-field .input{
+:is(#backtestingView, .bt-edit-modal-body) .bt-metric-check,:is(#backtestingView, .bt-edit-modal-body) .bt-metric-field .input{
   border-radius:10px;
 }
-#backtestingView .bt-analysis-grid .bt-analysis-card,#backtestingView .bt-analysis-card.card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-analysis-grid .bt-analysis-card,:is(#backtestingView, .bt-edit-modal-body) .bt-analysis-card.card{
   border-radius:16px;
   padding:18px;
   border:1px solid var(--border,rgba(148,163,184,.14));
   background:var(--card-bg,rgba(15,23,42,.4));
   box-shadow:0 2px 14px rgba(0,0,0,.08);
 }
-#backtestingView .bt-session-card.card.pro-session-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-card.card.pro-session-card{
   border-radius:16px;
   padding:18px;
   transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
 }
-#backtestingView .bt-session-card.is-active-session{
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-card.is-active-session{
   border-color:rgba(34,197,94,.45)!important;
   box-shadow:0 0 0 1px rgba(34,197,94,.18),0 8px 28px rgba(34,197,94,.08);
   background:rgba(34,197,94,.06);
 }
-#backtestingView .pro-session-top{
+:is(#backtestingView, .bt-edit-modal-body) .pro-session-top{
   display:flex;
   justify-content:space-between;
   align-items:flex-start;
   gap:12px;
 }
-#backtestingView .pro-badge,#backtestingConfigView .pro-badge{
+:is(#backtestingView, .bt-edit-modal-body) .pro-badge,#backtestingConfigView .pro-badge{
   font-size:11px;
   font-weight:700;
   padding:5px 10px;
@@ -443,7 +443,7 @@ function injectBacktestingProStyles() {
   color:var(--text-muted,#94a3b8);
   white-space:nowrap;
 }
-#backtestingView .bt-session-actions{
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-actions{
   display:flex;
   flex-wrap:wrap;
   gap:8px;
@@ -451,7 +451,7 @@ function injectBacktestingProStyles() {
 @media(max-width:520px){
   #backtestingView .bt-session-actions .btn{flex:1 1 100%}
 }
-#backtestingView .bt-progress-bar span.pro-progress-fill{
+:is(#backtestingView, .bt-edit-modal-body) .bt-progress-bar span.pro-progress-fill{
   width:var(--bt-w,0%);
   display:block;
   height:100%;
@@ -481,7 +481,7 @@ function injectBacktestingProStyles() {
   font-size:15px;
   color:var(--text,#e2e8f0);
 }
-#backtestingView .pro-actions,#backtestingConfigView .pro-actions{
+:is(#backtestingView, .bt-edit-modal-body) .pro-actions,#backtestingConfigView .pro-actions{
   display:flex;
   flex-wrap:wrap;
   gap:8px;
@@ -574,11 +574,11 @@ body.light #btSessionModalOverlay #btSessionModal .modal-close:hover{
   gap:10px;
   justify-content:flex-end;
 }
-body.light #backtestingView .pro-card,body.light #backtestingConfigView .pro-card{
+body.light :is(#backtestingView, .bt-edit-modal-body) .pro-card,body.light #backtestingConfigView .pro-card{
   background:#fff;
   box-shadow:0 2px 16px rgba(15,23,42,.06);
 }
-#backtestingView .bt-analysis-grid.bt-analysis-grid--two{
+:is(#backtestingView, .bt-edit-modal-body) .bt-analysis-grid.bt-analysis-grid--two{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:16px;
@@ -587,7 +587,7 @@ body.light #backtestingView .pro-card,body.light #backtestingConfigView .pro-car
   #backtestingView .bt-analysis-grid.bt-analysis-grid--two{grid-template-columns:1fr}
 }
 #backtestingConfigView .pro-section-sub--flush{margin-top:0}
-#backtestingView .backtesting-dist-grid .card.backtesting-dist-card.pro-kpi-card strong{
+:is(#backtestingView, .bt-edit-modal-body) .backtesting-dist-grid .card.backtesting-dist-card.pro-kpi-card strong{
   font-size:clamp(18px,2.2vw,24px);
   font-weight:800;
   font-variant-numeric:tabular-nums;
@@ -595,12 +595,12 @@ body.light #backtestingView .pro-card,body.light #backtestingConfigView .pro-car
 #btSessionModalOverlay .backtesting-session-actions.pro-modal-footer{
   justify-content:flex-end;
 }
-body.light #backtestingView .bt-session-card.is-active-session{
+body.light :is(#backtestingView, .bt-edit-modal-body) .bt-session-card.is-active-session{
   background:rgba(34,197,94,.08);
 }
-#backtestingView .bt-kpi-section.pro-card{padding:0}
-#backtestingView .bt-kpi-section{padding:0;overflow:hidden}
-#backtestingView .bt-section-toggle{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-section.pro-card{padding:0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-section{padding:0;overflow:hidden}
+:is(#backtestingView, .bt-edit-modal-body) .bt-section-toggle{
   width:100%;
   border:0;
   background:transparent;
@@ -613,18 +613,18 @@ body.light #backtestingView .bt-session-card.is-active-session{
   cursor:pointer;
   text-align:left;
 }
-#backtestingView .bt-section-toggle h3{
+:is(#backtestingView, .bt-edit-modal-body) .bt-section-toggle h3{
   margin:0;
   font-size:18px;
   font-weight:850;
   letter-spacing:-0.02em;
 }
-#backtestingView .bt-section-toggle p{
+:is(#backtestingView, .bt-edit-modal-body) .bt-section-toggle p{
   margin:4px 0 0;
   color:var(--text-muted,#94a3b8);
   font-size:12px;
 }
-#backtestingView .bt-toggle-icon{
+:is(#backtestingView, .bt-edit-modal-body) .bt-toggle-icon{
   width:30px;
   height:30px;
   border-radius:10px;
@@ -636,10 +636,10 @@ body.light #backtestingView .bt-session-card.is-active-session{
   transition:transform .18s ease;
   flex-shrink:0;
 }
-#backtestingView .bt-kpi-section:not(.open) .bt-toggle-icon{transform:rotate(-90deg)}
-#backtestingView .bt-kpi-section-body{padding:0 22px 20px;display:none}
-#backtestingView .bt-kpi-section.open .bt-kpi-section-body{display:block}
-#backtestingView .bt-kpi-toolbar{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-section:not(.open) .bt-toggle-icon{transform:rotate(-90deg)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-section-body{padding:0 22px 20px;display:none}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-section.open .bt-kpi-section-body{display:block}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-toolbar{
   display:flex;
   flex-wrap:wrap;
   align-items:center;
@@ -647,35 +647,35 @@ body.light #backtestingView .bt-session-card.is-active-session{
   gap:14px 20px;
   margin-bottom:18px;
 }
-#backtestingView .bt-kpi-hero-row{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-hero-row{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
   gap:18px;
   margin-bottom:18px;
 }
-#backtestingView .bt-kpi-mini-row{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-mini-row{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
   gap:16px;
   margin-bottom:16px;
 }
-#backtestingView #btScheduleStatsSection.schedule-discipline-card{
+:is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection.schedule-discipline-card{
   padding:clamp(20px,2.4vw,28px);
   margin-top:clamp(20px,2.5vw,32px);
 }
 /* Este bloque ya no son tarjetas en rejilla, sino una tabla comparativa seguida del pie con
    los totales y el acceso al simulador: tiene que fluir en bloque. Con la rejilla, el pie se
    colocaba como una columna mas y se solapaba con la tabla. */
-#backtestingView #btScheduleStatsSection .schedule-discipline-metrics{
+:is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection .schedule-discipline-metrics{
   display:block!important;
   margin-top:16px;
   width:100%;
 }
-#backtestingView #btScheduleStatsSection .schedule-discipline-metrics .advanced-item{
+:is(#backtestingView, .bt-edit-modal-body) #btScheduleStatsSection .schedule-discipline-metrics .advanced-item{
   min-width:0;
   padding:16px 18px;
 }
-#backtestingView .bt-kpi-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-card{
   border:1px solid rgba(148,163,184,.14);
   border-radius:16px;
   background:rgba(15,23,42,.20);
@@ -683,25 +683,25 @@ body.light #backtestingView .bt-session-card.is-active-session{
   min-height:82px;
   box-shadow:none;
 }
-#backtestingView .bt-kpi-card.feature:not(.bt-pnl-card){
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-card.feature:not(.bt-pnl-card){
   min-height:96px;
   background:linear-gradient(180deg,rgba(34,197,94,.075),rgba(15,23,42,.20));
   border-color:rgba(34,197,94,.18);
 }
-#backtestingView .bt-kpi-card.feature.bt-pnl-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-card.feature.bt-pnl-card{
   min-height:auto;
   background:linear-gradient(180deg,rgba(34,197,94,.075),rgba(15,23,42,.20));
   border-color:rgba(34,197,94,.18);
 }
-#backtestingView .bt-kpi-hero-row .bt-kpi-card:not(.feature){
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-hero-row .bt-kpi-card:not(.feature){
   min-height:88px;
   background:rgba(15,23,42,.24);
 }
-#backtestingView .bt-kpi-mini-row .bt-kpi-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-mini-row .bt-kpi-card{
   min-height:74px;
   padding:11px 12px;
 }
-#backtestingView .bt-kpi-label{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-label{
   color:var(--text-muted,#94a3b8);
   font-size:10px;
   font-weight:800;
@@ -710,26 +710,26 @@ body.light #backtestingView .bt-session-card.is-active-session{
   margin-bottom:8px;
   opacity:.9;
 }
-#backtestingView .bt-kpi-mini-row .bt-kpi-label{font-size:9px;margin-bottom:6px}
-#backtestingView .bt-kpi-value{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-mini-row .bt-kpi-label{font-size:9px;margin-bottom:6px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-value{
   font-size:20px;
   font-weight:800;
   line-height:1.1;
   letter-spacing:-0.02em;
   font-variant-numeric:tabular-nums;
 }
-#backtestingView .bt-kpi-card.feature .bt-kpi-value{font-size:26px;font-weight:850}
-#backtestingView .bt-kpi-hero-row .bt-kpi-card:not(.feature) .bt-kpi-value{font-size:21px;font-weight:800}
-#backtestingView .bt-kpi-mini-row .bt-kpi-value{font-size:16px;font-weight:800}
-#backtestingView .bt-kpi-value.positive{color:var(--green,#22c55e)}
-#backtestingView .bt-kpi-value.negative{color:#ef4444}
-#backtestingView .bt-result-pill-row{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-card.feature .bt-kpi-value{font-size:26px;font-weight:850}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-hero-row .bt-kpi-card:not(.feature) .bt-kpi-value{font-size:21px;font-weight:800}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-mini-row .bt-kpi-value{font-size:16px;font-weight:800}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-value.positive{color:var(--green,#22c55e)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-value.negative{color:#ef4444}
+:is(#backtestingView, .bt-edit-modal-body) .bt-result-pill-row{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
   gap:14px;
   margin-top:4px;
 }
-#backtestingView .bt-kpi-result-card{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-result-card{
   min-height:42px;
   border:1px solid rgba(148,163,184,.12);
   border-radius:13px;
@@ -739,8 +739,8 @@ body.light #backtestingView .bt-session-card.is-active-session{
   align-items:center;
   justify-content:space-between;
 }
-#backtestingView .bt-kpi-result-card span,
-#backtestingView .bt-kpi-result-card .bt-kpi-label{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-result-card span,
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-result-card .bt-kpi-label{
   margin:0;
   font-size:11px;
   color:var(--text-muted,#94a3b8);
@@ -748,13 +748,13 @@ body.light #backtestingView .bt-session-card.is-active-session{
   text-transform:uppercase;
   letter-spacing:.06em;
 }
-#backtestingView .bt-kpi-result-card strong{
+:is(#backtestingView, .bt-edit-modal-body) .bt-kpi-result-card strong{
   font-size:18px;
   font-weight:850;
   color:var(--text,#e2e8f0);
   font-variant-numeric:tabular-nums;
 }
-#backtestingView .bt-be-toggle{
+:is(#backtestingView, .bt-edit-modal-body) .bt-be-toggle{
   min-height:38px;
   padding:8px 12px;
   border-radius:12px;
@@ -768,70 +768,70 @@ body.light #backtestingView .bt-session-card.is-active-session{
   align-items:center;
   gap:8px;
 }
-#backtestingView .bt-be-toggle input{accent-color:var(--green,#22c55e)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-be-toggle input{accent-color:var(--green,#22c55e)}
 @media(max-width:700px){
   #backtestingView .bt-kpi-toolbar{flex-direction:column;align-items:flex-start}
 }
-#backtestingView .bt-session-filter-wrap{position:relative;width:min(420px,100%)}
-#backtestingView .bt-session-filter-wrap>label{display:block;margin-bottom:8px;color:var(--text-muted);font-size:13px;font-weight:700}
-#backtestingView .bt-session-filter-btn{width:min(420px,100%);min-height:54px;border:1px solid var(--border);border-radius:16px;background:rgba(15,23,42,.34);color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 16px;cursor:pointer;font-weight:900;transition:all .16s ease}
-#backtestingView .bt-session-filter-btn:hover{border-color:rgba(34,197,94,.35);background:rgba(15,23,42,.48)}
-#backtestingView .bt-session-filter-btn svg{width:18px;height:18px;color:var(--text-muted)}
-#backtestingView .bt-session-filter-dropdown{display:none;position:absolute;top:calc(100% + 10px);left:0;width:min(420px,100%);z-index:100;padding:10px;border-radius:18px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.96);box-shadow:0 24px 70px rgba(0,0,0,.45);backdrop-filter:blur(14px)}
-#backtestingView .bt-session-filter-dropdown.open{display:grid;gap:8px}
-#backtestingView #btSessionFilterOptions{display:contents}
-#backtestingView .bt-session-filter-option{position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:12px;padding:12px;border-radius:14px;border:1px solid transparent;background:rgba(30,41,59,.45);cursor:pointer;transition:all .16s ease}
-#backtestingView .bt-session-filter-option:hover{background:rgba(51,65,85,.65);border-color:rgba(148,163,184,.18)}
-#backtestingView .bt-session-filter-option input{position:absolute;opacity:0;pointer-events:none}
-#backtestingView .bt-session-checkmark{width:20px;height:20px;border-radius:7px;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.65);display:grid;place-items:center}
-#backtestingView .bt-session-filter-option input:checked + .bt-session-checkmark{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.7)}
-#backtestingView .bt-session-filter-option input:checked + .bt-session-checkmark::after{content:"✓";color:var(--green);font-size:14px;font-weight:900}
-#backtestingView .bt-session-filter-option:has(input:checked){border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10)}
-#backtestingView .bt-session-option-content{min-width:0;display:flex;flex-direction:column;gap:3px}
-#backtestingView .bt-session-option-content strong{color:var(--text);font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#backtestingView .bt-session-option-content small{color:var(--text-muted);font-size:12px;line-height:1.3}
-#backtestingView .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
-#backtestingView .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
-#backtestingView .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-wrap{position:relative;width:min(420px,100%)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-wrap>label{display:block;margin-bottom:8px;color:var(--text-muted);font-size:13px;font-weight:700}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-btn{width:min(420px,100%);min-height:54px;border:1px solid var(--border);border-radius:16px;background:rgba(15,23,42,.34);color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 16px;cursor:pointer;font-weight:900;transition:all .16s ease}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-btn:hover{border-color:rgba(34,197,94,.35);background:rgba(15,23,42,.48)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-btn svg{width:18px;height:18px;color:var(--text-muted)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-dropdown{display:none;position:absolute;top:calc(100% + 10px);left:0;width:min(420px,100%);z-index:100;padding:10px;border-radius:18px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.96);box-shadow:0 24px 70px rgba(0,0,0,.45);backdrop-filter:blur(14px)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-dropdown.open{display:grid;gap:8px}
+:is(#backtestingView, .bt-edit-modal-body) #btSessionFilterOptions{display:contents}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option{position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:12px;padding:12px;border-radius:14px;border:1px solid transparent;background:rgba(30,41,59,.45);cursor:pointer;transition:all .16s ease}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option:hover{background:rgba(51,65,85,.65);border-color:rgba(148,163,184,.18)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option input{position:absolute;opacity:0;pointer-events:none}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-checkmark{width:20px;height:20px;border-radius:7px;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.65);display:grid;place-items:center}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option input:checked + .bt-session-checkmark{background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.7)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option input:checked + .bt-session-checkmark::after{content:"✓";color:var(--green);font-size:14px;font-weight:900}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-filter-option:has(input:checked){border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-option-content{min-width:0;display:flex;flex-direction:column;gap:3px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-option-content strong{color:var(--text);font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:is(#backtestingView, .bt-edit-modal-body) .bt-session-option-content small{color:var(--text-muted);font-size:12px;line-height:1.3}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trades-list{display:grid;gap:10px;margin-top:12px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-card{border:1px solid var(--border);background:rgba(15,23,42,.22);border-radius:14px;padding:12px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-card:hover{border-color:var(--green,#22c55e);background:rgba(34,197,94,.06)}
 /* Los challenges van en su propia seccion, separados del resto de estadisticas: no son
    resultados del backtest sino una proyeccion. El acento morado y el margen extra son la
    senal visual de "esto es otra cosa", sin llegar a parecer una pagina distinta. */
-#backtestingView .bt-challenge-section .pro-card{border-color:rgba(139,92,246,.32);
+:is(#backtestingView, .bt-edit-modal-body) .bt-challenge-section .pro-card{border-color:rgba(139,92,246,.32);
   background:linear-gradient(180deg,rgba(139,92,246,.07),rgba(139,92,246,.02) 120px)}
-#backtestingView .bt-challenge-section .bt-section-title h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+:is(#backtestingView, .bt-edit-modal-body) .bt-challenge-section .bt-section-title h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .bt-challenge-badge{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;
   padding:3px 8px;border-radius:999px;color:#c4b5fd;background:rgba(139,92,246,.16);
   border:1px solid rgba(139,92,246,.38)}
 /* Filtro de sesion integrado al pie de la tarjeta de Sesiones: separado por una linea, con el
    texto a la izquierda y el control (mas los botones de exportar) a la derecha. */
-#backtestingView .bt-sessions-filter{display:flex;align-items:flex-end;justify-content:space-between;
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter{display:flex;align-items:flex-end;justify-content:space-between;
   gap:18px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
-#backtestingView .bt-sessions-filter-text{min-width:0}
-#backtestingView .bt-sessions-filter-text h4{margin:0;font-size:.95rem}
-#backtestingView .bt-sessions-filter-text p{margin:2px 0 0;color:var(--text-muted);font-size:.82rem}
-#backtestingView .bt-sessions-filter .backtesting-filter-bar{display:flex;align-items:flex-end;
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter-text{min-width:0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter-text h4{margin:0;font-size:.95rem}
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter-text p{margin:2px 0 0;color:var(--text-muted);font-size:.82rem}
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter .backtesting-filter-bar{display:flex;align-items:flex-end;
   gap:14px;flex-wrap:wrap;margin:0}
-#backtestingView .bt-sessions-filter .export-group{width:auto;margin-top:0;padding-top:0;
+:is(#backtestingView, .bt-edit-modal-body) .bt-sessions-filter .export-group{width:auto;margin-top:0;padding-top:0;
   border-top:none;margin-left:0}
 /* Rachas de TP/SL: mismas pastillas que la distribucion de resultados, con el color del
    resultado al que se refieren para poder leerlas de un vistazo. */
-#backtestingView .bt-streak-row{margin-top:10px}
-#backtestingView .bt-streak-row .streak-tp strong{color:var(--green,#22c55e)}
-#backtestingView .bt-streak-row .streak-sl strong{color:#ef4444}
-#backtestingView .bt-streak-note{margin:8px 0 0}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-row{margin-top:10px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-row .streak-tp strong{color:var(--green,#22c55e)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-row .streak-sl strong{color:#ef4444}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-note{margin:8px 0 0}
 /* Las clases .positive/.negative solo tienen color dentro de .kpi-value, y aqui el valor es un
    <strong> de la pastilla, asi que se le da color explicitamente. */
-#backtestingView .bt-streak-row strong.positive{color:var(--green,#22c55e)}
-#backtestingView .bt-streak-row strong.negative{color:#ef4444}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-row strong.positive{color:var(--green,#22c55e)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-streak-row strong.negative{color:#ef4444}
 /* Curva de capital. La altura es fija: Chart.js con maintainAspectRatio:false necesita que el
    contenedor la defina, si no crece indefinidamente en cada redibujado. */
-#backtestingView .bt-equity-chart-wrap{position:relative;height:300px;margin-top:14px}
-#backtestingView .bt-equity-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
-#backtestingView .bt-equity-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);
+:is(#backtestingView, .bt-edit-modal-body) .bt-equity-chart-wrap{position:relative;height:300px;margin-top:14px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-equity-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-equity-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);
   border-radius:10px;padding:10px 12px;min-width:0}
-#backtestingView .bt-equity-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;
+:is(#backtestingView, .bt-edit-modal-body) .bt-equity-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;
   letter-spacing:.04em;color:var(--text-muted)}
-#backtestingView .bt-equity-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
+:is(#backtestingView, .bt-edit-modal-body) .bt-equity-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
 @media(max-width:760px){#backtestingView .bt-equity-chart-wrap{height:230px}}
 /* Pestanas de Configuracion: mismo aspecto que las de Gestion y Backtesting. */
 .config-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:18px}
@@ -867,19 +867,19 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-mode-rows span{color:var(--text-muted);font-size:.82rem}
 .challenge-mode-rows strong{font-size:1.05rem;font-variant-numeric:tabular-nums}
 .challenge-verdict{margin-bottom:14px}
-/* La casilla de esta tarjeta necesita ganarle a "#backtestingView input{width:100%}", que la
+/* La casilla de esta tarjeta necesita ganarle a ":is(#backtestingView, .bt-edit-modal-body) input{width:100%}", que la
    estiraba a todo lo ancho y empujaba su etiqueta fuera del bloque. Se acota a este componente
    en vez de excluir las casillas en la regla general: los interruptores del resto de la vista
    dependen de esa regla y tocarla los destaparia. */
 .challenge-policy{margin:14px 0 16px;padding:14px 16px;border:1px solid var(--border);
   border-radius:12px;background:rgba(255,255,255,.02)}
-#backtestingView .challenge-policy .challenge-policy-switch{display:flex;align-items:flex-start;
+:is(#backtestingView, .bt-edit-modal-body) .challenge-policy .challenge-policy-switch{display:flex;align-items:flex-start;
   gap:10px;margin:0;cursor:pointer;font-size:.9rem;color:var(--text);line-height:1.45}
-#backtestingView .challenge-policy .challenge-policy-switch input[type="checkbox"]{
+:is(#backtestingView, .bt-edit-modal-body) .challenge-policy .challenge-policy-switch input[type="checkbox"]{
   width:18px;min-width:18px;max-width:18px;height:18px;flex:0 0 18px;margin:1px 0 0;cursor:pointer}
-#backtestingView .challenge-policy .challenge-policy-verdict{margin:12px 0 0;padding-top:12px;
+:is(#backtestingView, .bt-edit-modal-body) .challenge-policy .challenge-policy-verdict{margin:12px 0 0;padding-top:12px;
   border-top:1px solid var(--border);line-height:1.7}
-#backtestingView .challenge-policy .challenge-policy-verdict strong{color:var(--text)}
+:is(#backtestingView, .bt-edit-modal-body) .challenge-policy .challenge-policy-verdict strong{color:var(--text)}
 .policy-compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .policy-option{border:1px solid var(--border);border-radius:10px;padding:10px 12px;
   background:rgba(255,255,255,.02)}
@@ -919,16 +919,16 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .challenge-headline strong{font-size:1.25rem}
 .challenge-headline.positive{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.08)}
 .challenge-headline.negative{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08)}
-#backtestingView .challenge-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px}
-#backtestingView .challenge-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0}
-#backtestingView .challenge-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
-#backtestingView .challenge-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
+:is(#backtestingView, .bt-edit-modal-body) .challenge-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px}
+:is(#backtestingView, .bt-edit-modal-body) .challenge-kpis .advanced-item{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0}
+:is(#backtestingView, .bt-edit-modal-body) .challenge-kpis .advanced-item span{display:block;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+:is(#backtestingView, .bt-edit-modal-body) .challenge-kpis .advanced-item h2{margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums}
 /* Explorador de metricas: filtros de tres estados para cruzar metricas con resultados.
    Se prioriza la densidad: filtros en una linea, KPIs en tira horizontal y listado con scroll,
    para que toda la herramienta quepa de un vistazo sin desplazarse. */
-#backtestingView .bt-analysis-card--full{grid-column:1/-1}
-#backtestingView #btMetricExplorerSection .subsection-title{margin-bottom:2px}
-#backtestingView #btMetricExplorerSection > p.muted{margin-bottom:10px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-analysis-card--full{grid-column:1/-1}
+:is(#backtestingView, .bt-edit-modal-body) #btMetricExplorerSection .subsection-title{margin-bottom:2px}
+:is(#backtestingView, .bt-edit-modal-body) #btMetricExplorerSection > p.muted{margin-bottom:10px}
 
 .bt-explorer-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-bottom:10px}
 .bt-explorer-group{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
@@ -948,24 +948,24 @@ body.light #backtestingView .bt-session-card.is-active-session{
 
 /* .stats-grid solo define rejilla dentro de #statsView, asi que aqui hay que darsela: sin esto
    los KPI se apilaban uno debajo de otro y la tarjeta se volvia larguisima. */
-#backtestingView .bt-explorer-kpis{
+:is(#backtestingView, .bt-edit-modal-body) .bt-explorer-kpis{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
   gap:8px;
   margin-bottom:12px;
 }
-#backtestingView .bt-explorer-kpis .advanced-item{
+:is(#backtestingView, .bt-edit-modal-body) .bt-explorer-kpis .advanced-item{
   background:rgba(255,255,255,.03);
   border:1px solid var(--border);
   border-radius:10px;
   padding:8px 10px;
   min-width:0;
 }
-#backtestingView .bt-explorer-kpis .advanced-item span{
+:is(#backtestingView, .bt-edit-modal-body) .bt-explorer-kpis .advanced-item span{
   display:block;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;
   color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-#backtestingView .bt-explorer-kpis .advanced-item h2{
+:is(#backtestingView, .bt-edit-modal-body) .bt-explorer-kpis .advanced-item h2{
   margin:2px 0 0;font-size:1.05rem;font-variant-numeric:tabular-nums;white-space:nowrap;
 }
 
@@ -1049,23 +1049,23 @@ body.light #backtestingView .bt-session-card.is-active-session{
 .bt-detail-images-grid figure{margin:0}
 .bt-detail-images-grid figcaption{color:var(--text-muted);font-size:.72rem;margin-bottom:4px}
 .bt-detail-images-grid img{width:100%;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;display:block}
-#backtestingView .bt-day-trade-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-#backtestingView .bt-day-trade-title{display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;font-weight:900}
-#backtestingView .bt-day-trade-meta{margin-top:4px;color:var(--text-muted);font-size:12px}
-#backtestingView .bt-day-trade-time{margin-top:4px;color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-#backtestingView .bt-day-trade-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-#backtestingView .bt-day-trade-metric{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.10);color:var(--green,#22c55e);font-size:11px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
-#backtestingView .bt-day-trade-pnl{font-size:14px;font-weight:900;color:var(--text);white-space:nowrap}
-#backtestingView .bt-day-trade-pnl.positive{color:var(--green)}
-#backtestingView .bt-day-trade-pnl.negative{color:#ef4444}
-#backtestingView .bt-result-badge{border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;border:1px solid var(--border);color:var(--text-muted)}
-#backtestingView .bt-result-badge.tp{color:var(--green);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
-#backtestingView .bt-result-badge.sl{color:#ef4444;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28)}
-#backtestingView .bt-result-badge.be{color:var(--text-muted);background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.24)}
-#backtestingView .bt-day-trade-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
-#backtestingView .bt-day-trade-edit{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.10);color:var(--green);font-weight:800;cursor:pointer}
-#backtestingView .bt-day-trade-delete{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(239,68,68,.28);background:rgba(239,68,68,.10);color:#ef4444;font-weight:800;cursor:pointer}
-#backtestingView .bt-day-trade-delete:hover{background:rgba(239,68,68,.18)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-main{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-title{display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;font-weight:900}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-meta{margin-top:4px;color:var(--text-muted);font-size:12px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-time{margin-top:4px;color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-metric{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.10);color:var(--green,#22c55e);font-size:11px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-pnl{font-size:14px;font-weight:900;color:var(--text);white-space:nowrap}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-pnl.positive{color:var(--green)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-pnl.negative{color:#ef4444}
+:is(#backtestingView, .bt-edit-modal-body) .bt-result-badge{border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;border:1px solid var(--border);color:var(--text-muted)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-result-badge.tp{color:var(--green);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-result-badge.sl{color:#ef4444;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-result-badge.be{color:var(--text-muted);background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.24)}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-edit{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.10);color:var(--green);font-weight:800;cursor:pointer}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-delete{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(239,68,68,.28);background:rgba(239,68,68,.10);color:#ef4444;font-weight:800;cursor:pointer}
+:is(#backtestingView, .bt-edit-modal-body) .bt-day-trade-delete:hover{background:rgba(239,68,68,.18)}
 `;
   document.head.appendChild(style);
 }
@@ -18009,6 +18009,11 @@ async function saveBacktestingStrategyFromModal() {
     payload.risk = riskValue;
   }
 
+  // El nombre que tenía antes, para poder arrastrarlo a las operaciones que ya lo usaban.
+  const nombreAnterior = id
+    ? String(strategies.find((s) => String(s.id) === String(id))?.name || '')
+    : '';
+
   if (id) {
     backtestingSettings.strategies = strategies.map((s) => (String(s.id) === String(id) ? payload : s));
   } else {
@@ -18031,12 +18036,79 @@ async function saveBacktestingStrategyFromModal() {
     }
   }
 
+  const renombradas = await renameBacktestingStrategyInTrades(nombreAnterior, name);
+
   closeBacktestingStrategyModal();
   renderBacktestingSettings();
   populateBacktestingSessionModalForm();
   populateBacktestingSelects();
 
-  showToast('Estrategia guardada', 'success');
+  if (renombradas.failed > 0) {
+    showToast(
+      `Estrategia guardada, pero ${renombradas.failed} operación(es) siguen con el nombre anterior. Vuelve a intentarlo.`,
+      'error'
+    );
+  } else if (renombradas.updated > 0) {
+    showToast(
+      `Estrategia guardada y actualizada en ${renombradas.updated} operación(es)`,
+      'success'
+    );
+  } else {
+    showToast('Estrategia guardada', 'success');
+  }
+}
+
+/**
+ * Arrastra el nombre nuevo a las operaciones que usaban el anterior.
+ *
+ * Las operaciones guardan la estrategia por su NOMBRE, no por su identificador. Así que
+ * renombrarla dejaba a todas las anteriores apuntando a un nombre que ya no existía: se quedaban
+ * sin riesgo, sin RR y sin horarios, el PnL dejaba de calcularse solo y el desplegable enseñaba
+ * las dos, la vieja y la nueva. Nada se perdía, pero todo dejaba de encajar.
+ *
+ * Solo se tocan las que coinciden exactamente con el nombre anterior, y solo se cambia ese campo.
+ */
+async function renameBacktestingStrategyInTrades(nombreAnterior, nombreNuevo) {
+  const antes = String(nombreAnterior || '').trim();
+  const ahora = String(nombreNuevo || '').trim();
+  if (!antes || !ahora || antes === ahora) return { updated: 0, failed: 0 };
+
+  const api = getBackendApi();
+  if (!api?.updateBacktestTrade) return { updated: 0, failed: 0 };
+
+  const afectadas = (cachedBacktestingTrades || []).filter(
+    (trade) => String(trade?.strategy || '').trim() === antes
+  );
+  if (!afectadas.length) return { updated: 0, failed: 0 };
+
+  let updated = 0;
+  let failed = 0;
+  for (const trade of afectadas) {
+    try {
+      // Se reenvía la operación entera con el nombre cambiado: mandar solo el campo dejaría el
+      // resto de columnas a su valor por defecto.
+      const res = await api.updateBacktestTrade({ ...trade, strategy: ahora });
+      if (res?.success === false) failed += 1;
+      else {
+        trade.strategy = ahora;
+        updated += 1;
+      }
+    } catch (err) {
+      console.warn('[backtesting] no se pudo renombrar la estrategia en la operación', trade?.id, err);
+      failed += 1;
+    }
+  }
+
+  // Se relee de la base: la caché ya está corregida a mano, pero así el calendario, las listas y
+  // las estadísticas se rehacen con lo que de verdad hay guardado.
+  if (updated > 0) {
+    try {
+      await refreshBacktestingView();
+    } catch (err) {
+      console.warn('[backtesting] no se pudo refrescar la vista tras renombrar', err);
+    }
+  }
+  return { updated, failed };
 }
 
 async function deleteBacktestingStrategy(strategyId) {
@@ -18399,6 +18471,8 @@ function describeBacktestingAutoPnl(result) {
 
   return computeAutoPnl({
     result,
+    // Con riesgo escrito a mano da igual que la estrategia exista: el importe sale del riesgo.
+    strategyFound: usaManual || Boolean(strategy) || !strategyName,
     riskValue: usaManual ? riesgoManual : (strategy?.risk_value ?? strategy?.riskValue ?? 0),
     riskUnit: usaManual ? 'eur' : (strategy?.risk_unit ?? strategy?.riskUnit ?? 'eur'),
     capital: getBacktestingCapitalForForm(),
@@ -18430,6 +18504,10 @@ function explainBacktestingAutoPnl() {
 
   const { reason } = describeBacktestingAutoPnl(result);
   const textos = {
+    [AUTO_PNL_MOTIVOS.SIN_ESTRATEGIA]: t(
+      'bt_autopnl_sin_estrategia',
+      'Esta operación apunta a una estrategia que ya no existe (¿se renombró?). Vuelve a elegirla arriba.'
+    ),
     [AUTO_PNL_MOTIVOS.SIN_RIESGO]: t(
       'bt_autopnl_sin_riesgo',
       'No se calcula solo: la estrategia no tiene riesgo por operación configurado.'
