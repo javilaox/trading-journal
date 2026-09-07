@@ -133,7 +133,21 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
   tbody tr.is-current{background:rgba(56,189,248,.10)}
   .shots figure{margin:0}
   .shots figcaption{color:var(--muted);font-size:.7rem;margin-bottom:4px}
-  .shots img{width:100%;border:1px solid var(--border);border-radius:10px;display:block}
+  .shots img{width:100%;border:1px solid var(--border);border-radius:10px;display:block;cursor:zoom-in}
+  /* Ficha de la operacion desplegada: los datos en pares etiqueta/valor, en columnas que se
+     reparten segun el ancho, para que en el movil no salga una tabla dentro de otra. */
+  .tdetail{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 18px;margin-bottom:12px}
+  .tdetail div{min-width:0}
+  .tdetail dt{color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 2px}
+  .tdetail dd{margin:0;font-size:.9rem;font-variant-numeric:tabular-nums;word-break:break-word}
+  /* Una captura a pantalla completa. Las de backtesting son graficos y en la fila se ven pequenas:
+     sin poder ampliarlas el informe no sirve para revisar la operacion. */
+  #lightbox{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+       background:rgba(2,6,23,.92);padding:24px;cursor:zoom-out}
+  #lightbox.on{display:flex}
+  #lightbox img{max-width:100%;max-height:100%;border-radius:12px;border:1px solid var(--border)}
+  #lightbox .lb-close{position:absolute;top:16px;right:20px;color:var(--text);background:rgba(255,255,255,.08);
+       border:1px solid var(--border);border-radius:10px;padding:8px 14px;font:inherit;font-size:.85rem;cursor:pointer}
   footer{color:var(--muted);font-size:.75rem;text-align:center;margin-top:28px}
   /* Movil: el informe se consulta mucho desde el telefono, asi que las tablas se desplazan en
      horizontal dentro de su tarjeta (nunca la pagina entera) y los controles pasan a ancho
@@ -271,6 +285,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       <thead><tr>
         <th data-sort="date">Fecha</th>
         <th data-sort="asset">Par</th>
+        <th data-sort="strategy">Estrategia</th>
         <th data-sort="direction">Dir.</th>
         <th data-sort="result">Res.</th>
         <th class="num" data-sort="pnl">PnL</th>
@@ -279,7 +294,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
         <th data-sort="session">Sesión</th>
       </tr></thead>
       <tbody></tbody></table></div>
-    <p class="muted small" style="margin-top:10px">Pulsa una fila para ver sus métricas y notas.</p>
+    <p class="muted small" style="margin-top:10px">Pulsa una fila para ver sus niveles, métricas, notas y capturas.</p>
   </section>
 
   <footer>
@@ -637,6 +652,8 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       };
     }
 
+    initLightbox();
+
     document.querySelectorAll('#tradesTable th[data-sort]').forEach(function (th) {
       th.addEventListener('click', function () {
         var k = th.getAttribute('data-sort');
@@ -982,6 +999,55 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
     });
   }
 
+  /**
+   * Los datos de la operacion que no caben en la fila: niveles, horario, R previsto y sesion.
+   *
+   * Se omite lo que no tenga valor en vez de pintar un guion: una lista de huecos vacios estorba
+   * mas que ayuda, y en backtesting es normal apuntar la operacion sin sus precios exactos.
+   */
+  function tradeFacts(t) {
+    var precio = function (v) {
+      return v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('es-ES', { maximumFractionDigits: 5 });
+    };
+    var pares = [
+      ['Precio de entrada', precio(t.entry_price)],
+      ['Stop loss', precio(t.stop_loss)],
+      ['Take profit', precio(t.take_profit)],
+      ['R previsto', Number(t.rr_planned) ? Number(t.rr_planned).toFixed(2) : ''],
+      ['R obtenido', Number(t.rr_result) ? Number(t.rr_result).toFixed(2) : ''],
+      ['Hora de entrada', t.entry_time || ''],
+      ['Hora de salida', t.exit_time || ''],
+      ['Despues del BE', t.be_after_result || ''],
+      ['Sesion', SESSIONS[String(t.session_id)] || '']
+    ].filter(function (par) { return par[1] !== '' && par[1] !== null; });
+
+    if (!pares.length) return '';
+    return '<dl class="tdetail">' + pares.map(function (par) {
+      return '<div><dt>' + esc(par[0]) + '</dt><dd>' + esc(String(par[1])) + '</dd></div>';
+    }).join('') + '</dl>';
+  }
+
+  /** Abrir una captura a tamano completo. Se cierra al pulsar fuera, en el boton o con Escape. */
+  function initLightbox() {
+    var caja = document.getElementById('lightbox');
+    if (!caja) return;
+    var img = caja.querySelector('img');
+
+    document.addEventListener('click', function (ev) {
+      var pulsada = ev.target.closest ? ev.target.closest('.shots img') : null;
+      if (!pulsada) return;
+      // Sin esto, el clic sigue subiendo hasta la fila y la vuelve a plegar debajo del visor.
+      ev.stopPropagation();
+      img.src = pulsada.getAttribute('src');
+      caja.classList.add('on');
+    });
+
+    caja.addEventListener('click', function () { caja.classList.remove('on'); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') caja.classList.remove('on');
+    });
+  }
+
   function renderTrades() {
     var list = filtered().slice().sort(function (a, b) {
       var x = a[sortKey], y = b[sortKey];
@@ -996,7 +1062,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
 
     var body = document.querySelector('#tradesTable tbody');
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="8" class="muted">No hay operaciones con estos filtros.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="muted">No hay operaciones con estos filtros.</td></tr>';
       return;
     }
 
@@ -1007,9 +1073,11 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       var metrics = Object.keys(t.custom_metrics || {}).filter(function (k) { return k !== 'risk_eur'; });
       // Las capturas se sirven desde el bucket publico de informes, en la carpeta del token.
       var shots = [t.image_before, t.image_after].map(imageUrl).filter(Boolean);
+      var ficha = tradeFacts(t);
       var detail = '';
-      if (metrics.length || t.notes || shots.length) {
-        detail = '<tr class="row-detail" id="d' + i + '" style="display:none"><td colspan="8">' +
+      if (ficha || metrics.length || t.notes || shots.length) {
+        detail = '<tr class="row-detail" id="d' + i + '" style="display:none"><td colspan="9">' +
+          ficha +
           (metrics.length
             ? '<div class="chips" style="margin-bottom:8px">' + metrics.map(function (m) {
                 var on = t.custom_metrics[m] === true;
@@ -1028,6 +1096,7 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
       return '<tr class="row-main" data-detail="d' + i + '">' +
         '<td>' + esDate(t.date) + '</td>' +
         '<td>' + esc(t.asset || '—') + '</td>' +
+        '<td>' + esc(t.strategy || '—') + '</td>' +
         '<td>' + dir + '</td>' +
         '<td><span class="badge ' + cls + '">' + res + '</span></td>' +
         '<td class="num ' + tone(Number(t.pnl)) + '">' + money(t.pnl) + '</td>' +
@@ -1046,6 +1115,10 @@ function buildViewerHtml({ supabaseUrl, supabaseAnonKey }) {
   }
 })();
 </script>
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Captura ampliada">
+  <button type="button" class="lb-close">Cerrar</button>
+  <img alt="Captura de la operacion" />
+</div>
 </body>
 </html>`;
 }

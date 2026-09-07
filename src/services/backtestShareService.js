@@ -52,6 +52,13 @@ function buildShareUrl(override, token) {
 }
 
 /** Solo los campos que deben viajar al informe compartido. */
+/** Un número, o null si no hay valor. Un 0 escrito es un dato; un campo vacío no lo es. */
+function numeroOVacio(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function sanitizeTradeForShare(trade = {}) {
   const metrics =
     trade.custom_metrics && typeof trade.custom_metrics === 'object' && !Array.isArray(trade.custom_metrics)
@@ -72,12 +79,21 @@ function sanitizeTradeForShare(trade = {}) {
     // esto no lo traen, y el visor lo contempla escondiendo ese bloque.
     be_after_result: trade.be_after_result || '',
     pnl: Number(trade.pnl || 0),
+    // Los niveles de la operación. Estaban fuera a propósito, por no enseñar la estrategia a quien
+    // tuviera el enlace; se incluyen a petición del dueño de los datos, porque sin ellos el informe
+    // sirve para contar operaciones pero no para revisarlas.
+    entry_price: numeroOVacio(trade.entry_price),
+    stop_loss: numeroOVacio(trade.stop_loss),
+    take_profit: numeroOVacio(trade.take_profit),
     rr_planned: Number(trade.rr_planned || 0),
     rr_result: Number(trade.rr_result || 0),
     entry_time: trade.entry_time || '',
     exit_time: trade.exit_time || '',
     notes: trade.notes || '',
     custom_metrics: metrics,
+    // Las rutas de las capturas. El archivo en sí se copia aparte, al bucket público del informe.
+    image_before: trade.image_before || '',
+    image_after: trade.image_after || '',
   };
 }
 
