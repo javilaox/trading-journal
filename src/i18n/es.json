@@ -651,5 +651,6 @@
   "bt_autopnl_sin_riesgo": "No se calcula solo: la estrategia no tiene riesgo por operación configurado.",
   "bt_autopnl_sin_capital": "No se calcula solo: el riesgo va en % y esta sesión no tiene capital de cuenta.",
   "bt_autopnl_sin_rr": "No se calcula solo: la estrategia no tiene RR objetivo, y el TP lo necesita.",
-  "bt_autopnl_sin_estrategia": "Esta operación apunta a una estrategia que ya no existe (¿se renombró?). Vuelve a elegirla arriba."
+  "bt_autopnl_sin_estrategia": "Esta operación apunta a una estrategia que ya no existe (¿se renombró?). Vuelve a elegirla arriba.",
+  "filter_show_disabled_accounts": "Mostrar cuentas cerradas"
 }

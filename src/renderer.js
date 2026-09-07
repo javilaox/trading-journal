@@ -4328,6 +4328,28 @@ function escapeAttrChip(s) {
     .replace(/</g, '&lt;');
 }
 
+/**
+ * ¿Se ofrecen las cuentas perdidas por máximo DD en el filtro del Dashboard?
+ *
+ * Apagado por defecto: la lista es para elegir dónde mirar hoy, y las cuentas cerradas la llenan
+ * de nombres que ya no se van a usar. Se recuerda la decisión porque quien opera con muchas props
+ * acumula cerradas deprisa y tener que volver a marcarlo cada vez cansa.
+ *
+ * OJO, esto NO esconde ninguna operación: «Todas las cuentas» sigue contando todo lo que hay,
+ * también lo de las cuentas cerradas. Solo cambia qué nombres se pueden marcar de una en una. Si
+ * escondiera además sus operaciones, desactivar una cuenta borraría su historial del Dashboard sin
+ * avisar, que es justo lo que no puede pasar.
+ */
+const DASHBOARD_SHOW_DISABLED_KEY = 'dashboard_show_disabled_accounts';
+
+function isShowingDisabledDashboardAccounts() {
+  return localStorage.getItem(DASHBOARD_SHOW_DISABLED_KEY) === 'true';
+}
+
+function setShowingDisabledDashboardAccounts(value) {
+  localStorage.setItem(DASHBOARD_SHOW_DISABLED_KEY, value ? 'true' : 'false');
+}
+
 function pruneDashboardFilterSelections(accounts, strategies) {
   if (selectedDashboardAccounts.has('ALL')) {
     selectedDashboardAccounts = new Set(['ALL']);
@@ -4343,7 +4365,14 @@ function pruneDashboardFilterSelections(accounts, strategies) {
   }
 }
 
-function createDashboardMultiSelect(containerId, options, selectedSet, allLabel, onChange) {
+/**
+ * @param {object|null} [footer] interruptor al pie de la lista, separado de las opciones porque no
+ *   es una opción: no elige qué mirar, sino qué se ofrece elegir.
+ * @param {string} footer.label
+ * @param {boolean} footer.checked
+ * @param {(value:boolean)=>void} footer.onToggle
+ */
+function createDashboardMultiSelect(containerId, options, selectedSet, allLabel, onChange, footer = null) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -4390,6 +4419,14 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
       </label>`
         )
         .join('')}
+      ${
+        footer
+          ? `<label class="dashboard-multiselect-option dashboard-multiselect-footer">
+        <input type="checkbox" data-multiselect-footer="true" ${footer.checked ? 'checked' : ''}>
+        <span>${escapeHtmlChipText(footer.label)}</span>
+      </label>`
+          : ''
+      }
     </div>
   `;
 
@@ -4414,7 +4451,11 @@ function createDashboardMultiSelect(containerId, options, selectedSet, allLabel,
     if (willOpen) openPortalPanel(trigger, menu, { minWidth: 220, onDismiss: closeAllDashboardMultiselects });
   });
 
-  menu?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+  menu?.querySelector('input[data-multiselect-footer]')?.addEventListener('change', (event) => {
+    footer?.onToggle?.(event.target.checked);
+  });
+
+  menu?.querySelectorAll('input[type="checkbox"]:not([data-multiselect-footer])').forEach((checkbox) => {
     checkbox.addEventListener('change', () => {
       const value = checkbox.value;
 
@@ -4465,7 +4506,16 @@ async function renderDashboardFilters(trades = cachedTrades) {
     (acc) => allTypes || selectedDashboardAccountTypes.has(String(acc.account_type || ''))
   );
 
-  const configuredAccounts = accountsMatchingType.map((acc) => acc.name).filter(Boolean);
+  // Las cerradas por máximo DD se esconden, salvo que se pidan. Una que estuviera ya marcada se
+  // deja igualmente: quitársela de debajo cambiaría el filtro -y con él las cifras de la pantalla-
+  // sin que nadie lo haya tocado.
+  const verCerradas = isShowingDisabledDashboardAccounts();
+  const hayCerradas = accountsMatchingType.some(isAccountDisabled);
+  const accountsVisibles = accountsMatchingType.filter(
+    (acc) => verCerradas || !isAccountDisabled(acc) || selectedDashboardAccounts.has(acc.name)
+  );
+
+  const configuredAccounts = accountsVisibles.map((acc) => acc.name).filter(Boolean);
   const accounts = [...new Set(configuredAccounts)].sort((a, b) =>
     String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
   );
@@ -4498,7 +4548,19 @@ async function renderDashboardFilters(trades = cachedTrades) {
     t('filter_all_accounts', 'Todas las cuentas'),
     () => {
       void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
-    }
+    },
+    // El interruptor solo aparece si hay alguna cerrada: sin ninguna no ofrece nada y solo sería
+    // una opción más que leer.
+    hayCerradas
+      ? {
+          label: t('filter_show_disabled_accounts', 'Mostrar cuentas cerradas'),
+          checked: verCerradas,
+          onToggle: (value) => {
+            setShowingDisabledDashboardAccounts(value);
+            void renderDashboardFilters(cachedTrades).then(() => renderDashboardWithFilters());
+          },
+        }
+      : null
   );
 
   createDashboardMultiSelect(
